@@ -302,7 +302,12 @@
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
-            <h5>#{{ t.id }} — {{ t.title }}</h5>
+            <h5>
+  <a href="/web/tickets/{{ t.id }}" class="text-decoration-none">
+    #{{ t.id }} — {{ t.title }}
+  </a>
+</h5>
+
             <div class="muted">{{ t.description or "" }}</div>
             <div class="mt-2 muted small">
               Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b> ·

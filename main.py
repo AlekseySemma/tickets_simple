@@ -876,3 +876,61 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     db.add(u); db.commit()
     return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
+@app.get("/web/tickets/{ticket_id}")
+def web_ticket_detail(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    # права
+    if user.role == Role.curator:
+        allowed = True
+    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
+        allowed = True
+    else:
+        allowed = False
+    if not allowed:
+        raise HTTPException(403, "Forbidden")
+
+    projects = db.query(Project).order_by(Project.id.desc()).all()
+    users = db.query(User).order_by(User.id.desc()).all()
+    executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
+
+    users_by_id = {u.id: f"{u.name}" for u in users}
+    projects_by_id = {p.id: p.name for p in projects}
+
+    comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
+    attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
+
+    now = datetime.now()
+    is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
+
+    status_labels = {
+        "NEW": "Новая",
+        "IN_PROGRESS": "В работе",
+        "DONE": "Выполнена",
+        "CANCELED": "Отменена",
+    }
+
+    return templates.TemplateResponse(
+        "ticket_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "t": t,
+            "projects_by_id": projects_by_id,
+            "users_by_id": users_by_id,
+            "executors": executors,
+            "comments": comments,
+            "attachments": attachments,
+            "now": now,
+            "is_overdue": is_overdue,
+            "status_labels": status_labels,
+        },
+    )
+
