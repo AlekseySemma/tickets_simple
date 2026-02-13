@@ -187,11 +187,22 @@ def get_db():
     finally:
         db.close()
 
-def hash_password(p: str) -> str:
-    return pwd_context.hash(p)
+def normalize_password(p: str) -> str:
+    p = (p or "").strip()
+    return p
 
 def verify_password(p: str, ph: str) -> bool:
+    p = normalize_password(p)
+    if len(p.encode("utf-8")) > 72:
+        return False
     return pwd_context.verify(p, ph)
+
+def hash_password(p: str) -> str:
+    p = normalize_password(p)
+    if len(p.encode("utf-8")) > 72:
+        raise ValueError("Password too long (bcrypt max 72 bytes)")
+    return pwd_context.hash(p)
+
 
 def create_access_token(subject: str) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -767,3 +778,8 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     db.add(u); db.commit()
     return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
+from fastapi.responses import RedirectResponse
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/web")
