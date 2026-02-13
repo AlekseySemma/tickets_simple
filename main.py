@@ -187,22 +187,11 @@ def get_db():
     finally:
         db.close()
 
-def normalize_password(p: str) -> str:
-    p = (p or "").strip()
-    return p
-
-def verify_password(p: str, ph: str) -> bool:
-    p = normalize_password(p)
-    if len(p.encode("utf-8")) > 72:
-        return False
-    return pwd_context.verify(p, ph)
-
 def hash_password(p: str) -> str:
-    p = normalize_password(p)
-    if len(p.encode("utf-8")) > 72:
-        raise ValueError("Password too long (bcrypt max 72 bytes)")
     return pwd_context.hash(p)
 
+def verify_password(p: str, ph: str) -> bool:
+    return pwd_context.verify(p, ph)
 
 def create_access_token(subject: str) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -402,9 +391,10 @@ def web_tickets(
     user: User = Depends(get_current_user),
     status_filter: str | None = None,
     project_id: str | None = None,
-    executor_id: str | None = None,
+    executor_id: str | None = None,   # <-- ДОБАВИЛИ
     q: str | None = None,
-    ):
+):
+    # 1) tickets с учетом роли
     if user.role == Role.executor:
         tickets = list(
             db.query(Ticket)
@@ -415,6 +405,7 @@ def web_tickets(
     else:
         tickets = list(db.query(Ticket).order_by(Ticket.id.desc()).all())
 
+    # 2) данные для UI
     projects = db.query(Project).order_by(Project.id.desc()).all()
     users = db.query(User).order_by(User.id.desc()).all()
     executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
@@ -433,21 +424,24 @@ def web_tickets(
     for a in attachments:
         attachments_by_ticket.setdefault(a.ticket_id, []).append(a)
 
-                # --- фильтры ---
+    # 3) фильтры
     project_id_int: int | None = None
     if project_id is not None and str(project_id).strip() != "":
         try:
             project_id_int = int(project_id)
         except ValueError:
             project_id_int = None
-    
-    executor_id_int: int | None = None
-    if executor_id is not None and str(executor_id).strip() != "":
-        try:
-            executor_id_int = int(executor_id)
-        except ValueError:
-            executor_id_int = None
 
+    executor_id_int: int | None = None
+    executor_none = False
+    if executor_id is not None and str(executor_id).strip() != "":
+        if str(executor_id).strip() == "__none__":
+            executor_none = True
+        else:
+            try:
+                executor_id_int = int(executor_id)
+            except ValueError:
+                executor_id_int = None
 
     if status_filter:
         tickets = [t for t in tickets if t.status.value == status_filter]
@@ -455,15 +449,19 @@ def web_tickets(
     if project_id_int is not None:
         tickets = [t for t in tickets if t.project_id == project_id_int]
 
-    if user.role == Role.curator and executor_id_int is not None:
-        tickets = [t for t in tickets if t.executor_id == executor_id_int]
-
+    # Фильтр по исполнителю — только куратор
+    if user.role == Role.curator:
+        if executor_none:
+            tickets = [t for t in tickets if t.executor_id is None]
+        elif executor_id_int is not None:
+            tickets = [t for t in tickets if t.executor_id == executor_id_int]
 
     if q:
         q_lower = q.lower()
         tickets = [
             t for t in tickets
             if (t.title and q_lower in t.title.lower()) or (t.description and q_lower in t.description.lower())
+            or (t.description is None and False)
         ]
 
     now = datetime.now()
@@ -483,10 +481,11 @@ def web_tickets(
             "now": now,
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
+            "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
             "q": q or "",
-            "executor_id_filter": executor_id_int if executor_id_int is not None else "",
         },
     )
+
 
 @app.post("/web/tickets/create")
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -791,8 +790,3 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     db.add(u); db.commit()
     return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
-from fastapi.responses import RedirectResponse
-
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url="/web")

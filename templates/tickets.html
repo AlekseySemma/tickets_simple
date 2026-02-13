@@ -66,13 +66,15 @@
   <div class="col-6 col-md-3">
     <label class="form-label mb-1">Исполнитель</label>
     <select name="executor_id" class="form-select">
-      <option value="" {% if not executor_id_filter %}selected{% endif %}>Все</option>
-      {% for e in executors %}
-        <option value="{{ e.id }}" {% if executor_id_filter == e.id %}selected{% endif %}>
-          {{ e.name }}
-        </option>
-      {% endfor %}
-    </select>
+  <option value="" {% if not executor_id_filter %}selected{% endif %}>Все</option>
+  <option value="__none__" {% if executor_id_filter == "__none__" %}selected{% endif %}>— Не назначено —</option>
+  {% for e in executors %}
+    <option value="{{ e.id }}" {% if executor_id_filter == e.id %}selected{% endif %}>
+      {{ e.name }}
+    </option>
+  {% endfor %}
+</select>
+
   </div>
 {% endif %}
 
