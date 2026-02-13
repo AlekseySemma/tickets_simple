@@ -402,6 +402,7 @@ def web_tickets(
     user: User = Depends(get_current_user),
     status_filter: str | None = None,
     project_id: str | None = None,
+    executor_id: str | None = None,
     q: str | None = None,
     ):
     if user.role == Role.executor:
@@ -439,12 +440,24 @@ def web_tickets(
             project_id_int = int(project_id)
         except ValueError:
             project_id_int = None
+    
+    executor_id_int: int | None = None
+    if executor_id is not None and str(executor_id).strip() != "":
+        try:
+            executor_id_int = int(executor_id)
+        except ValueError:
+            executor_id_int = None
+
 
     if status_filter:
         tickets = [t for t in tickets if t.status.value == status_filter]
 
     if project_id_int is not None:
         tickets = [t for t in tickets if t.project_id == project_id_int]
+
+    if user.role == Role.curator and executor_id_int is not None:
+        tickets = [t for t in tickets if t.executor_id == executor_id_int]
+
 
     if q:
         q_lower = q.lower()
@@ -471,7 +484,7 @@ def web_tickets(
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "q": q or "",
-
+            "executor_id_filter": executor_id_int if executor_id_int is not None else "",
         },
     )
 

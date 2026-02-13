@@ -59,10 +59,22 @@
           {% endfor %}
         </select>
       </div>
-
       <div class="col-12 col-md-2 d-flex gap-2">
         <button class="btn btn-primary w-100">Применить</button>
       </div>
+      {% if user.role == "CURATOR" %}
+  <div class="col-6 col-md-3">
+    <label class="form-label mb-1">Исполнитель</label>
+    <select name="executor_id" class="form-select">
+      <option value="" {% if not executor_id_filter %}selected{% endif %}>Все</option>
+      {% for e in executors %}
+        <option value="{{ e.id }}" {% if executor_id_filter == e.id %}selected{% endif %}>
+          {{ e.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+{% endif %}
 
       <div class="col-12">
         <a class="small" href="/web">Сбросить фильтры</a>
