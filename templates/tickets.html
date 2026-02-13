@@ -11,7 +11,13 @@
     .ticket h5 { margin: 0 0 8px 0; }
     .badge-status { font-size: 12px; }
     .ticket.overdue { border-color: #dc3545; }
-    .ticket.overdue .badge-status { background: #dc3545 !important; }
+    .ticket.overdue .st-OVERDUE { background: #dc3545 !important; }
+    .badge-status { font-weight: 600; }
+    .st-NEW { background: #6c757d !important; }          /* серый */
+    .st-IN_PROGRESS { background: #0d6efd !important; }  /* синий */
+    .st-DONE { background: #198754 !important; }         /* зелёный */
+    .st-CANCELED { background: #212529 !important; }     /* тёмный */
+    .st-OVERDUE { background: #dc3545 !important; }      /* красный */
   </style>
 </head>
 <body class="bg-light">
@@ -197,19 +203,27 @@
           </div>
 
           <div class="text-end">
-            <div class="mb-2">
-              <span class="badge text-bg-secondary badge-status">{{ t.status }}</span>
-            </div>
+            {% set is_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
 
-            <form method="post" action="/web/tickets/{{ t.id }}/status" class="d-flex gap-2">
-              <select name="status" class="form-select form-select-sm" style="max-width: 190px">
-                <option value="NEW" {% if t.status == "NEW" %}selected{% endif %}>NEW</option>
-                <option value="IN_PROGRESS" {% if t.status == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
-                <option value="DONE" {% if t.status == "DONE" %}selected{% endif %}>DONE</option>
-                <option value="CANCELED" {% if t.status == "CANCELED" %}selected{% endif %}>CANCELED</option>
-              </select>
-              <button class="btn btn-sm btn-outline-primary">OK</button>
-            </form>
+<div class="d-flex justify-content-between align-items-center gap-2">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <span class="badge badge-status st-{{ t.status.value }}">{{ t.status.value }}</span>
+    {% if is_overdue %}
+      <span class="badge badge-status st-OVERDUE">OVERDUE</span>
+    {% endif %}
+  </div>
+
+  <form method="post" action="/web/tickets/{{ t.id }}/status" class="d-flex gap-2">
+    <select name="status" class="form-select form-select-sm" style="max-width: 190px">
+      <option value="NEW" {% if t.status.value == "NEW" %}selected{% endif %}>NEW</option>
+      <option value="IN_PROGRESS" {% if t.status.value == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
+      <option value="DONE" {% if t.status.value == "DONE" %}selected{% endif %}>DONE</option>
+      <option value="CANCELED" {% if t.status.value == "CANCELED" %}selected{% endif %}>CANCELED</option>
+    </select>
+    <button class="btn btn-sm btn-outline-primary">OK</button>
+  </form>
+</div>
+
             {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
   <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit">Изменить</a>
 {% endif %}
