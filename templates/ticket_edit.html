@@ -23,7 +23,7 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <form method="post" action="/web/tickets/{{ t.id }}/edit" class="row g-3">
-
+          <input type="hidden" name="next" value="{{ next_url }}">
           {% if can_edit_full %}
             <div class="col-12 col-md-6">
               <label class="form-label">Название</label>
@@ -46,17 +46,22 @@
           </div>
 
           <div class="col-12 col-md-6">
-            <label class="form-label">Срок: дата</label>
-            <input id="deadline_date" name="deadline_date" type="date" class="form-control" />
-          </div>
+  <label class="form-label">Срок: дата</label>
+  <input id="deadline_date" name="deadline_date" type="date" class="form-control"
+         value="{% if t.deadline %}{{ t.deadline.strftime('%Y-%m-%d') }}{% endif %}" />
+</div>
 
-          <div class="col-12 col-md-6">
-            <label class="form-label">Время (HHMM)</label>
-            <div class="input-group">
-              <input id="deadline_time4" name="deadline_time4" class="form-control" inputmode="numeric" maxlength="4" placeholder="например 9, 930, 1745" />
-              <span class="input-group-text" id="deadline_time_pretty">--:--</span>
-            </div>
-          </div>
+<div class="col-12 col-md-6">
+  <label class="form-label">Время (HHMM)</label>
+  <div class="input-group">
+    <input id="deadline_time4" name="deadline_time4" class="form-control"
+           inputmode="numeric" maxlength="4"
+           value="{% if t.deadline %}{{ t.deadline.strftime('%H%M') }}{% endif %}"
+           placeholder="например 9, 930, 1745" />
+    <span class="input-group-text" id="deadline_time_pretty">--:--</span>
+  </div>
+</div>
+
 
           {% if can_edit_full %}
             <div class="col-12 col-md-6">
@@ -72,17 +77,17 @@
             <div class="col-12 col-md-6">
               <label class="form-label">Статус</label>
               <select name="status" class="form-select">
-                <option value="NEW" {% if t.status == "NEW" %}selected{% endif %}>NEW</option>
-                <option value="IN_PROGRESS" {% if t.status == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
-                <option value="DONE" {% if t.status == "DONE" %}selected{% endif %}>DONE</option>
-                <option value="CANCELED" {% if t.status == "CANCELED" %}selected{% endif %}>CANCELED</option>
-              </select>
+  <option value="NEW" {% if t.status.value == "NEW" %}selected{% endif %}>Новая</option>
+  <option value="IN_PROGRESS" {% if t.status.value == "IN_PROGRESS" %}selected{% endif %}>В работе</option>
+  <option value="DONE" {% if t.status.value == "DONE" %}selected{% endif %}>Выполнена</option>
+  <option value="CANCELED" {% if t.status.value == "CANCELED" %}selected{% endif %}>Отменена</option>
+</select>
             </div>
           {% endif %}
-            <input type="hidden" name="next" value="{{ next_url }}">
+            
           <div class="col-12 d-flex gap-2">
-            <button class="btn btn-primary">Сохранить</button>
-            <a class="btn btn-outline-secondary" href="/web">Отмена</a>
+            <button class="btn btn-primary" type="submit">Сохранить</button>
+            <a class="btn btn-outline-secondary" href="{{ next_url }}">Отмена</a>
           </div>
 
         </form>

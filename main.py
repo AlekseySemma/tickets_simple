@@ -810,22 +810,98 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
 
 
 @app.post("/web/tickets/{ticket_id}/edit")
-async def web_edit_ticket_save(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def web_ticket_edit_save(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
 
+    # права: куратор — всегда, исполнитель — только свои (создал/назначен)
     if user.role == Role.curator:
-        can_edit_full = True
+        allowed = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
-        can_edit_full = True
+        allowed = True
     else:
+        allowed = False
+    if not allowed:
         raise HTTPException(403, "Forbidden")
 
+    can_edit_full = (user.role == Role.curator)
     form = await request.form()
-
+    status_raw = (form.get("status") or "").strip()
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
+
+    title = (form.get("title") or "").strip()
+    description = (form.get("description") or "").strip()
+    project_id_raw = (form.get("project_id") or "").strip()
+    executor_id_raw = (form.get("executor_id") or "").strip()
+
+    if can_edit_full and status_raw:
+        try:
+            t.status = TicketStatus(status_raw)
+        except ValueError:
+            pass
+
+
+    if status_raw:
+        try:
+            t.status = TicketStatus(status_raw)
+        except ValueError:
+            pass
+
+
+    if title:
+        t.title = title
+    t.description = description
+
+    # project_id
+    try:
+        t.project_id = int(project_id_raw) if project_id_raw else None
+    except ValueError:
+        pass
+
+    # executor_id
+    try:
+        t.executor_id = int(executor_id_raw) if executor_id_raw else None
+    except ValueError:
+        pass
+
+    # срок (как у создания)
+    deadline = None
+    deadline_date = (form.get("deadline_date") or "").strip()
+    time4 = (form.get("deadline_time4") or "").strip()
+
+    if deadline_date and not time4:
+        time4 = datetime.now().strftime("%H%M")
+
+    if deadline_date and time4:
+        time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
+        if time4:
+            if len(time4) <= 2:
+                hh = min(23, int(time4))
+                mm = 0
+                time4_fixed = f"{hh:02d}{mm:02d}"
+            else:
+                time4_fixed = time4.zfill(4)
+
+            try:
+                hh = min(23, int(time4_fixed[:2]))
+                mm = min(59, int(time4_fixed[2:]))
+                deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
+            except ValueError:
+                deadline = None
+
+    t.deadline = deadline
+
+    db.commit()          # ✅ без этого не сохранится
+    db.refresh(t)
+
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
 
 
 
