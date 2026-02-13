@@ -25,27 +25,26 @@
     .st-CANCELED { background: #212529 !important; }     /* тёмный */
     .st-OVERDUE { background: #dc3545 !important; }      /* красный */
     .status-menu {
-  position: absolute;
-  top: 110%;
-  right: 0;
-  min-width: 160px;
-  z-index: 10;
+      position: absolute;
+      top: 110%;
+      right: 0;
+      min-width: 160px;
+      z-index: 10;
 
-  opacity: 0;
-  transform: translateY(-6px);
-  pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
+      opacity: 0;
+      transform: translateY(-6px);
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
 
-.status-menu.show {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-
-
-
+    .status-menu.show {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    .dashboard-card { cursor: pointer; transition: transform .12s ease; }
+    .dashboard-card:hover { transform: translateY(-1px); }
+    .dashboard-card:active { transform: translateY(0); }
   </style>
 </head>
 <body class="bg-light">
@@ -217,60 +216,87 @@
     {% endif %}
 
     <div class="row g-2 mb-3">
+
+  <!--ДАШБОАРД -- ВСЕ -->
   <div class="col-6 col-lg-2">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <div class="small muted">Всего</div>
-        <div class="fs-5 fw-semibold">{{ total_count }}</div>
+    <a class="text-decoration-none text-dark"
+       href="/web?status_filter=&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
+      <div class="card shadow-sm dashboard-card">
+        <div class="card-body py-2">
+          <div class="small muted">Всего</div>
+          <div class="fs-5 fw-semibold">{{ total_count }}</div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
 
+  <!-- ПРОСРОЧЕНО -->
   <div class="col-6 col-lg-2">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <div class="small muted">Просрочено</div>
-        <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
+    <a class="text-decoration-none text-dark"
+       href="/web?status_filter=&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=1&sort={{ sort }}">
+      <div class="card shadow-sm dashboard-card">
+        <div class="card-body py-2">
+          <div class="small muted">Просрочено</div>
+          <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
 
+  <!-- NEW -->
   <div class="col-6 col-lg-2">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <div class="small muted">Новые</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
+    <a class="text-decoration-none text-dark"
+       href="/web?status_filter=NEW&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
+      <div class="card shadow-sm dashboard-card">
+        <div class="card-body py-2">
+          <div class="small muted">Новые</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
 
+  <!-- IN_PROGRESS -->
   <div class="col-6 col-lg-2">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <div class="small muted">В работе</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
+    <a class="text-decoration-none text-dark"
+       href="/web?status_filter=IN_PROGRESS&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
+      <div class="card shadow-sm dashboard-card">
+        <div class="card-body py-2">
+          <div class="small muted">В работе</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
 
+  <!-- DONE -->
   <div class="col-6 col-lg-2">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <div class="small muted">Выполнены</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
+    <a class="text-decoration-none text-dark"
+       href="/web?status_filter=DONE&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
+      <div class="card shadow-sm dashboard-card">
+        <div class="card-body py-2">
+          <div class="small muted">Выполнены</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
 
+  <!-- CANCELED -->
   <div class="col-6 col-lg-2">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <div class="small muted">Отменены</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
+    <a class="text-decoration-none text-dark"
+       href="/web?status_filter=CANCELED&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
+      <div class="card shadow-sm dashboard-card">
+        <div class="card-body py-2">
+          <div class="small muted">Отменены</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
+
 </div>
+
 
 
     {% for t in tickets %}
