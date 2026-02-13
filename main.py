@@ -490,6 +490,26 @@ def web_tickets(
     else:  # id_desc
         tickets.sort(key=lambda t: t.id, reverse=True)
 
+    status_labels = {
+        "NEW": "Новая",
+        "IN_PROGRESS": "В работе",
+        "DONE": "Выполнена",
+        "CANCELED": "Отменена",
+    }
+
+    # Дашборд по текущему списку tickets (после фильтров)
+    total_count = len(tickets)
+    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0}
+    overdue_count = 0
+
+    for t in tickets:
+        code = t.status.value
+        if code in counts_by_status:
+            counts_by_status[code] += 1
+
+        if t.deadline and t.deadline < now and code not in ("DONE", "CANCELED"):
+            overdue_count += 1
+
 
     return templates.TemplateResponse(
         "tickets.html",
@@ -510,6 +530,11 @@ def web_tickets(
             "q": q or "",
             "only_overdue": "1" if overdue_enabled else "",
             "sort": sort_value,
+            "status_labels": status_labels,
+            "total_count": total_count,
+            "counts_by_status": counts_by_status,
+            "overdue_count": overdue_count,
+
         },
     )
 

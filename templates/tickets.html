@@ -215,6 +215,63 @@
     </div>
     {% endif %}
 
+    <div class="row g-2 mb-3">
+  <div class="col-6 col-lg-2">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <div class="small muted">Всего</div>
+        <div class="fs-5 fw-semibold">{{ total_count }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-2">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <div class="small muted">Просрочено</div>
+        <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-2">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <div class="small muted">Новые</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-2">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <div class="small muted">В работе</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-2">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <div class="small muted">Выполнены</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-2">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <div class="small muted">Отменены</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
     {% for t in tickets %}
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
         <div class="d-flex justify-content-between align-items-start gap-3">
@@ -235,11 +292,11 @@
 <div class="d-flex justify-content-between align-items-center gap-2">
   <div class="d-flex flex-wrap gap-2 align-items-center">
     {% if is_overdue %}
-      <span id="overdue-badge-{{ t.id }}"
-      class="badge badge-status st-OVERDUE"
+      <span id="overdue-badge-{{ t.id }}" class="badge badge-status st-OVERDUE"
       style="{% if not is_overdue %}display:none;{% endif %}">
-  OVERDUE
+  Просрочено
 </span>
+
 
     {% endif %}
   </div>
@@ -247,17 +304,17 @@
   <div class="position-relative d-inline-block">
   
   <!-- Текущий статус -->
-  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle"
-      data-ticket-id="{{ t.id }}">
-    {{ t.status.value }} ▼
+  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
+  {{ status_labels[t.status.value] }} ▼
 </span>
 
+
   <!-- Выпадающее меню -->
-  <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded">
-  <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="NEW">NEW</button>
-  <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">IN_PROGRESS</button>
-  <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">DONE</button>
-  <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">CANCELED</button>
+  <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded d-none">
+  <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="NEW">Новая</button>
+  <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">В работе</button>
+  <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
+  <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
 </div>
 
 
@@ -463,14 +520,21 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const data = await res.json();
     if (!data.ok) return;
-
+    const STATUS_LABELS = {
+  NEW: "Новая",
+  IN_PROGRESS: "В работе",
+  DONE: "Выполнена",
+  CANCELED: "Отменена",
+};
     // 1) обновить бейдж статуса
     const badge = document.getElementById("status-badge-" + ticketId);
     if (badge) {
+      
+
       // убрать старые классы st-*
       badge.className = badge.className.replace(/\bst-[A-Z_]+\b/g, "").trim();
       badge.classList.add("st-" + data.status);
-      badge.textContent = data.status + " ▼";
+      badge.textContent = (STATUS_LABELS[data.status] || data.status) + " ▼";
     }
 
     // 2) overdue бейдж + класс карточки
