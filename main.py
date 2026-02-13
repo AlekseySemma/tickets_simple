@@ -393,6 +393,8 @@ def web_tickets(
     project_id: str | None = None,
     executor_id: str | None = None,   # <-- ДОБАВИЛИ
     q: str | None = None,
+    only_overdue: str | None = None,
+    sort: str | None = None,
 ):
     # 1) tickets с учетом роли
     if user.role == Role.executor:
@@ -466,6 +468,29 @@ def web_tickets(
 
     now = datetime.now()
 
+        # только просроченные
+    overdue_enabled = (only_overdue == "1")
+    if overdue_enabled:
+        tickets = [
+            t for t in tickets
+            if t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled)
+        ]
+
+        # сортировка
+    sort_value = (sort or "").strip() or "id_desc"
+
+    if sort_value == "deadline_asc":
+        tickets.sort(key=lambda t: (t.deadline is None, t.deadline or datetime.max, -t.id))
+    elif sort_value == "deadline_desc":
+        tickets.sort(key=lambda t: (t.deadline is None, t.deadline or datetime.min, t.id), reverse=True)
+    elif sort_value == "status":
+        tickets.sort(key=lambda t: (t.status.value, -(t.deadline.timestamp() if t.deadline else 10**18), -t.id))
+    elif sort_value == "id_asc":
+        tickets.sort(key=lambda t: t.id)
+    else:  # id_desc
+        tickets.sort(key=lambda t: t.id, reverse=True)
+
+
     return templates.TemplateResponse(
         "tickets.html",
         {
@@ -483,6 +508,8 @@ def web_tickets(
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
             "q": q or "",
+            "only_overdue": "1" if overdue_enabled else "",
+            "sort": sort_value,
         },
     )
 

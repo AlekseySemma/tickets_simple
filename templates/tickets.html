@@ -76,9 +76,32 @@
 </select>
 
   </div>
+
+  <div class="col-12 col-md-3">
+  <div class="form-check mt-4">
+    <input class="form-check-input" type="checkbox" id="only_overdue" name="only_overdue" value="1"
+           {% if only_overdue == "1" %}checked{% endif %}>
+    <label class="form-check-label" for="only_overdue">Только просроченные</label>
+  </div>
+</div>
+
+
+  
 {% endif %}
 
+
       <div class="col-12">
+        <div class="col-6 col-md-3">
+  <label class="form-label mb-1">Сортировка</label>
+  <select name="sort" class="form-select">
+    <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
+    <option value="id_asc" {% if sort == "id_asc" %}selected{% endif %}>Сначала старые</option>
+    <option value="deadline_asc" {% if sort == "deadline_asc" %}selected{% endif %}>Срок: ближайшие</option>
+    <option value="deadline_desc" {% if sort == "deadline_desc" %}selected{% endif %}>Срок: дальние</option>
+    <option value="status" {% if sort == "status" %}selected{% endif %}>По статусу</option>
+  </select>
+</div>
+
         <a class="small" href="/web">Сбросить фильтры</a>
       </div>
     </form>
