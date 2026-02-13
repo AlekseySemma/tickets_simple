@@ -13,11 +13,35 @@
     .ticket.overdue { border-color: #dc3545; }
     .ticket.overdue .st-OVERDUE { background: #dc3545 !important; }
     .badge-status { font-weight: 600; }
+    .badge-status {
+      cursor: pointer;
+      padding: 0.45rem 0.6rem;
+    }
+    .badge-status:hover { filter: brightness(0.95); }
+    .badge-status:active { transform: translateY(1px); }
     .st-NEW { background: #6c757d !important; }          /* серый */
     .st-IN_PROGRESS { background: #0d6efd !important; }  /* синий */
     .st-DONE { background: #198754 !important; }         /* зелёный */
     .st-CANCELED { background: #212529 !important; }     /* тёмный */
     .st-OVERDUE { background: #dc3545 !important; }      /* красный */
+    .status-menu {
+      position: absolute;
+      top: 110%;
+      right: 0;
+      min-width: 160px;
+      z-index: 10;
+    }
+
+    .status-toggle {
+      cursor: pointer;
+      user-select: none;
+    }
+
+
+    .status-menu .badge {
+      cursor: pointer;
+    }
+
   </style>
 </head>
 <body class="bg-light">
@@ -207,21 +231,40 @@
 
 <div class="d-flex justify-content-between align-items-center gap-2">
   <div class="d-flex flex-wrap gap-2 align-items-center">
-    <span class="badge badge-status st-{{ t.status.value }}">{{ t.status.value }}</span>
     {% if is_overdue %}
       <span class="badge badge-status st-OVERDUE">OVERDUE</span>
     {% endif %}
   </div>
 
-  <form method="post" action="/web/tickets/{{ t.id }}/status" class="d-flex gap-2">
-    <select name="status" class="form-select form-select-sm" style="max-width: 190px">
-      <option value="NEW" {% if t.status.value == "NEW" %}selected{% endif %}>NEW</option>
-      <option value="IN_PROGRESS" {% if t.status.value == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
-      <option value="DONE" {% if t.status.value == "DONE" %}selected{% endif %}>DONE</option>
-      <option value="CANCELED" {% if t.status.value == "CANCELED" %}selected{% endif %}>CANCELED</option>
-    </select>
-    <button class="btn btn-sm btn-outline-primary">OK</button>
-  </form>
+  <div class="position-relative d-inline-block">
+  
+  <!-- Текущий статус -->
+  <span class="badge badge-status st-{{ t.status.value }} status-toggle"
+      data-ticket-id="{{ t.id }}">
+    {{ t.status.value }} ▼
+</span>
+
+  <!-- Выпадающее меню -->
+  <div id="status-menu-{{ t.id }}" 
+       class="status-menu shadow-sm p-2 bg-white rounded d-none">
+
+    <form method="post" action="/web/tickets/{{ t.id }}/status">
+      <button type="submit" name="status" value="NEW"
+              class="badge badge-status st-NEW w-100 mb-1 border-0">NEW</button>
+
+      <button type="submit" name="status" value="IN_PROGRESS"
+              class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0">IN_PROGRESS</button>
+
+      <button type="submit" name="status" value="DONE"
+              class="badge badge-status st-DONE w-100 mb-1 border-0">DONE</button>
+
+      <button type="submit" name="status" value="CANCELED"
+              class="badge badge-status st-CANCELED w-100 border-0">CANCELED</button>
+    </form>
+  </div>
+
+</div>
+
 </div>
 
             {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
@@ -372,6 +415,34 @@
 
     render();
   })();
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    document.querySelectorAll(".status-toggle").forEach(function (el) {
+        el.addEventListener("click", function (event) {
+            event.stopPropagation();
+            const ticketId = el.dataset.ticketId;
+            const menu = document.getElementById("status-menu-" + ticketId);
+
+            // закрываем другие открытые меню
+            document.querySelectorAll(".status-menu").forEach(m => {
+                if (m !== menu) m.classList.add("d-none");
+            });
+
+            menu.classList.toggle("d-none");
+        });
+    });
+
+    // клик вне меню — закрыть
+    document.addEventListener("click", function () {
+        document.querySelectorAll(".status-menu").forEach(menu => {
+            menu.classList.add("d-none");
+        });
+    });
+
+});
 </script>
 
 
