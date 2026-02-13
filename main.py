@@ -543,7 +543,7 @@ def web_tickets(
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # куратор и исполнитель могут создавать
     if user.role not in (Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidden")
+        raise HTTPException(403, "Forbidd en")
 
     form = await request.form()
 
@@ -558,23 +558,23 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     if user.role == Role.executor and executor_id is None:
         executor_id = user.id
 
-    # ---- СРОК (date + HHMM) ----
+        # ---- СРОК (date + HHMM) ----
     deadline = None
     deadline_date = (form.get("deadline_date") or "").strip()   # YYYY-MM-DD
     time4 = (form.get("deadline_time4") or "").strip()          # 1-4 цифры
 
-        # если дату выбрали, а время не ввели — ставим текущее время
+    # если дату выбрали, а время не ввели — ставим текущее время
     if deadline_date and not time4:
         time4 = datetime.now().strftime("%H%M")
 
+    if deadline_date and time4:
+        time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
         if time4:
             if len(time4) <= 2:
-                # 9 -> 09:00, 12 -> 12:00
                 hh = min(23, int(time4))
                 mm = 0
                 time4_fixed = f"{hh:02d}{mm:02d}"
             else:
-                # 930 -> 09:30, 1234 -> 12:34
                 time4_fixed = time4.zfill(4)
 
             try:
@@ -583,6 +583,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
             except ValueError:
                 deadline = None
+
 
     # ВАЖНО: именно deadline=deadline
     t = Ticket(
