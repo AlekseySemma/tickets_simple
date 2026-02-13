@@ -58,6 +58,7 @@
 
 
   </style>
+  <input type="hidden" name="next" value="/web">
 </head>
 <body class="bg-light">
   <div class="container py-4">
@@ -354,13 +355,14 @@
 </div>
 
             {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
-  <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit">Изменить</a>
+  <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next=/web">Изменить</a>
 {% endif %}
 
             {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and t.created_by == user.id) %}
             <form method="post" action="/web/tickets/{{ t.id }}/delete" class="mt-2"
               onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
-            <button class="btn btn-sm btn-outline-danger w-100">Удалить</button>
+            <input type="hidden" name="next" value="/web">
+              <button class="btn btn-sm btn-outline-danger w-100">Удалить</button>
             </form>
             {% endif %}
 
@@ -392,7 +394,7 @@
             </form>
           </div>
 
-          <div class="col-12 col-lg-5">
+          <!-- <div class="col-12 col-lg-5">
             <h6>Файлы</h6>
             <div class="mb-2">
               {% for a in attachments_by_ticket.get(t.id, []) %}
@@ -409,7 +411,7 @@
               <input type="file" name="file" class="form-control" required />
               <button class="btn btn-outline-secondary">Загрузить</button>
             </form>
-          </div>
+          </div> -->
         </div>
       </div>
     {% endfor %}

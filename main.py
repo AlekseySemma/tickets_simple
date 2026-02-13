@@ -190,6 +190,13 @@ def get_db():
     finally:
         db.close()
 
+def safe_next(next_url: str | None, fallback: str = "/web") -> str:
+    n = (next_url or "").strip()
+    if not n:
+        return fallback
+    return n if n.startswith("/web") else fallback
+
+
 def hash_password(p: str) -> str:
     return pwd_context.hash(p)
 
@@ -696,6 +703,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
 @app.post("/web/tickets/{ticket_id}/comments")
 async def web_add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     form = await request.form()
+    
     text = (form.get("text") or "").strip()
 
     t = db.get(Ticket, ticket_id)
@@ -707,7 +715,9 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=text)
     db.add(c); db.commit()
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 import uuid
 import os
@@ -746,6 +756,12 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     db.add(a)
     db.commit()
 
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+
     return RedirectResponse(url=f"/web/tickets/{ticket_id}", status_code=HTTP_303_SEE_OTHER)
 
 
@@ -766,6 +782,9 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
 
     projects = db.query(Project).order_by(Project.id.desc()).all()
     executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
+    next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
+    next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
+
 
     # подготовим дату/время для формы
     deadline_date = None
@@ -785,6 +804,7 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
             "deadline_date": deadline_date,
             "deadline_time4": deadline_time4,
             "error": None,
+            "next_url": next_url,
         },
     )
 
@@ -803,6 +823,12 @@ async def web_edit_ticket_save(ticket_id: int, request: Request, db: Session = D
         raise HTTPException(403, "Forbidden")
 
     form = await request.form()
+
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+
 
     # описание может менять и куратор и исполнитель (если разрешено)
     t.description = (form.get("description") or "").strip() or None
