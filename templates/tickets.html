@@ -213,7 +213,7 @@
     {% endif %}
 
     {% for t in tickets %}
-      <div class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
+      <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
             <h5>#{{ t.id }} — {{ t.title }}</h5>
@@ -232,36 +232,31 @@
 <div class="d-flex justify-content-between align-items-center gap-2">
   <div class="d-flex flex-wrap gap-2 align-items-center">
     {% if is_overdue %}
-      <span class="badge badge-status st-OVERDUE">OVERDUE</span>
+      <span id="overdue-badge-{{ t.id }}"
+      class="badge badge-status st-OVERDUE"
+      style="{% if not is_overdue %}display:none;{% endif %}">
+  OVERDUE
+</span>
+
     {% endif %}
   </div>
 
   <div class="position-relative d-inline-block">
   
   <!-- Текущий статус -->
-  <span class="badge badge-status st-{{ t.status.value }} status-toggle"
+  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle"
       data-ticket-id="{{ t.id }}">
     {{ t.status.value }} ▼
 </span>
 
   <!-- Выпадающее меню -->
-  <div id="status-menu-{{ t.id }}" 
-       class="status-menu shadow-sm p-2 bg-white rounded d-none">
+  <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded d-none">
+  <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="NEW">NEW</button>
+  <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">IN_PROGRESS</button>
+  <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">DONE</button>
+  <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">CANCELED</button>
+</div>
 
-    <form method="post" action="/web/tickets/{{ t.id }}/status">
-      <button type="submit" name="status" value="NEW"
-              class="badge badge-status st-NEW w-100 mb-1 border-0">NEW</button>
-
-      <button type="submit" name="status" value="IN_PROGRESS"
-              class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0">IN_PROGRESS</button>
-
-      <button type="submit" name="status" value="DONE"
-              class="badge badge-status st-DONE w-100 mb-1 border-0">DONE</button>
-
-      <button type="submit" name="status" value="CANCELED"
-              class="badge badge-status st-CANCELED w-100 border-0">CANCELED</button>
-    </form>
-  </div>
 
 </div>
 
@@ -420,30 +415,87 @@
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
-    document.querySelectorAll(".status-toggle").forEach(function (el) {
-        el.addEventListener("click", function (event) {
-            event.stopPropagation();
-            const ticketId = el.dataset.ticketId;
-            const menu = document.getElementById("status-menu-" + ticketId);
+  function closeAllMenus(exceptId) {
+    document.querySelectorAll(".status-menu").forEach(m => {
+      if (!exceptId || m.id !== exceptId) m.classList.add("d-none");
+    });
+  }
 
-            // закрываем другие открытые меню
-            document.querySelectorAll(".status-menu").forEach(m => {
-                if (m !== menu) m.classList.add("d-none");
-            });
+  // Открытие меню по клику на бейдж
+  document.querySelectorAll(".status-toggle").forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.stopPropagation();
+      const ticketId = el.dataset.ticketId;
+      const menuId = "status-menu-" + ticketId;
+      const menu = document.getElementById(menuId);
+      if (!menu) return;
 
-            menu.classList.toggle("d-none");
-        });
+      closeAllMenus(menuId);
+      menu.classList.toggle("d-none");
+    });
+  });
+
+  // Закрытие меню при клике вне
+  document.addEventListener("click", function () {
+    closeAllMenus(null);
+  });
+
+  // AJAX смена статуса
+  async function setStatus(ticketId, status) {
+    const fd = new FormData();
+    fd.append("status", status);
+
+    const res = await fetch(`/web/tickets/${ticketId}/status`, {
+      method: "POST",
+      body: fd,
+      headers: { "Accept": "application/json" },
+      credentials: "same-origin"
     });
 
-    // клик вне меню — закрыть
-    document.addEventListener("click", function () {
-        document.querySelectorAll(".status-menu").forEach(menu => {
-            menu.classList.add("d-none");
-        });
+    if (!res.ok) {
+      const text = await res.text();
+      alert("Ошибка смены статуса: " + text);
+      return;
+    }
+
+    const data = await res.json();
+    if (!data.ok) return;
+
+    // 1) обновить бейдж статуса
+    const badge = document.getElementById("status-badge-" + ticketId);
+    if (badge) {
+      // убрать старые классы st-*
+      badge.className = badge.className.replace(/\bst-[A-Z_]+\b/g, "").trim();
+      badge.classList.add("st-" + data.status);
+      badge.textContent = data.status + " ▼";
+    }
+
+    // 2) overdue бейдж + класс карточки
+    const overdueBadge = document.getElementById("overdue-badge-" + ticketId);
+    const ticketEl = document.getElementById("ticket-" + ticketId);
+
+    if (overdueBadge) overdueBadge.style.display = data.is_overdue ? "" : "none";
+    if (ticketEl) {
+      if (data.is_overdue) ticketEl.classList.add("overdue");
+      else ticketEl.classList.remove("overdue");
+    }
+
+    // 3) закрыть меню
+    closeAllMenus(null);
+  }
+
+  document.querySelectorAll(".status-option").forEach(btn => {
+    btn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      const ticketId = btn.dataset.ticketId;
+      const status = btn.dataset.status;
+      setStatus(ticketId, status);
     });
+  });
 
 });
 </script>
+
 
 
 

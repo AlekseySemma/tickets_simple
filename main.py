@@ -613,21 +613,50 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
-@app.post("/web/tickets/{ticket_id}/status")
-async def web_set_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    form = await request.form()
-    new_status = form.get("status")
+from starlette.responses import JSONResponse  # добавь импорт, если нет
 
+@app.post("/web/tickets/{ticket_id}/status")
+async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
 
-    if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
+    # права: куратор всегда, исполнитель — если заявка его (создал или назначена)
+    if user.role == Role.curator:
+        allowed = True
+    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
+        allowed = True
+    else:
+        allowed = False
+    if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    t.status = TicketStatus(new_status)
+    form = await request.form()
+    status_raw = (form.get("status") or "").strip()
+    if not status_raw:
+        raise HTTPException(400, "Missing status")
+
+    t.status = TicketStatus(status_raw)
     db.commit()
+
+    now = datetime.now()
+    is_overdue = bool(t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled))
+
+    # если запрос пришёл через fetch (Accept: application/json) — вернём JSON
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept:
+        return JSONResponse(
+            {
+                "ok": True,
+                "ticket_id": t.id,
+                "status": t.status.value,
+                "is_overdue": is_overdue,
+            }
+        )
+
+    # иначе обычный сценарий (перезагрузка)
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+
 
 @app.post("/web/tickets/{ticket_id}/comments")
 async def web_add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
