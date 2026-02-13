@@ -13,6 +13,9 @@ from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum a
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
 
 # =========================
 # Настройки (простые)
@@ -224,6 +227,12 @@ def require_role(*roles: Role):
 # Приложение
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
 
 templates = Jinja2Templates(directory="templates")
 
@@ -700,24 +709,45 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     db.add(c); db.commit()
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
+import uuid
+import os
+
+
 @app.post("/web/tickets/{ticket_id}/attachments")
-def web_add_attachment(ticket_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile = File(...),
+                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
 
-    if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
+    # права (как у комментариев/статусов)
+    if user.role == Role.curator:
+        allowed = True
+    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
+        allowed = True
+    else:
+        allowed = False
+    if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    UPLOAD_DIR.mkdir(exist_ok=True)
-    safe_name = f"{int(datetime.utcnow().timestamp())}_{file.filename}"
-    path = UPLOAD_DIR / safe_name
-    with path.open("wb") as f:
-        f.write(file.file.read())
+    # безопасное имя + уникальность
+    orig = file.filename or "file"
+    _, ext = os.path.splitext(orig)
+    ext = (ext or "").lower()[:10]
+    safe_name = f"{ticket_id}_{uuid.uuid4().hex}{ext}"
 
-    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path))
-    db.add(a); db.commit()
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+    dest_path = UPLOAD_DIR / safe_name
+    content = await file.read()
+    dest_path.write_bytes(content)
+
+    # сохраняем путь как URL (удобно для шаблонов)
+    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}")
+    db.add(a)
+    db.commit()
+
+    return RedirectResponse(url=f"/web/tickets/{ticket_id}", status_code=HTTP_303_SEE_OTHER)
+
 
 @app.get("/web/tickets/{ticket_id}/edit")
 def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):

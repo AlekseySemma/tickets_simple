@@ -138,13 +138,33 @@
             <h5>Файлы</h5>
 
             <div class="mb-2">
-              {% for a in attachments %}
-                <div class="small">📎 {{ a.file_path }}</div>
-              {% endfor %}
-              {% if attachments|length == 0 %}
-                <div class="muted small">Нет файлов</div>
-              {% endif %}
-            </div>
+  {% for a in attachments %}
+    {% set p = a.file_path or "" %}
+    {% set lower = p|lower %}
+    {% set is_img = lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".gif") or lower.endswith(".webp") %}
+
+    <div class="border rounded p-2 mb-2 bg-white">
+      <div class="small mb-2">
+  📎 <a href="{{ p }}" target="_blank">{{ p }}</a>
+  <span class="muted">· загрузил: {{ users_by_id.get(a.uploader_id, "—") }}</span>
+</div>
+
+
+      {% if is_img %}
+        <a href="{{ p }}" target="_blank">
+          <img src="{{ p }}" class="img-fluid rounded" style="max-height: 260px;" />
+        </a>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  {% if attachments|length == 0 %}
+    <div class="muted small">Нет файлов</div>
+  {% endif %}
+
+  
+</div>
+
 
             <form method="post" action="/web/tickets/{{ t.id }}/attachments" enctype="multipart/form-data" class="d-flex gap-2">
               <input type="file" name="file" class="form-control" required />
