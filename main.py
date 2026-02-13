@@ -516,7 +516,7 @@ def web_tickets(
 
 @app.post("/web/tickets/create")
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # теперь и куратор и исполнитель могут создавать заявки
+    # куратор и исполнитель могут создавать
     if user.role not in (Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
 
@@ -526,46 +526,40 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     description = (form.get("description") or "").strip() or None
     project_id = int(form.get("project_id"))
 
-    # executor_id из формы
     executor_id_raw = (form.get("executor_id") or "").strip()
     executor_id = int(executor_id_raw) if executor_id_raw else None
 
-    # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него самого
+    # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него
     if user.role == Role.executor and executor_id is None:
         executor_id = user.id
 
-            # Срок: дата + время HHMM (4 цифры)
+    # ---- СРОК (date + HHMM) ----
     deadline = None
-    deadline_date = (form.get("deadline_date") or "").strip()  # YYYY-MM-DD
-    time4 = (form.get("deadline_time4") or "").strip()         # HHMM (цифры)
+    deadline_date = (form.get("deadline_date") or "").strip()   # YYYY-MM-DD
+    time4 = (form.get("deadline_time4") or "").strip()          # 1-4 цифры
 
-    if deadline_date and time4:
-        # оставим только цифры
-        time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
+        # если дату выбрали, а время не ввели — ставим текущее время
+    if deadline_date and not time4:
+        time4 = datetime.now().strftime("%H%M")
+
         if time4:
-            time4 = time4.zfill(4)  # 930 -> 0930
+            if len(time4) <= 2:
+                # 9 -> 09:00, 12 -> 12:00
+                hh = min(23, int(time4))
+                mm = 0
+                time4_fixed = f"{hh:02d}{mm:02d}"
+            else:
+                # 930 -> 09:30, 1234 -> 12:34
+                time4_fixed = time4.zfill(4)
+
             try:
-                hh = min(23, int(time4[:2]))
-                mm = min(59, int(time4[2:]))
+                hh = min(23, int(time4_fixed[:2]))
+                mm = min(59, int(time4_fixed[2:]))
                 deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
             except ValueError:
                 deadline = None
 
-    form = await request.form()
-    title = (form.get("title") or "").strip()
-    description = (form.get("description") or "").strip() or None
-    project_id = int(form.get("project_id"))
-    executor_id_raw = (form.get("executor_id") or "").strip()
-    executor_id = int(executor_id_raw) if executor_id_raw else None
-
-    deadline_raw = (form.get("deadline") or "").strip()
-    deadline = None
-    if deadline_raw:
-        try:
-            deadline = datetime.strptime(deadline_raw, "%Y-%m-%d %H:%M")
-        except ValueError:
-            deadline = None
-
+    # ВАЖНО: именно deadline=deadline
     t = Ticket(
         title=title,
         description=description,
@@ -574,8 +568,11 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         project_id=project_id,
         created_by=user.id,
     )
-    db.add(t); db.commit()
+    db.add(t)
+    db.commit()
+
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+
 
 @app.post("/web/tickets/{ticket_id}/delete")
 def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -725,28 +722,35 @@ async def web_edit_ticket_save(ticket_id: int, request: Request, db: Session = D
     # описание может менять и куратор и исполнитель (если разрешено)
     t.description = (form.get("description") or "").strip() or None
 
-    # срок (дата + HHMM) — можно менять и куратору и исполнителю
+        # срок (дата + HHMM) — "человеческая" интерпретация
     deadline = None
-    deadline_date = (form.get("deadline_date") or "").strip()
-    time4 = (form.get("deadline_time4") or "").strip()
+    deadline_date = (form.get("deadline_date") or "").strip()   # YYYY-MM-DD
+    time4 = (form.get("deadline_time4") or "").strip()   
+        # если дату выбрали, а время не ввели — ставим текущее время
+    if deadline_date and not time4:
+        time4 = datetime.now().strftime("%H%M")
+
+       # 1-4 цифры
 
     if deadline_date and time4:
         time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
         if time4:
-            # применяем "человеческую" интерпретацию:
-            # 1-2 цифры -> HH:00, 3-4 -> H?MM / HHMM
             if len(time4) <= 2:
+                # 9 -> 09:00, 12 -> 12:00
                 hh = min(23, int(time4))
                 mm = 0
                 time4_fixed = f"{hh:02d}{mm:02d}"
             else:
+                # 930 -> 09:30, 1234 -> 12:34
                 time4_fixed = time4.zfill(4)
+
             try:
                 hh = min(23, int(time4_fixed[:2]))
                 mm = min(59, int(time4_fixed[2:]))
                 deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
             except ValueError:
                 deadline = None
+
 
     t.deadline = deadline
 
