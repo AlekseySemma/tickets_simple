@@ -42,9 +42,21 @@
       transform: translateY(0);
       pointer-events: auto;
     }
-    .dashboard-card { cursor: pointer; transition: transform .12s ease; }
-    .dashboard-card:hover { transform: translateY(-1px); }
-    .dashboard-card:active { transform: translateY(0); }
+    .dash-card { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+  .dash-card:hover { transform: translateY(-1px); }
+  .dash-card:active { transform: translateY(0); }
+  /* Цветные рамки + лёгкий фон (взято по смыслу из цветов бейджей) */
+  .dash-NEW { border-left: 6px solid #6c757d; }
+  .dash-IN_PROGRESS { border-left: 6px solid #0d6efd; }
+  .dash-DONE { border-left: 6px solid #198754; }
+  .dash-CANCELED { border-left: 6px solid #212529; }
+  .dash-OVERDUE { border-left: 6px solid #dc3545; }
+  .dashboard-card.active {
+  outline: 3px solid rgba(13,110,253,.35);
+  outline-offset: 2px;
+}
+
+
   </style>
 </head>
 <body class="bg-light">
@@ -218,82 +230,69 @@
     <div class="row g-2 mb-3">
 
   <!--ДАШБОАРД -- ВСЕ -->
+  <div class="row g-2 mb-3" id="dashboard"
+     data-status-filter="{{ status_filter }}"
+     data-only-overdue="{{ only_overdue }}"
+     data-project-id="{{ project_id_filter }}"
+     data-executor-id="{{ executor_id_filter }}"
+     data-q="{{ q }}"
+     data-sort="{{ sort }}">
+
   <div class="col-6 col-lg-2">
-    <a class="text-decoration-none text-dark"
-       href="/web?status_filter=&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
-      <div class="card shadow-sm dashboard-card">
-        <div class="card-body py-2">
-          <div class="small muted">Всего</div>
-          <div class="fs-5 fw-semibold">{{ total_count }}</div>
-        </div>
+    <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
+      <div class="card-body py-2">
+        <div class="small muted">Всего</div>
+        <div class="fs-5 fw-semibold">{{ total_count }}</div>
       </div>
-    </a>
+    </div>
   </div>
 
-  <!-- ПРОСРОЧЕНО -->
   <div class="col-6 col-lg-2">
-    <a class="text-decoration-none text-dark"
-       href="/web?status_filter=&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=1&sort={{ sort }}">
-      <div class="card shadow-sm dashboard-card">
-        <div class="card-body py-2">
-          <div class="small muted">Просрочено</div>
-          <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
-        </div>
+    <div class="card shadow-sm dash-card dash-OVERDUE dashboard-card" data-dash="overdue">
+      <div class="card-body py-2">
+        <div class="small muted">Просрочено</div>
+        <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
       </div>
-    </a>
+    </div>
   </div>
 
-  <!-- NEW -->
   <div class="col-6 col-lg-2">
-    <a class="text-decoration-none text-dark"
-       href="/web?status_filter=NEW&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
-      <div class="card shadow-sm dashboard-card">
-        <div class="card-body py-2">
-          <div class="small muted">Новые</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
-        </div>
+    <div class="card shadow-sm dash-card dash-NEW dashboard-card" data-dash="status" data-status="NEW">
+      <div class="card-body py-2">
+        <div class="small muted">Новые</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
       </div>
-    </a>
+    </div>
   </div>
 
-  <!-- IN_PROGRESS -->
   <div class="col-6 col-lg-2">
-    <a class="text-decoration-none text-dark"
-       href="/web?status_filter=IN_PROGRESS&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
-      <div class="card shadow-sm dashboard-card">
-        <div class="card-body py-2">
-          <div class="small muted">В работе</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
-        </div>
+    <div class="card shadow-sm dash-card dash-IN_PROGRESS dashboard-card" data-dash="status" data-status="IN_PROGRESS">
+      <div class="card-body py-2">
+        <div class="small muted">В работе</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
       </div>
-    </a>
+    </div>
   </div>
 
-  <!-- DONE -->
   <div class="col-6 col-lg-2">
-    <a class="text-decoration-none text-dark"
-       href="/web?status_filter=DONE&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
-      <div class="card shadow-sm dashboard-card">
-        <div class="card-body py-2">
-          <div class="small muted">Выполнены</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
-        </div>
+    <div class="card shadow-sm dash-card dash-DONE dashboard-card" data-dash="status" data-status="DONE">
+      <div class="card-body py-2">
+        <div class="small muted">Выполнены</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
       </div>
-    </a>
+    </div>
   </div>
 
-  <!-- CANCELED -->
   <div class="col-6 col-lg-2">
-    <a class="text-decoration-none text-dark"
-       href="/web?status_filter=CANCELED&project_id={{ project_id_filter }}&executor_id={{ executor_id_filter }}&q={{ q }}&only_overdue=&sort={{ sort }}">
-      <div class="card shadow-sm dashboard-card">
-        <div class="card-body py-2">
-          <div class="small muted">Отменены</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
-        </div>
+    <div class="card shadow-sm dash-card dash-CANCELED dashboard-card" data-dash="status" data-status="CANCELED">
+      <div class="card-body py-2">
+        <div class="small muted">Отменены</div>
+        <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
       </div>
-    </a>
+    </div>
   </div>
+</div>
+
 
 </div>
 
@@ -590,6 +589,107 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const dash = document.getElementById("dashboard");
+  if (!dash) return;
+
+  function getState() {
+    return {
+      status_filter: dash.dataset.statusFilter || "",
+      only_overdue: dash.dataset.onlyOverdue || "",
+      project_id: dash.dataset.projectId || "",
+      executor_id: dash.dataset.executorId || "",
+      q: dash.dataset.q || "",
+      sort: dash.dataset.sort || "id_desc",
+    };
+  }
+
+  function buildUrl(next) {
+    const p = new URLSearchParams();
+    p.set("status_filter", next.status_filter || "");
+    p.set("project_id", next.project_id || "");
+    p.set("executor_id", next.executor_id || "");
+    p.set("q", next.q || "");
+    p.set("only_overdue", next.only_overdue || "");
+    p.set("sort", next.sort || "id_desc");
+    return "/web?" + p.toString();
+  }
+
+  function applyActiveClasses() {
+    const s = getState();
+    document.querySelectorAll(".dashboard-card").forEach(card => {
+      card.classList.remove("active");
+
+      const type = card.dataset.dash;
+
+      if (type === "overdue" && s.only_overdue === "1") card.classList.add("active");
+      if (type === "status" && (card.dataset.status || "") === (s.status_filter || "")) card.classList.add("active");
+      if (type === "all" && !s.only_overdue && !s.status_filter) card.classList.add("active");
+    });
+  }
+
+  applyActiveClasses();
+
+  document.querySelectorAll(".dashboard-card").forEach(card => {
+    card.addEventListener("click", function () {
+      const s = getState();
+      const type = card.dataset.dash;
+
+      const next = { ...s };
+
+      if (type === "all") {
+        next.status_filter = "";
+        next.only_overdue = "";
+      } else if (type === "overdue") {
+        next.only_overdue = (s.only_overdue === "1") ? "" : "1";
+      } else if (type === "status") {
+        const target = card.dataset.status || "";
+        next.status_filter = (s.status_filter === target) ? "" : target;
+      }
+
+      window.location.href = buildUrl(next);
+    });
+  });
+});
+</script>
+
+
+
+  applyActiveClasses();
+
+  document.querySelectorAll(".dashboard-card").forEach(card => {
+    card.addEventListener("click", function () {
+      const s = getState();
+      const type = card.dataset.dash;
+
+      // копия состояния
+      const next = { ...s };
+
+      if (type === "all") {
+        // сброс status и overdue, остальное сохраняем
+        next.status_filter = "";
+        next.only_overdue = "";
+      }
+
+      if (type === "overdue") {
+        // toggle overdue
+        next.only_overdue = (s.only_overdue === "1") ? "" : "1";
+        // можно оставить статус как есть (или сбрасывать) — я оставил статус
+      }
+
+      if (type === "status") {
+        const target = card.dataset.status || "";
+        // toggle status
+        next.status_filter = (s.status_filter === target) ? "" : target;
+        // overdue оставляем как есть
+      }
+
+      window.location.href = buildUrl(next);
+    });
+  });
+});
+</script>
 
 
 
