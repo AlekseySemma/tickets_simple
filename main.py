@@ -351,10 +351,27 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         allowed = {"status", "description"}  # можно расширить
         incoming = {k: v for k, v in incoming.items() if k in allowed}
 
+    old_deadline = t.deadline
+    old_executor_id = t.executor_id
+    old_project_id = t.project_id
+
     for k, v in incoming.items():
         setattr(t, k, v)
 
-    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+    has_specific_log = False
+    if t.deadline != old_deadline:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение срока")
+        has_specific_log = True
+    if t.executor_id != old_executor_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение исполнителя")
+        has_specific_log = True
+    if t.project_id != old_project_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        has_specific_log = True
+
+    if not has_specific_log:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+
     db.commit(); db.refresh(t)
     return t
 
@@ -863,6 +880,10 @@ async def web_ticket_edit_save(
     project_id_raw = (form.get("project_id") or "").strip()
     executor_id_raw = (form.get("executor_id") or "").strip()
 
+    old_deadline = t.deadline
+    old_executor_id = t.executor_id
+    old_project_id = t.project_id
+
     if can_edit_full and status_raw:
         try:
             t.status = TicketStatus(status_raw)
@@ -920,7 +941,20 @@ async def web_ticket_edit_save(
 
     t.deadline = deadline
 
-    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+    has_specific_log = False
+    if t.deadline != old_deadline:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение срока")
+        has_specific_log = True
+    if t.executor_id != old_executor_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение исполнителя")
+        has_specific_log = True
+    if t.project_id != old_project_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        has_specific_log = True
+
+    if not has_specific_log:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+
     db.commit()          # ✅ без этого не сохранится
     db.refresh(t)
 
