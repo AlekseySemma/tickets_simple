@@ -814,43 +814,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
-  applyActiveClasses();
-
-  document.querySelectorAll(".dashboard-card").forEach(card => {
-    card.addEventListener("click", function () {
-      const s = getState();
-      const type = card.dataset.dash;
-
-      // копия состояния
-      const next = { ...s };
-
-      if (type === "all") {
-        // сброс status и overdue, остальное сохраняем
-        next.status_filter = "";
-        next.only_overdue = "";
-      }
-
-      if (type === "overdue") {
-        // toggle overdue
-        next.only_overdue = (s.only_overdue === "1") ? "" : "1";
-        // можно оставить статус как есть (или сбрасывать) — я оставил статус
-      }
-
-      if (type === "status") {
-        const target = card.dataset.status || "";
-        // toggle status
-        next.status_filter = (s.status_filter === target) ? "" : target;
-        // overdue оставляем как есть
-      }
-
-      window.location.href = buildUrl(next);
-    });
-  });
-});
-</script>
-
-
-
 
 </body>
 </html>
