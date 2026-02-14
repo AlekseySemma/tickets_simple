@@ -63,6 +63,8 @@
       padding: 14px;
       margin-bottom: 10px;
     }
+    .ticket-head-id { font-size: 12px; color: #7b8aa3; margin-bottom: 4px; }
+    .ticket-head-project { font-size: 13px; color: #476284; margin-bottom: 6px; }
     .ticket-head-title { margin-bottom: 6px; }
     .ticket-meta {
       display: flex;
@@ -90,8 +92,8 @@
   <div class="container py-4" style="max-width: 1000px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-        <h3 class="mb-0">Заявка #{{ t.id }}</h3>
-        <div class="muted">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+        <h3 class="mb-0">Заявка</h3>
+        <div class="muted">ID: #{{ t.id }}</div>
       </div>
       <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="/web">← Назад к списку</a>
@@ -104,10 +106,11 @@
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
             <div class="ticket-head">
+              <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <h5 class="ticket-head-title">{{ t.title }}</h5>
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
-                <span class="meta-chip">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></span>
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
                 <span class="meta-chip">Срок:

@@ -134,6 +134,8 @@
       padding: 14px;
       margin-bottom: 8px;
     }
+    .ticket-head-id { font-size: 12px; color: #7b8aa3; margin-bottom: 4px; }
+    .ticket-head-project { font-size: 13px; color: #476284; margin-bottom: 6px; }
     .ticket-head-title a { color: #0d3a8f; }
     .ticket-head-title a:hover { color: #0a2e72; }
     .ticket-meta {
@@ -400,15 +402,16 @@
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
             <div class="ticket-head">
+              <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <h5 class="ticket-head-title">
                 <a href="/web/tickets/{{ t.id }}" class="text-decoration-none">
-                  #{{ t.id }} — {{ t.title }}
+                  {{ t.title }}
                 </a>
               </h5>
 
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
-                <span class="meta-chip">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></span>
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Срок: <b>{{ format_dt(t.deadline) }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
