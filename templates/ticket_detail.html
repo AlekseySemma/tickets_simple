@@ -15,6 +15,11 @@
     .st-CANCELED { background: #212529 !important; }
     .st-OVERDUE { background: #dc3545 !important; }
 
+    .ticket {
+      border: 1px solid #dfe7f5;
+      border-radius: 14px;
+      box-shadow: 0 .45rem 1rem rgba(33, 37, 41, .05);
+    }
     .ticket.overdue { border-color: #dc3545 !important; }
 
     .status-menu {
@@ -67,6 +72,12 @@
       padding: 4px 10px;
       font-size: 12px;
       color: #495057;
+    }
+    .section-card {
+      background: #fbfcff;
+      border: 1px solid #e8eef9;
+      border-radius: 12px;
+      padding: 12px;
     }
   </style>
 </head>
@@ -160,7 +171,7 @@
           <div class="col-12 col-lg-7">
             <h5>Комментарии</h5>
 
-            <div class="mb-2 comments-list">
+            <div class="mb-2 comments-list section-card">
               {% for c in comments %}
                 {% set is_mine = c.author_id == user.id %}
                 <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
@@ -188,7 +199,7 @@
           <div class="col-12 col-lg-5">
             <h5>Файлы</h5>
 
-            <div class="mb-2">
+            <div class="mb-2 section-card">
   {% for a in attachments %}
     {% set p = a.file_path or "" %}
     {% set lower = p|lower %}
@@ -232,7 +243,7 @@
 
         <div>
           <h5>Лог изменений</h5>
-          <div class="mb-0">
+          <div class="mb-0 section-card">
             {% for log in ticket_logs %}
               <div class="border rounded p-2 mb-2 bg-white">
                 <div class="small muted">
