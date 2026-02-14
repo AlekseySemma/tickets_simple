@@ -242,6 +242,33 @@ def format_dt(dt: datetime | None) -> str:
     return local_dt.strftime("%d.%m.%Y %H:%M")
 
 
+
+
+def format_deadline(dt: datetime | None) -> str:
+    if dt is None:
+        return "—"
+
+    now_local = datetime.now()
+    date_part = dt.date()
+    now_date = now_local.date()
+
+    if date_part == now_date:
+        return dt.strftime("Сегодня, %H:%M")
+    if date_part == (now_date - timedelta(days=1)):
+        return dt.strftime("Вчера, %H:%M")
+    if date_part == (now_date + timedelta(days=1)):
+        return dt.strftime("Завтра, %H:%M")
+
+    month_names = {
+        1: "янв", 2: "фев", 3: "мар", 4: "апр", 5: "мая", 6: "июн",
+        7: "июл", 8: "авг", 9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+    }
+
+    if dt.year == now_local.year:
+        mon = month_names.get(dt.month, dt.strftime("%m"))
+        return f"{dt.day} {mon}, {dt.strftime('%H:%M')}"
+
+    return dt.strftime("%d.%m.%Y %H:%M")
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
     db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
 
@@ -293,6 +320,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["format_dt"] = format_dt
 templates.env.globals["to_local_dt"] = to_local_dt
+templates.env.globals["format_deadline"] = format_deadline
 
 @app.get("/health")
 def health():

@@ -432,7 +432,7 @@
                 {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not deadline_overdue) and t.deadline <= now_plus_24h %}
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
-                <span class="meta-chip deadline-chip {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок: <b>{{ format_dt(t.deadline) }}</b></span>
+                <span class="meta-chip deadline-chip {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок: <b>{{ format_deadline(t.deadline) }}</b></span>
               </div>
             </div>
           </div>

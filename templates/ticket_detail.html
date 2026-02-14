@@ -133,7 +133,7 @@
                 <span class="meta-chip deadline-chip {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок:
                   <b>
                     {% if t.deadline %}
-                      {{ format_dt(t.deadline) }}
+                      {{ format_deadline(t.deadline) }}
                     {% else %}
                       —
                     {% endif %}
