@@ -462,6 +462,7 @@ def web_tickets(
     q: str | None = None,
     only_overdue: str | None = None,
     sort: str | None = None,
+    open_create: str | None = None,
 ):
     # 1) tickets с учетом роли
     if user.role == Role.executor:
@@ -578,6 +579,16 @@ def web_tickets(
             overdue_count += 1
 
 
+    filters_form_open = bool(
+        (status_filter or "").strip()
+        or project_id_int is not None
+        or (executor_id or "").strip()
+        or (q or "").strip()
+        or overdue_enabled
+        or sort_value != "id_desc"
+    )
+    create_form_open = (open_create == "1")
+
     return templates.TemplateResponse(
         "tickets.html",
         {
@@ -601,6 +612,8 @@ def web_tickets(
             "total_count": total_count,
             "counts_by_status": counts_by_status,
             "overdue_count": overdue_count,
+            "filters_form_open": filters_form_open,
+            "create_form_open": create_form_open,
 
         },
     )
@@ -616,7 +629,14 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
     title = (form.get("title") or "").strip()
     description = (form.get("description") or "").strip() or None
-    project_id = int(form.get("project_id"))
+
+    project_id_raw = (form.get("project_id") or "").strip()
+    if not title or not project_id_raw:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+    try:
+        project_id = int(project_id_raw)
+    except ValueError:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     executor_id_raw = (form.get("executor_id") or "").strip()
     executor_id = int(executor_id_raw) if executor_id_raw else None

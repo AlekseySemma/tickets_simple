@@ -186,7 +186,7 @@
     {% if user.role in ["CURATOR", "EXECUTOR"] %}
     <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">
-        <details class="panel-toggle">
+        <details class="panel-toggle" {% if create_form_open %}open{% endif %}>
           <summary class="panel-title mb-0">
             <span>Создать заявку</span>
             <span class="panel-chevron">▼</span>
@@ -257,7 +257,7 @@
 
     <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">
-        <details class="panel-toggle">
+        <details class="panel-toggle" {% if filters_form_open %}open{% endif %}>
           <summary class="panel-title mb-0">
             <span>Фильтры и поиск</span>
             <span class="panel-chevron">▼</span>
