@@ -152,10 +152,20 @@
       color: #495057;
     }
     .meta-chip.deadline-chip {
-      background: #fff4f4;
-      border-color: #f1b0b7;
-      color: #8a1f2d;
       font-weight: 700;
+      background: #eef6ff;
+      border-color: #b6d4fe;
+      color: #0a3d91;
+    }
+    .meta-chip.deadline-chip.soon {
+      background: #fff8e6;
+      border-color: #ffe08a;
+      color: #7a5300;
+    }
+    .meta-chip.deadline-chip.overdue {
+      background: #fff1f3;
+      border-color: #f1aeb5;
+      color: #842029;
     }
     .sub-card {
       background: #fbfcff;
@@ -418,9 +428,11 @@
 
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
+                {% set deadline_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
+                {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not deadline_overdue) and t.deadline <= now_plus_24h %}
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
-                <span class="meta-chip deadline-chip">Крайний срок: <b>{{ format_dt(t.deadline) }}</b></span>
+                <span class="meta-chip deadline-chip {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок: <b>{{ format_dt(t.deadline) }}</b></span>
               </div>
             </div>
           </div>

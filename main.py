@@ -535,6 +535,7 @@ def web_tickets(
         ]
 
     now = datetime.now()
+    now_plus_24h = now + timedelta(hours=24)
 
         # только просроченные
     overdue_enabled = (only_overdue == "1")
@@ -602,6 +603,7 @@ def web_tickets(
             "comments_by_ticket": comments_by_ticket,
             "attachments_by_ticket": attachments_by_ticket,
             "now": now,
+            "now_plus_24h": now_plus_24h,
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
@@ -1136,6 +1138,12 @@ def web_ticket_detail(
 
     now = datetime.now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
+    is_deadline_soon = bool(
+        t.deadline
+        and not is_overdue
+        and t.status.value not in ("DONE", "CANCELED")
+        and t.deadline <= now + timedelta(hours=24)
+    )
 
     status_labels = {
         "NEW": "Новая",
@@ -1158,6 +1166,7 @@ def web_ticket_detail(
             "ticket_logs": ticket_logs,
             "now": now,
             "is_overdue": is_overdue,
+            "is_deadline_soon": is_deadline_soon,
             "status_labels": status_labels,
         },
     )
