@@ -92,6 +92,14 @@ class Attachment(Base):
     file_path: Mapped[str] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+class TicketLog(Base):
+    __tablename__ = "ticket_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 Base.metadata.create_all(bind=engine)
 
 # =========================
@@ -197,6 +205,74 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     return n if n.startswith("/web") else fallback
 
 
+def to_local_dt(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt + timedelta(hours=3)
+
+
+def format_dt(dt: datetime | None) -> str:
+    local_dt = to_local_dt(dt)
+    if local_dt is None:
+        return "—"
+
+    now_local = to_local_dt(datetime.utcnow())
+    if not now_local:
+        return local_dt.strftime("%d.%m.%Y %H:%M")
+
+    date_part = local_dt.date()
+    now_date = now_local.date()
+
+    if date_part == now_date:
+        return local_dt.strftime("Сегодня, %H:%M")
+    if date_part == (now_date - timedelta(days=1)):
+        return local_dt.strftime("Вчера, %H:%M")
+    if date_part == (now_date + timedelta(days=1)):
+        return local_dt.strftime("Завтра, %H:%M")
+
+    month_names = {
+        1: "янв", 2: "фев", 3: "мар", 4: "апр", 5: "мая", 6: "июн",
+        7: "июл", 8: "авг", 9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+    }
+
+    if local_dt.year == now_local.year:
+        mon = month_names.get(local_dt.month, local_dt.strftime("%m"))
+        return f"{local_dt.day} {mon}, {local_dt.strftime('%H:%M')}"
+
+    return local_dt.strftime("%d.%m.%Y %H:%M")
+
+
+
+
+def format_deadline(dt: datetime | None) -> str:
+    if dt is None:
+        return "—"
+
+    now_local = datetime.now()
+    date_part = dt.date()
+    now_date = now_local.date()
+
+    if date_part == now_date:
+        return dt.strftime("Сегодня, %H:%M")
+    if date_part == (now_date - timedelta(days=1)):
+        return dt.strftime("Вчера, %H:%M")
+    if date_part == (now_date + timedelta(days=1)):
+        return dt.strftime("Завтра, %H:%M")
+
+    month_names = {
+        1: "янв", 2: "фев", 3: "мар", 4: "апр", 5: "мая", 6: "июн",
+        7: "июл", 8: "авг", 9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+    }
+
+    if dt.year == now_local.year:
+        mon = month_names.get(dt.month, dt.strftime("%m"))
+        return f"{dt.day} {mon}, {dt.strftime('%H:%M')}"
+
+    return dt.strftime("%d.%m.%Y %H:%M")
+def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
+    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
+
+
 def hash_password(p: str) -> str:
     return pwd_context.hash(p)
 
@@ -242,6 +318,9 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["format_dt"] = format_dt
+templates.env.globals["to_local_dt"] = to_local_dt
+templates.env.globals["format_deadline"] = format_deadline
 
 @app.get("/health")
 def health():
@@ -311,7 +390,11 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         project_id=payload.project_id,
         created_by=user.id
     )
-    db.add(t); db.commit(); db.refresh(t)
+    db.add(t)
+    db.flush()
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+    db.commit()
+    db.refresh(t)
     return t
 
 @app.get("/tickets", response_model=list[TicketOut])
@@ -335,8 +418,26 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         allowed = {"status", "description"}  # можно расширить
         incoming = {k: v for k, v in incoming.items() if k in allowed}
 
+    old_deadline = t.deadline
+    old_executor_id = t.executor_id
+    old_project_id = t.project_id
+
     for k, v in incoming.items():
         setattr(t, k, v)
+
+    has_specific_log = False
+    if t.deadline != old_deadline:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение срока")
+        has_specific_log = True
+    if t.executor_id != old_executor_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение исполнителя")
+        has_specific_log = True
+    if t.project_id != old_project_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        has_specific_log = True
+
+    if not has_specific_log:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
 
     db.commit(); db.refresh(t)
     return t
@@ -369,7 +470,9 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
         f.write(file.file.read())
 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path))
-    db.add(a); db.commit(); db.refresh(a)
+    db.add(a)
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
+    db.commit(); db.refresh(a)
     return a
 
 # =========================
@@ -411,6 +514,8 @@ def web_tickets(
     q: str | None = None,
     only_overdue: str | None = None,
     sort: str | None = None,
+    open_create: str | None = None,
+    page: int = 1,
 ):
     # 1) tickets с учетом роли
     if user.role == Role.executor:
@@ -483,6 +588,7 @@ def web_tickets(
         ]
 
     now = datetime.now()
+    now_plus_24h = now + timedelta(hours=24)
 
         # только просроченные
     overdue_enabled = (only_overdue == "1")
@@ -527,6 +633,24 @@ def web_tickets(
             overdue_count += 1
 
 
+    filters_form_open = bool(
+        (status_filter or "").strip()
+        or project_id_int is not None
+        or (executor_id or "").strip()
+        or (q or "").strip()
+        or overdue_enabled
+        or sort_value != "id_desc"
+    )
+    create_form_open = (open_create == "1")
+
+    # Пагинация
+    per_page = 10
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    end = start + per_page
+    tickets = tickets[start:end]
+
     return templates.TemplateResponse(
         "tickets.html",
         {
@@ -540,6 +664,7 @@ def web_tickets(
             "comments_by_ticket": comments_by_ticket,
             "attachments_by_ticket": attachments_by_ticket,
             "now": now,
+            "now_plus_24h": now_plus_24h,
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
@@ -550,6 +675,14 @@ def web_tickets(
             "total_count": total_count,
             "counts_by_status": counts_by_status,
             "overdue_count": overdue_count,
+            "filters_form_open": filters_form_open,
+            "create_form_open": create_form_open,
+            "page": page,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "prev_page": page - 1,
+            "next_page": page + 1,
 
         },
     )
@@ -565,7 +698,14 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
     title = (form.get("title") or "").strip()
     description = (form.get("description") or "").strip() or None
-    project_id = int(form.get("project_id"))
+
+    project_id_raw = (form.get("project_id") or "").strip()
+    if not title or not project_id_raw:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+    try:
+        project_id = int(project_id_raw)
+    except ValueError:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     executor_id_raw = (form.get("executor_id") or "").strip()
     executor_id = int(executor_id_raw) if executor_id_raw else None
@@ -611,6 +751,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         created_by=user.id,
     )
     db.add(t)
+    db.flush()
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
     db.commit()
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
@@ -679,6 +821,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
         raise HTTPException(400, "Missing status")
 
     t.status = TicketStatus(status_raw)
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
     db.commit()
 
     now = datetime.now()
@@ -754,6 +897,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     # сохраняем путь как URL (удобно для шаблонов)
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}")
     db.add(a)
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
     db.commit()
 
     form = await request.form()
@@ -840,6 +984,10 @@ async def web_ticket_edit_save(
     project_id_raw = (form.get("project_id") or "").strip()
     executor_id_raw = (form.get("executor_id") or "").strip()
 
+    old_deadline = t.deadline
+    old_executor_id = t.executor_id
+    old_project_id = t.project_id
+
     if can_edit_full and status_raw:
         try:
             t.status = TicketStatus(status_raw)
@@ -896,6 +1044,20 @@ async def web_ticket_edit_save(
                 deadline = None
 
     t.deadline = deadline
+
+    has_specific_log = False
+    if t.deadline != old_deadline:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение срока")
+        has_specific_log = True
+    if t.executor_id != old_executor_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение исполнителя")
+        has_specific_log = True
+    if t.project_id != old_project_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        has_specific_log = True
+
+    if not has_specific_log:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
 
     db.commit()          # ✅ без этого не сохранится
     db.refresh(t)
@@ -1038,9 +1200,16 @@ def web_ticket_detail(
 
     comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
     attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
+    ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.desc()).all()
 
     now = datetime.now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
+    is_deadline_soon = bool(
+        t.deadline
+        and not is_overdue
+        and t.status.value not in ("DONE", "CANCELED")
+        and t.deadline <= now + timedelta(hours=24)
+    )
 
     status_labels = {
         "NEW": "Новая",
@@ -1060,8 +1229,10 @@ def web_ticket_detail(
             "executors": executors,
             "comments": comments,
             "attachments": attachments,
+            "ticket_logs": ticket_logs,
             "now": now,
             "is_overdue": is_overdue,
+            "is_deadline_soon": is_deadline_soon,
             "status_labels": status_labels,
         },
     )
