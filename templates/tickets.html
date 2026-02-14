@@ -7,7 +7,62 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     .muted { color: #6c757d; }
-    .ticket { border: 1px solid #e9ecef; border-radius: 12px; padding: 16px; margin-bottom: 12px; background: #fff; }
+    body {
+      background: linear-gradient(180deg, #eef2f8 0%, #e8edf5 100%) !important;
+      min-height: 100vh;
+    }
+    .panel-card {
+      border: 1px solid #d7e2f4;
+      border-radius: 14px;
+      box-shadow: 0 .45rem 1rem rgba(27, 43, 65, .08);
+      background: #f8fbff;
+    }
+    .panel-card .card-body {
+      background: linear-gradient(180deg, #fafdff 0%, #f3f8ff 100%);
+      border-radius: 14px;
+    }
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #24406c;
+      margin-bottom: .75rem;
+    }
+    details.panel-toggle > summary {
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: .75rem;
+    }
+    details.panel-toggle > summary::-webkit-details-marker { display: none; }
+    .panel-chevron {
+      color: #4c6b96;
+      transition: transform .2s ease;
+      font-size: .9rem;
+    }
+    details.panel-toggle[open] .panel-chevron { transform: rotate(180deg); }
+    .form-label {
+      font-weight: 600;
+      color: #365175;
+    }
+    .form-control, .form-select {
+      border-color: #cdd9eb;
+      background: #fff;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: #86b7fe;
+      box-shadow: 0 0 0 .2rem rgba(13,110,253,.15);
+    }
+    .ticket {
+      border: 1px solid #dfe7f5;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+      background: #fff;
+      box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .05);
+    }
     .ticket h5 { margin: 0 0 8px 0; }
     .badge-status { font-size: 12px; }
     .ticket.overdue { border-color: #dc3545; }
@@ -56,6 +111,58 @@
   outline-offset: 2px;
 }
 
+    .comments-list { display: flex; flex-direction: column; gap: 8px; }
+    .comment-row { display: flex; }
+    .comment-row.theirs { justify-content: flex-start; }
+    .comment-row.mine { justify-content: flex-end; }
+    .comment-bubble {
+      max-width: 85%;
+      border-radius: 12px;
+      padding: .5rem .65rem;
+      border: 1px solid #e9ecef;
+      background: #fff;
+    }
+    .comment-row.mine .comment-bubble {
+      background: #e7f1ff;
+      border-color: #b6d4fe;
+    }
+
+    .ticket-head {
+      background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 55%, #e7f1ff 100%);
+      border: 1px solid #dce7fb;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 8px;
+    }
+    .ticket-head-id { font-size: 12px; color: #7b8aa3; margin-bottom: 4px; }
+    .ticket-head-project { font-size: 13px; color: #476284; margin-bottom: 6px; }
+    .ticket-head-title a { color: #0d3a8f; }
+    .ticket-head-title a:hover { color: #0a2e72; }
+    .ticket-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .meta-chip {
+      background: #fff;
+      border: 1px solid #dfe6f3;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #495057;
+    }
+    .meta-chip.deadline-chip {
+      background: #fff4f4;
+      border-color: #f1b0b7;
+      color: #8a1f2d;
+      font-weight: 700;
+    }
+    .sub-card {
+      background: #fbfcff;
+      border: 1px solid #e8eef9;
+      border-radius: 12px;
+      padding: 12px;
+    }
 
   </style>
   <input type="hidden" name="next" value="/web">
@@ -76,157 +183,154 @@
   <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
 </div>
     </div>
-    <div class="card shadow-sm mb-3">
-  <div class="card-body">
-    <form method="get" action="/web" class="row g-2 align-items-end">
-      <div class="col-12 col-md-4">
-        <label class="form-label mb-1">Поиск</label>
-        <input name="q" class="form-control" placeholder="Название или описание..." value="{{ q }}" />
-      </div>
-
-      <div class="col-6 col-md-3">
-        <label class="form-label mb-1">Статус</label>
-        <select name="status_filter" class="form-select">
-          <option value="" {% if not status_filter %}selected{% endif %}>Все</option>
-          <option value="NEW" {% if status_filter == "NEW" %}selected{% endif %}>NEW</option>
-          <option value="IN_PROGRESS" {% if status_filter == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
-          <option value="DONE" {% if status_filter == "DONE" %}selected{% endif %}>DONE</option>
-          <option value="CANCELED" {% if status_filter == "CANCELED" %}selected{% endif %}>CANCELED</option>
-        </select>
-      </div>
-
-      <div class="col-6 col-md-3">
-        <label class="form-label mb-1">Проект</label>
-        <select name="project_id" class="form-select">
-          <option value="" {% if not project_id_filter %}selected{% endif %}>Все</option>
-          {% for p in projects %}
-            <option value="{{ p.id }}" {% if project_id_filter == p.id %}selected{% endif %}>{{ p.name }}</option>
-
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-2 d-flex gap-2">
-        <button class="btn btn-primary w-100">Применить</button>
-      </div>
-      {% if user.role == "CURATOR" %}
-  <div class="col-6 col-md-3">
-    <label class="form-label mb-1">Исполнитель</label>
-    <select name="executor_id" class="form-select">
-  <option value="" {% if not executor_id_filter %}selected{% endif %}>Все</option>
-  <option value="__none__" {% if executor_id_filter == "__none__" %}selected{% endif %}>— Не назначено —</option>
-  {% for e in executors %}
-    <option value="{{ e.id }}" {% if executor_id_filter == e.id %}selected{% endif %}>
-      {{ e.name }}
-    </option>
-  {% endfor %}
-</select>
-
-  </div>
-
-  <div class="col-12 col-md-3">
-  <div class="form-check mt-4">
-    <input class="form-check-input" type="checkbox" id="only_overdue" name="only_overdue" value="1"
-           {% if only_overdue == "1" %}checked{% endif %}>
-    <label class="form-check-label" for="only_overdue">Только просроченные</label>
-  </div>
-</div>
-
-
-  
-{% endif %}
-
-
-      <div class="col-12">
-        <div class="col-6 col-md-3">
-  <label class="form-label mb-1">Сортировка</label>
-  <select name="sort" class="form-select">
-    <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
-    <option value="id_asc" {% if sort == "id_asc" %}selected{% endif %}>Сначала старые</option>
-    <option value="deadline_asc" {% if sort == "deadline_asc" %}selected{% endif %}>Срок: ближайшие</option>
-    <option value="deadline_desc" {% if sort == "deadline_desc" %}selected{% endif %}>Срок: дальние</option>
-    <option value="status" {% if sort == "status" %}selected{% endif %}>По статусу</option>
-  </select>
-</div>
-
-        <a class="small" href="/web">Сбросить фильтры</a>
-      </div>
-    </form>
-  </div>
-</div>
-
-
-    {% if user.role == "CURATOR", "EXECUTOR" %}
-    <div class="card shadow-sm mb-3">
+    {% if user.role in ["CURATOR", "EXECUTOR"] %}
+    <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">
-        <h5 class="mb-3">Создать заявку</h5>
-        <form method="post" action="/web/tickets/create" class="row g-2">
-          <div class="col-12 col-md-6">
-            <input name="title" class="form-control" placeholder="Название" required />
+        <details class="panel-toggle">
+          <summary class="panel-title mb-0">
+            <span>Создать заявку</span>
+            <span class="panel-chevron">▼</span>
+          </summary>
+          <form method="post" action="/web/tickets/create" class="row g-2 mt-1">
+            <div class="col-12 col-md-6">
+              <input name="title" class="form-control" placeholder="Название" required />
+            </div>
+            <div class="col-12 col-md-6">
+              <select name="project_id" class="form-select" required>
+                <option value="" selected disabled>Проект</option>
+                {% for p in projects %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <textarea name="description" class="form-control" placeholder="Описание"></textarea>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="row g-2">
+                <div class="col-12 col-md-6">
+                  <label class="form-label mb-1">Крайний срок: дата</label>
+                  <input id="deadline_date" name="deadline_date" type="date" class="form-control" />
+                </div>
+
+                <div class="col-12 col-md-6">
+                  <label class="form-label mb-1">Время (введите 4 цифры, HHMM)</label>
+                  <div class="input-group">
+                    <input id="deadline_time4" name="deadline_time4" class="form-control" inputmode="numeric" placeholder="например 0930 или 1745" maxlength="4" />
+                    <span class="input-group-text" id="deadline_time_pretty">--:--</span>
+                  </div>
+                  <div class="muted small mt-1">
+                    Можно вводить 1–4 цифры: <code>9</code> → <code>09:00</code>, <code>930</code> → <code>09:30</code>. Пусто — срок не установлен.
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 muted small">
+                Если не заполнять — срок не будет установлен.
+              </div>
+            </div>
+            <div class="col-12 col-md-6">
+              {% if user.role == "CURATOR" %}
+                <select name="executor_id" class="form-select">
+                  <option value="" selected>Исполнитель (необязательно)</option>
+                  {% for e in executors %}
+                    <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <input type="hidden" name="executor_id" value="" />
+                <div class="form-control bg-light">Исполнитель: вы сами</div>
+              {% endif %}
+            </div>
+            <div class="col-12">
+              <button class="btn btn-primary">Создать</button>
+            </div>
+          </form>
+
+          <div class="mt-2 muted small">
+            Чтобы список проектов/исполнителей был не пустым — создай проект и исполнителя (можно в Swagger).
           </div>
-          <div class="col-12 col-md-6">
-            <select name="project_id" class="form-select" required>
-              <option value="" selected disabled>Проект</option>
-              {% for p in projects %}
-                <option value="{{ p.id }}">{{ p.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-12">
-            <textarea name="description" class="form-control" placeholder="Описание"></textarea>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="row g-2">
-  <div class="row g-2">
-  <div class="col-12 col-md-6">
-    <label class="form-label mb-1">Крайний срок: дата</label>
-    <input id="deadline_date" name="deadline_date" type="date" class="form-control" />
-  </div>
-
-  <div class="col-12 col-md-6">
-    <label class="form-label mb-1">Время (введите 4 цифры, HHMM)</label>
-    <div class="input-group">
-      <input id="deadline_time4" name="deadline_time4" class="form-control" inputmode="numeric" placeholder="например 0930 или 1745" maxlength="4" />
-      <span class="input-group-text" id="deadline_time_pretty">--:--</span>
-    </div>
-    <div class="muted small mt-1">
-      Можно вводить 1–4 цифры: <code>9</code> → <code>09:00</code>, <code>930</code> → <code>09:30</code>. Пусто — срок не установлен.
-    </div>
-  </div>
-</div>
-
-
-
-  <div class="col-12 muted small">
-    Если не заполнять — срок не будет установлен.
-  </div>
-</div>
-
-          </div>
-          <div class="col-12 col-md-6">
-            {% if user.role == "CURATOR" %}
-  <select name="executor_id" class="form-select">
-    <option value="" selected>Исполнитель (необязательно)</option>
-    {% for e in executors %}
-      <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
-    {% endfor %}
-  </select>
-{% else %}
-  <input type="hidden" name="executor_id" value="" />
-  <div class="form-control bg-light">Исполнитель: вы сами</div>
-{% endif %}
-
-          </div>
-          <div class="col-12">
-            <button class="btn btn-primary">Создать</button>
-          </div>
-        </form>
-
-        <div class="mt-2 muted small">
-          Чтобы список проектов/исполнителей был не пустым — создай проект и исполнителя (можно в Swagger).
-        </div>
+        </details>
       </div>
     </div>
     {% endif %}
+
+    <div class="card shadow-sm mb-3 panel-card">
+      <div class="card-body">
+        <details class="panel-toggle">
+          <summary class="panel-title mb-0">
+            <span>Фильтры и поиск</span>
+            <span class="panel-chevron">▼</span>
+          </summary>
+          <form method="get" action="/web" class="row g-2 align-items-end mt-1">
+            <div class="col-12 col-md-4">
+              <label class="form-label mb-1">Поиск</label>
+              <input name="q" class="form-control" placeholder="Название или описание..." value="{{ q }}" />
+            </div>
+
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Статус</label>
+              <select name="status_filter" class="form-select">
+                <option value="" {% if not status_filter %}selected{% endif %}>Все</option>
+                <option value="NEW" {% if status_filter == "NEW" %}selected{% endif %}>NEW</option>
+                <option value="IN_PROGRESS" {% if status_filter == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
+                <option value="DONE" {% if status_filter == "DONE" %}selected{% endif %}>DONE</option>
+                <option value="CANCELED" {% if status_filter == "CANCELED" %}selected{% endif %}>CANCELED</option>
+              </select>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Проект</label>
+              <select name="project_id" class="form-select">
+                <option value="" {% if not project_id_filter %}selected{% endif %}>Все</option>
+                {% for p in projects %}
+                  <option value="{{ p.id }}" {% if project_id_filter == p.id %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 d-flex gap-2">
+              <button class="btn btn-primary w-100">Применить</button>
+            </div>
+
+            {% if user.role == "CURATOR" %}
+              <div class="col-6 col-md-3">
+                <label class="form-label mb-1">Исполнитель</label>
+                <select name="executor_id" class="form-select">
+                  <option value="" {% if not executor_id_filter %}selected{% endif %}>Все</option>
+                  <option value="__none__" {% if executor_id_filter == "__none__" %}selected{% endif %}>— Не назначено —</option>
+                  {% for e in executors %}
+                    <option value="{{ e.id }}" {% if executor_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="col-12 col-md-3">
+                <div class="form-check mt-4">
+                  <input class="form-check-input" type="checkbox" id="only_overdue" name="only_overdue" value="1"
+                         {% if only_overdue == "1" %}checked{% endif %}>
+                  <label class="form-check-label" for="only_overdue">Только просроченные</label>
+                </div>
+              </div>
+            {% endif %}
+
+            <div class="col-12">
+              <div class="col-6 col-md-3">
+                <label class="form-label mb-1">Сортировка</label>
+                <select name="sort" class="form-select">
+                  <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
+                  <option value="id_asc" {% if sort == "id_asc" %}selected{% endif %}>Сначала старые</option>
+                  <option value="deadline_asc" {% if sort == "deadline_asc" %}selected{% endif %}>Срок: ближайшие</option>
+                  <option value="deadline_desc" {% if sort == "deadline_desc" %}selected{% endif %}>Срок: дальние</option>
+                  <option value="status" {% if sort == "status" %}selected{% endif %}>По статусу</option>
+                </select>
+              </div>
+
+              <a class="small" href="/web">Сбросить фильтры</a>
+            </div>
+          </form>
+        </details>
+      </div>
+    </div>
 
     <div class="row g-2 mb-3">
 
@@ -303,18 +407,21 @@
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
-            <h5>
-  <a href="/web/tickets/{{ t.id }}" class="text-decoration-none">
-    #{{ t.id }} — {{ t.title }}
-  </a>
-</h5>
+            <div class="ticket-head">
+              <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+              <h5 class="ticket-head-title">
+                <a href="/web/tickets/{{ t.id }}" class="text-decoration-none">
+                  {{ t.title }}
+                </a>
+              </h5>
 
-            <div class="muted">{{ t.description or "" }}</div>
-            <div class="mt-2 muted small">
-              Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b> ·
-              Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b> ·
-              Срок: <b>{{ t.deadline or "—" }}</b> ·
-              Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b>
+              <div class="muted mb-2">{{ t.description or "" }}</div>
+              <div class="ticket-meta">
+                <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
+                <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
+                <span class="meta-chip deadline-chip">Крайний срок: <b>{{ format_dt(t.deadline) }}</b></span>
+              </div>
             </div>
           </div>
 
@@ -374,16 +481,20 @@
         <div class="row g-3">
           <div class="col-12 col-lg-7">
             <h6>Комментарии</h6>
-            <div class="mb-2">
-              {% for c in comments_by_ticket.get(t.id, []) %}
-                <div class="border rounded p-2 mb-2">
-                  <div class="small muted">
-                    <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+            <div class="mb-2 comments-list sub-card">
+              {% set recent_comments = comments_by_ticket.get(t.id, [])[-2:] %}
+              {% for c in recent_comments %}
+                {% set is_mine = c.author_id == user.id %}
+                <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
+                  <div class="comment-bubble">
+                    <div class="small muted">
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
+                    </div>
+                    <div>{{ c.text }}</div>
                   </div>
-                  <div>{{ c.text }}</div>
                 </div>
               {% endfor %}
-              {% if comments_by_ticket.get(t.id, [])|length == 0 %}
+              {% if recent_comments|length == 0 %}
                 <div class="muted small">Нет комментариев</div>
               {% endif %}
             </div>
