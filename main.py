@@ -215,6 +215,30 @@ def format_dt(dt: datetime | None) -> str:
     local_dt = to_local_dt(dt)
     if local_dt is None:
         return "—"
+
+    now_local = to_local_dt(datetime.utcnow())
+    if not now_local:
+        return local_dt.strftime("%d.%m.%Y %H:%M")
+
+    date_part = local_dt.date()
+    now_date = now_local.date()
+
+    if date_part == now_date:
+        return local_dt.strftime("Сегодня, %H:%M")
+    if date_part == (now_date - timedelta(days=1)):
+        return local_dt.strftime("Вчера, %H:%M")
+    if date_part == (now_date + timedelta(days=1)):
+        return local_dt.strftime("Завтра, %H:%M")
+
+    month_names = {
+        1: "янв", 2: "фев", 3: "мар", 4: "апр", 5: "мая", 6: "июн",
+        7: "июл", 8: "авг", 9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+    }
+
+    if local_dt.year == now_local.year:
+        mon = month_names.get(local_dt.month, local_dt.strftime("%m"))
+        return f"{local_dt.day} {mon}, {local_dt.strftime('%H:%M')}"
+
     return local_dt.strftime("%d.%m.%Y %H:%M")
 
 
