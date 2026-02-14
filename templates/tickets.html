@@ -539,6 +539,34 @@
       </div>
     {% endfor %}
 
+
+    {% if total_pages > 1 %}
+      <div class="d-flex align-items-center justify-content-between mt-3 mb-2">
+        <div class="small muted">Страница {{ page }} из {{ total_pages }}</div>
+        <div class="d-flex gap-2">
+          <form method="get" action="/web" class="m-0">
+            <input type="hidden" name="page" value="{{ prev_page }}">
+            <input type="hidden" name="q" value="{{ q }}">
+            <input type="hidden" name="status_filter" value="{{ status_filter }}">
+            <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+            <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
+            <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <button class="btn btn-sm btn-outline-secondary" {% if not has_prev %}disabled{% endif %}>← Назад</button>
+          </form>
+          <form method="get" action="/web" class="m-0">
+            <input type="hidden" name="page" value="{{ next_page }}">
+            <input type="hidden" name="q" value="{{ q }}">
+            <input type="hidden" name="status_filter" value="{{ status_filter }}">
+            <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+            <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
+            <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <button class="btn btn-sm btn-outline-secondary" {% if not has_next %}disabled{% endif %}>Вперёд →</button>
+          </form>
+        </div>
+      </div>
+    {% endif %}
     {% if tickets|length == 0 %}
       <div class="alert alert-info">Заявок пока нет.</div>
     {% endif %}

@@ -463,6 +463,7 @@ def web_tickets(
     only_overdue: str | None = None,
     sort: str | None = None,
     open_create: str | None = None,
+    page: int = 1,
 ):
     # 1) tickets с учетом роли
     if user.role == Role.executor:
@@ -590,6 +591,14 @@ def web_tickets(
     )
     create_form_open = (open_create == "1")
 
+    # Пагинация
+    per_page = 10
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    end = start + per_page
+    tickets = tickets[start:end]
+
     return templates.TemplateResponse(
         "tickets.html",
         {
@@ -616,6 +625,12 @@ def web_tickets(
             "overdue_count": overdue_count,
             "filters_form_open": filters_form_open,
             "create_form_open": create_form_open,
+            "page": page,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "prev_page": page - 1,
+            "next_page": page + 1,
 
         },
     )
