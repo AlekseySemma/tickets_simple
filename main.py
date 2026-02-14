@@ -92,6 +92,14 @@ class Attachment(Base):
     file_path: Mapped[str] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+class TicketLog(Base):
+    __tablename__ = "ticket_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 Base.metadata.create_all(bind=engine)
 
 # =========================
@@ -195,6 +203,10 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     if not n:
         return fallback
     return n if n.startswith("/web") else fallback
+
+
+def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
+    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
 
 
 def hash_password(p: str) -> str:
@@ -311,7 +323,11 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         project_id=payload.project_id,
         created_by=user.id
     )
-    db.add(t); db.commit(); db.refresh(t)
+    db.add(t)
+    db.flush()
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+    db.commit()
+    db.refresh(t)
     return t
 
 @app.get("/tickets", response_model=list[TicketOut])
@@ -338,6 +354,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     for k, v in incoming.items():
         setattr(t, k, v)
 
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
     db.commit(); db.refresh(t)
     return t
 
@@ -369,7 +386,9 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
         f.write(file.file.read())
 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path))
-    db.add(a); db.commit(); db.refresh(a)
+    db.add(a)
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
+    db.commit(); db.refresh(a)
     return a
 
 # =========================
@@ -611,6 +630,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         created_by=user.id,
     )
     db.add(t)
+    db.flush()
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
     db.commit()
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
@@ -679,6 +700,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
         raise HTTPException(400, "Missing status")
 
     t.status = TicketStatus(status_raw)
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
     db.commit()
 
     now = datetime.now()
@@ -754,6 +776,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     # сохраняем путь как URL (удобно для шаблонов)
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}")
     db.add(a)
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
     db.commit()
 
     form = await request.form()
@@ -897,6 +920,7 @@ async def web_ticket_edit_save(
 
     t.deadline = deadline
 
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
     db.commit()          # ✅ без этого не сохранится
     db.refresh(t)
 
@@ -1038,6 +1062,7 @@ def web_ticket_detail(
 
     comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
     attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
+    ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.asc()).all()
 
     now = datetime.now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
@@ -1060,6 +1085,7 @@ def web_ticket_detail(
             "executors": executors,
             "comments": comments,
             "attachments": attachments,
+            "ticket_logs": ticket_logs,
             "now": now,
             "is_overdue": is_overdue,
             "status_labels": status_labels,
