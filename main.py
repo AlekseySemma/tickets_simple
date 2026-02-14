@@ -934,8 +934,9 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
     deadline_date = None
     deadline_time4 = None
     if t.deadline:
-        deadline_date = t.deadline.strftime("%Y-%m-%d")
-        deadline_time4 = t.deadline.strftime("%H%M")
+        local_deadline = to_local_dt(t.deadline)
+        deadline_date = local_deadline.strftime("%Y-%m-%d")
+        deadline_time4 = local_deadline.strftime("%H%M")
 
     return templates.TemplateResponse(
         "ticket_edit.html",
