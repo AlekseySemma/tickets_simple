@@ -46,6 +46,28 @@
       background: #e7f1ff;
       border-color: #b6d4fe;
     }
+
+    .ticket-head {
+      background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 55%, #e7f1ff 100%);
+      border: 1px solid #dce7fb;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .ticket-head-title { margin-bottom: 6px; }
+    .ticket-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .meta-chip {
+      background: #fff;
+      border: 1px solid #dfe6f3;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #495057;
+    }
   </style>
 </head>
 
@@ -66,21 +88,23 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
-            <h5 class="mb-1">{{ t.title }}</h5>
-            <div class="muted mb-2">{{ t.description or "" }}</div>
-
-            <div class="muted small">
-                Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b>
-              Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b> ·
-              Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b> ·
-              Срок:
-              <b>
-                {% if t.deadline %}
-                  {{ t.deadline.strftime("%d.%m.%Y %H:%M") }}
-                {% else %}
-                  —
-                {% endif %}
-              </b>
+            <div class="ticket-head">
+              <h5 class="ticket-head-title">{{ t.title }}</h5>
+              <div class="muted mb-2">{{ t.description or "" }}</div>
+              <div class="ticket-meta">
+                <span class="meta-chip">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></span>
+                <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
+                <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
+                <span class="meta-chip">Срок:
+                  <b>
+                    {% if t.deadline %}
+                      {{ t.deadline.strftime("%d.%m.%Y %H:%M") }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </b>
+                </span>
+              </div>
             </div>
           </div>
 
