@@ -101,6 +101,7 @@
       border-radius: 12px;
       padding: 12px;
     }
+    .log-item.hidden { display: none; }
   </style>
 </head>
 
@@ -267,14 +268,37 @@
         <div>
           <h5>Лог изменений</h5>
           <div class="mb-0 section-card">
-            {% for log in ticket_logs %}
-              <div class="border rounded p-2 mb-2 bg-white">
-                <div class="small muted">
-                  <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
-                </div>
-                <div>{{ log.action }}</div>
+            <div class="row g-2 mb-3">
+              <div class="col-12 col-md-4">
+                <label class="form-label mb-1" for="log-action-filter">Фильтр по действию</label>
+                <select id="log-action-filter" class="form-select form-select-sm">
+                  <option value="">Все действия</option>
+                  <option value="создание">Создание</option>
+                  <option value="изменение">Изменение</option>
+                  <option value="изменение срока">Изменение срока</option>
+                  <option value="изменение исполнителя">Изменение исполнителя</option>
+                  <option value="изменение проекта">Изменение проекта</option>
+                  <option value="добавление файла">Добавление файла</option>
+                </select>
               </div>
-            {% endfor %}
+              <div class="col-12 col-md-8">
+                <label class="form-label mb-1" for="log-search">Поиск по логу</label>
+                <input id="log-search" class="form-control form-control-sm" placeholder="Текст действия или имя пользователя" />
+              </div>
+            </div>
+
+            <div id="log-list">
+              {% for log in ticket_logs %}
+                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ (log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ ((log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
+                  <div class="small muted">
+                    <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
+                  </div>
+                  <div>{{ log.action }}</div>
+                </div>
+              {% endfor %}
+            </div>
+
+            <div id="log-empty-filter" class="muted small d-none">По выбранным параметрам записей нет</div>
             {% if ticket_logs|length == 0 %}
               <div class="muted small">Изменений пока нет</div>
             {% endif %}
@@ -360,6 +384,37 @@ document.addEventListener("DOMContentLoaded", function () {
       setStatus(btn.dataset.ticketId, btn.dataset.status);
     });
   });
+
+  // Фильтр и поиск по логу изменений
+  const logActionFilter = document.getElementById("log-action-filter");
+  const logSearch = document.getElementById("log-search");
+  const logItems = Array.from(document.querySelectorAll("#log-list .log-item"));
+  const logEmptyFilter = document.getElementById("log-empty-filter");
+
+  function applyLogFilters() {
+    if (!logItems.length) return;
+    const action = (logActionFilter?.value || "").toLowerCase().trim();
+    const query = (logSearch?.value || "").toLowerCase().trim();
+
+    let visible = 0;
+    logItems.forEach(item => {
+      const itemAction = (item.dataset.action || "").toLowerCase();
+      const itemText = (item.dataset.text || "").toLowerCase();
+
+      const actionOk = !action || itemAction.includes(action);
+      const queryOk = !query || itemText.includes(query);
+      const show = actionOk && queryOk;
+
+      item.classList.toggle("hidden", !show);
+      if (show) visible += 1;
+    });
+
+    if (logEmptyFilter) logEmptyFilter.classList.toggle("d-none", visible > 0);
+  }
+
+  if (logActionFilter) logActionFilter.addEventListener("change", applyLogFilters);
+  if (logSearch) logSearch.addEventListener("input", applyLogFilters);
+  applyLogFilters();
 });
 </script>
 
