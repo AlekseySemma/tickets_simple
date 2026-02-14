@@ -48,7 +48,7 @@
           <div class="col-12 col-md-6">
   <label class="form-label">Срок: дата</label>
   <input id="deadline_date" name="deadline_date" type="date" class="form-control"
-         value="{% if t.deadline %}{{ t.deadline.strftime('%Y-%m-%d') }}{% endif %}" />
+         value="{{ deadline_date or '' }}" />
 </div>
 
 <div class="col-12 col-md-6">
@@ -56,7 +56,7 @@
   <div class="input-group">
     <input id="deadline_time4" name="deadline_time4" class="form-control"
            inputmode="numeric" maxlength="4"
-           value="{% if t.deadline %}{{ t.deadline.strftime('%H%M') }}{% endif %}"
+           value="{{ deadline_time4 or '' }}"
            placeholder="например 9, 930, 1745" />
     <span class="input-group-text" id="deadline_time_pretty">--:--</span>
   </div>
