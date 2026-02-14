@@ -56,6 +56,21 @@
   outline-offset: 2px;
 }
 
+    .comments-list { display: flex; flex-direction: column; gap: 8px; }
+    .comment-row { display: flex; }
+    .comment-row.theirs { justify-content: flex-start; }
+    .comment-row.mine { justify-content: flex-end; }
+    .comment-bubble {
+      max-width: 85%;
+      border-radius: 12px;
+      padding: .5rem .65rem;
+      border: 1px solid #e9ecef;
+      background: #fff;
+    }
+    .comment-row.mine .comment-bubble {
+      background: #e7f1ff;
+      border-color: #b6d4fe;
+    }
 
   </style>
   <input type="hidden" name="next" value="/web">
@@ -374,14 +389,17 @@
         <div class="row g-3">
           <div class="col-12 col-lg-7">
             <h6>Комментарии</h6>
-            <div class="mb-2">
+            <div class="mb-2 comments-list">
               {% set recent_comments = comments_by_ticket.get(t.id, [])[-2:] %}
               {% for c in recent_comments %}
-                <div class="border rounded p-2 mb-2">
-                  <div class="small muted">
-                    <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                {% set is_mine = c.author_id == user.id %}
+                <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
+                  <div class="comment-bubble">
+                    <div class="small muted">
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                    </div>
+                    <div>{{ c.text }}</div>
                   </div>
-                  <div>{{ c.text }}</div>
                 </div>
               {% endfor %}
               {% if recent_comments|length == 0 %}
