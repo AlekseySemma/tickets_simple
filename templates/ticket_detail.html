@@ -8,6 +8,10 @@
 
   <style>
     .muted { color: #6c757d; }
+    body {
+      background: linear-gradient(180deg, #eef2f8 0%, #e8edf5 100%) !important;
+      min-height: 100vh;
+    }
     .badge-status { font-weight: 600; padding: .45rem .6rem; user-select: none; }
     .st-NEW { background: #6c757d !important; }
     .st-IN_PROGRESS { background: #0d6efd !important; }
@@ -15,6 +19,11 @@
     .st-CANCELED { background: #212529 !important; }
     .st-OVERDUE { background: #dc3545 !important; }
 
+    .ticket {
+      border: 1px solid #dfe7f5;
+      border-radius: 14px;
+      box-shadow: 0 .45rem 1rem rgba(33, 37, 41, .05);
+    }
     .ticket.overdue { border-color: #dc3545 !important; }
 
     .status-menu {
@@ -30,6 +39,69 @@
     }
     .status-menu.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
     .status-toggle { cursor: pointer; }
+
+    .comments-list { display: flex; flex-direction: column; gap: 8px; }
+    .comment-row { display: flex; }
+    .comment-row.theirs { justify-content: flex-start; }
+    .comment-row.mine { justify-content: flex-end; }
+    .comment-bubble {
+      max-width: 85%;
+      border-radius: 12px;
+      padding: .5rem .65rem;
+      border: 1px solid #e9ecef;
+      background: #fff;
+    }
+    .comment-row.mine .comment-bubble {
+      background: #e7f1ff;
+      border-color: #b6d4fe;
+    }
+
+    .ticket-head {
+      background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 55%, #e7f1ff 100%);
+      border: 1px solid #dce7fb;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .ticket-head-id { font-size: 12px; color: #7b8aa3; margin-bottom: 4px; }
+    .ticket-head-project { font-size: 13px; color: #476284; margin-bottom: 6px; }
+    .ticket-head-title { margin-bottom: 6px; }
+    .ticket-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .meta-chip {
+      background: #fff;
+      border: 1px solid #dfe6f3;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #495057;
+    }
+    .meta-chip.deadline-chip {
+      font-weight: 700;
+      background: #eef6ff;
+      border-color: #b6d4fe;
+      color: #0a3d91;
+    }
+    .meta-chip.deadline-chip.soon {
+      background: #fff8e6;
+      border-color: #ffe08a;
+      color: #7a5300;
+    }
+    .meta-chip.deadline-chip.overdue {
+      background: #fff1f3;
+      border-color: #f1aeb5;
+      color: #842029;
+    }
+    .section-card {
+      background: #fbfcff;
+      border: 1px solid #e8eef9;
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .log-item.hidden { display: none; }
   </style>
 </head>
 
@@ -37,8 +109,8 @@
   <div class="container py-4" style="max-width: 1000px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-        <h3 class="mb-0">Заявка #{{ t.id }}</h3>
-        <div class="muted">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+        <h3 class="mb-0">Заявка</h3>
+        <div class="muted">ID: #{{ t.id }}</div>
       </div>
       <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="/web">← Назад к списку</a>
@@ -50,21 +122,24 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div style="flex:1">
-            <h5 class="mb-1">{{ t.title }}</h5>
-            <div class="muted mb-2">{{ t.description or "" }}</div>
-
-            <div class="muted small">
-                Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b>
-              Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b> ·
-              Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b> ·
-              Срок:
-              <b>
-                {% if t.deadline %}
-                  {{ t.deadline.strftime("%d.%m.%Y %H:%M") }}
-                {% else %}
-                  —
-                {% endif %}
-              </b>
+            <div class="ticket-head">
+              <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+              <h5 class="ticket-head-title">{{ t.title }}</h5>
+              <div class="muted mb-2">{{ t.description or "" }}</div>
+              <div class="ticket-meta">
+                <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
+                <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
+                <span class="meta-chip deadline-chip {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок:
+                  <b>
+                    {% if t.deadline %}
+                      {{ format_dt(t.deadline) }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </b>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -120,13 +195,16 @@
           <div class="col-12 col-lg-7">
             <h5>Комментарии</h5>
 
-            <div class="mb-2">
+            <div class="mb-2 comments-list section-card">
               {% for c in comments %}
-                <div class="border rounded p-2 mb-2">
-                  <div class="small muted">
-                    <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                {% set is_mine = c.author_id == user.id %}
+                <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
+                  <div class="comment-bubble">
+                    <div class="small muted">
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
+                    </div>
+                    <div>{{ c.text }}</div>
                   </div>
-                  <div>{{ c.text }}</div>
                 </div>
               {% endfor %}
               {% if comments|length == 0 %}
@@ -145,7 +223,7 @@
           <div class="col-12 col-lg-5">
             <h5>Файлы</h5>
 
-            <div class="mb-2">
+            <div class="mb-2 section-card">
   {% for a in attachments %}
     {% set p = a.file_path or "" %}
     {% set lower = p|lower %}
@@ -182,6 +260,48 @@
 </form>
 
 
+          </div>
+        </div>
+
+        <hr class="my-4"/>
+
+        <div>
+          <h5>Лог изменений</h5>
+          <div class="mb-0 section-card">
+            <div class="row g-2 mb-3">
+              <div class="col-12 col-md-4">
+                <label class="form-label mb-1" for="log-action-filter">Фильтр по действию</label>
+                <select id="log-action-filter" class="form-select form-select-sm">
+                  <option value="">Все действия</option>
+                  <option value="создание">Создание</option>
+                  <option value="изменение">Изменение</option>
+                  <option value="изменение срока">Изменение срока</option>
+                  <option value="изменение исполнителя">Изменение исполнителя</option>
+                  <option value="изменение проекта">Изменение проекта</option>
+                  <option value="добавление файла">Добавление файла</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-8">
+                <label class="form-label mb-1" for="log-search">Поиск по логу</label>
+                <input id="log-search" class="form-control form-control-sm" placeholder="Текст действия или имя пользователя" />
+              </div>
+            </div>
+
+            <div id="log-list">
+              {% for log in ticket_logs %}
+                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ (log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ ((log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
+                  <div class="small muted">
+                    <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
+                  </div>
+                  <div>{{ log.action }}</div>
+                </div>
+              {% endfor %}
+            </div>
+
+            <div id="log-empty-filter" class="muted small d-none">По выбранным параметрам записей нет</div>
+            {% if ticket_logs|length == 0 %}
+              <div class="muted small">Изменений пока нет</div>
+            {% endif %}
           </div>
         </div>
 
@@ -264,6 +384,37 @@ document.addEventListener("DOMContentLoaded", function () {
       setStatus(btn.dataset.ticketId, btn.dataset.status);
     });
   });
+
+  // Фильтр и поиск по логу изменений
+  const logActionFilter = document.getElementById("log-action-filter");
+  const logSearch = document.getElementById("log-search");
+  const logItems = Array.from(document.querySelectorAll("#log-list .log-item"));
+  const logEmptyFilter = document.getElementById("log-empty-filter");
+
+  function applyLogFilters() {
+    if (!logItems.length) return;
+    const action = (logActionFilter?.value || "").toLowerCase().trim();
+    const query = (logSearch?.value || "").toLowerCase().trim();
+
+    let visible = 0;
+    logItems.forEach(item => {
+      const itemAction = (item.dataset.action || "").toLowerCase();
+      const itemText = (item.dataset.text || "").toLowerCase();
+
+      const actionOk = !action || itemAction.includes(action);
+      const queryOk = !query || itemText.includes(query);
+      const show = actionOk && queryOk;
+
+      item.classList.toggle("hidden", !show);
+      if (show) visible += 1;
+    });
+
+    if (logEmptyFilter) logEmptyFilter.classList.toggle("d-none", visible > 0);
+  }
+
+  if (logActionFilter) logActionFilter.addEventListener("change", applyLogFilters);
+  if (logSearch) logSearch.addEventListener("input", applyLogFilters);
+  applyLogFilters();
 });
 </script>
 
