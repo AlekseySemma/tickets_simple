@@ -79,6 +79,12 @@
       font-size: 12px;
       color: #495057;
     }
+    .meta-chip.deadline-chip {
+      background: #fff4f4;
+      border-color: #f1b0b7;
+      color: #8a1f2d;
+      font-weight: 700;
+    }
     .section-card {
       background: #fbfcff;
       border: 1px solid #e8eef9;
@@ -113,7 +119,7 @@
               <div class="ticket-meta">
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
-                <span class="meta-chip">Срок:
+                <span class="meta-chip deadline-chip">Крайний срок:
                   <b>
                     {% if t.deadline %}
                       {{ format_dt(t.deadline) }}
