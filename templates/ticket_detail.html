@@ -30,6 +30,22 @@
     }
     .status-menu.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
     .status-toggle { cursor: pointer; }
+
+    .comments-list { display: flex; flex-direction: column; gap: 8px; }
+    .comment-row { display: flex; }
+    .comment-row.theirs { justify-content: flex-start; }
+    .comment-row.mine { justify-content: flex-end; }
+    .comment-bubble {
+      max-width: 85%;
+      border-radius: 12px;
+      padding: .5rem .65rem;
+      border: 1px solid #e9ecef;
+      background: #fff;
+    }
+    .comment-row.mine .comment-bubble {
+      background: #e7f1ff;
+      border-color: #b6d4fe;
+    }
   </style>
 </head>
 
@@ -120,13 +136,16 @@
           <div class="col-12 col-lg-7">
             <h5>Комментарии</h5>
 
-            <div class="mb-2">
+            <div class="mb-2 comments-list">
               {% for c in comments %}
-                <div class="border rounded p-2 mb-2">
-                  <div class="small muted">
-                    <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                {% set is_mine = c.author_id == user.id %}
+                <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
+                  <div class="comment-bubble">
+                    <div class="small muted">
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                    </div>
+                    <div>{{ c.text }}</div>
                   </div>
-                  <div>{{ c.text }}</div>
                 </div>
               {% endfor %}
               {% if comments|length == 0 %}
@@ -182,6 +201,25 @@
 </form>
 
 
+          </div>
+        </div>
+
+        <hr class="my-4"/>
+
+        <div>
+          <h5>Лог изменений</h5>
+          <div class="mb-0">
+            {% for log in ticket_logs %}
+              <div class="border rounded p-2 mb-2 bg-white">
+                <div class="small muted">
+                  <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ log.created_at }}
+                </div>
+                <div>{{ log.action }}</div>
+              </div>
+            {% endfor %}
+            {% if ticket_logs|length == 0 %}
+              <div class="muted small">Изменений пока нет</div>
+            {% endif %}
           </div>
         </div>
 
