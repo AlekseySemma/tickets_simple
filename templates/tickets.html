@@ -410,7 +410,7 @@
               <div class="ticket-meta">
                 <span class="meta-chip">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></span>
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
-                <span class="meta-chip">Срок: <b>{{ t.deadline or "—" }}</b></span>
+                <span class="meta-chip">Срок: <b>{{ format_dt(t.deadline) }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
               </div>
             </div>
@@ -479,7 +479,7 @@
                 <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
                   <div class="comment-bubble">
                     <div class="small muted">
-                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
                     </div>
                     <div>{{ c.text }}</div>
                   </div>

@@ -113,7 +113,7 @@
                 <span class="meta-chip">Срок:
                   <b>
                     {% if t.deadline %}
-                      {{ t.deadline.strftime("%d.%m.%Y %H:%M") }}
+                      {{ format_dt(t.deadline) }}
                     {% else %}
                       —
                     {% endif %}
@@ -181,7 +181,7 @@
                 <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
                   <div class="comment-bubble">
                     <div class="small muted">
-                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ c.created_at }}
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
                     </div>
                     <div>{{ c.text }}</div>
                   </div>
@@ -251,7 +251,7 @@
             {% for log in ticket_logs %}
               <div class="border rounded p-2 mb-2 bg-white">
                 <div class="small muted">
-                  <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ log.created_at }}
+                  <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
                 </div>
                 <div>{{ log.action }}</div>
               </div>

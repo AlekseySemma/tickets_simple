@@ -205,6 +205,19 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     return n if n.startswith("/web") else fallback
 
 
+def to_local_dt(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt + timedelta(hours=3)
+
+
+def format_dt(dt: datetime | None) -> str:
+    local_dt = to_local_dt(dt)
+    if local_dt is None:
+        return "—"
+    return local_dt.strftime("%d.%m.%Y %H:%M")
+
+
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
     db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
 
@@ -254,6 +267,8 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["format_dt"] = format_dt
+templates.env.globals["to_local_dt"] = to_local_dt
 
 @app.get("/health")
 def health():
@@ -830,8 +845,9 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
     deadline_date = None
     deadline_time4 = None
     if t.deadline:
-        deadline_date = t.deadline.strftime("%Y-%m-%d")
-        deadline_time4 = t.deadline.strftime("%H%M")
+        local_deadline = to_local_dt(t.deadline)
+        deadline_date = local_deadline.strftime("%Y-%m-%d")
+        deadline_time4 = local_deadline.strftime("%H%M")
 
     return templates.TemplateResponse(
         "ticket_edit.html",
