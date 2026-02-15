@@ -227,28 +227,38 @@ def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) ->
 
 def write_upload_file(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:
     total = 0
-    with destination.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_size:
-                raise HTTPException(413, "File too large")
-            out.write(chunk)
+    try:
+        with destination.open("wb") as out:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_size:
+                    raise HTTPException(413, "File too large")
+                out.write(chunk)
+    except Exception:
+        if destination.exists():
+            destination.unlink()
+        raise
 
 
 async def write_upload_file_async(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:
     total = 0
-    with destination.open("wb") as out:
-        while True:
-            chunk = await upload.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_size:
-                raise HTTPException(413, "File too large")
-            out.write(chunk)
+    try:
+        with destination.open("wb") as out:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_size:
+                    raise HTTPException(413, "File too large")
+                out.write(chunk)
+    except Exception:
+        if destination.exists():
+            destination.unlink()
+        raise
 
 
 def to_local_dt(dt: datetime | None) -> datetime | None:
@@ -762,7 +772,7 @@ def web_tickets(
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # куратор и исполнитель могут создавать
     if user.role not in (Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidd en")
+        raise HTTPException(403, "Forbidden")
 
     form = await request.form()
 
@@ -778,7 +788,10 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     executor_id_raw = (form.get("executor_id") or "").strip()
-    executor_id = int(executor_id_raw) if executor_id_raw else None
+    try:
+        executor_id = int(executor_id_raw) if executor_id_raw else None
+    except ValueError:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него
     if user.role == Role.executor and executor_id is None:
@@ -810,6 +823,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             except ValueError:
                 deadline = None
 
+
+    validate_ticket_links(db, project_id, executor_id)
 
     # ВАЖНО: именно deadline=deadline
     t = Ticket(
@@ -854,18 +869,6 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
-
-    t = Ticket(
-        title=title,
-        description=description,
-        deadline=deadline,
-        executor_id=executor_id,
-        project_id=project_id,
-        created_by=user.id,
-    )
-    db.add(t); db.commit()
-
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
 @app.post("/web/tickets/{ticket_id}/status")
 async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -962,10 +965,6 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     form = await request.form()
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-
-    return RedirectResponse(url=f"/web/tickets/{ticket_id}", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/tickets/{ticket_id}/edit")
