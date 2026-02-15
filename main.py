@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
 from enum import Enum
+import os
 from pathlib import Path
+import secrets
 from typing import Optional
+import uuid
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
 from fastapi.responses import RedirectResponse
@@ -14,17 +17,18 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker,
 from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
+from starlette.responses import JSONResponse
 
 
 # =========================
 # Настройки (простые)
 # =========================
-JWT_SECRET = "dev_secret_change_later"
+JWT_SECRET = os.getenv("JWT_SECRET") or secrets.token_urlsafe(48)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
 DB_URL = "sqlite:///./app.db"
 UPLOAD_DIR = Path("./uploads")
+MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))
 
 # =========================
 # База данных (SQLite)
@@ -205,6 +209,48 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     return n if n.startswith("/web") else fallback
 
 
+def validate_ticket_links(db: Session, project_id: int | None, executor_id: int | None) -> None:
+    if project_id is not None and not db.get(Project, project_id):
+        raise HTTPException(400, "Project not found")
+
+    if executor_id is not None:
+        executor = db.get(User, executor_id)
+        if not executor or executor.role != Role.executor:
+            raise HTTPException(400, "Executor not found")
+
+
+def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
+    ext = Path(filename or "").suffix.lower()[:10]
+    prefix = f"{ticket_id}_" if ticket_id is not None else ""
+    return f"{prefix}{uuid.uuid4().hex}{ext}"
+
+
+def write_upload_file(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:
+    total = 0
+    with destination.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_size:
+                raise HTTPException(413, "File too large")
+            out.write(chunk)
+
+
+async def write_upload_file_async(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:
+    total = 0
+    with destination.open("wb") as out:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_size:
+                raise HTTPException(413, "File too large")
+            out.write(chunk)
+
+
 def to_local_dt(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
@@ -311,6 +357,23 @@ def require_role(*roles: Role):
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
 
+
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
+        origin = (request.headers.get("origin") or "").strip()
+        referer = (request.headers.get("referer") or "").strip()
+        host = str(request.base_url).rstrip("/")
+        if origin:
+            if not origin.startswith(host):
+                return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
+        elif referer:
+            if not referer.startswith(host):
+                return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
+        else:
+            return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
+    return await call_next(request)
+
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -382,6 +445,7 @@ def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_
 # =========================
 @app.post("/tickets", response_model=TicketOut)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    validate_ticket_links(db, payload.project_id, payload.executor_id)
     t = Ticket(
         title=payload.title,
         description=payload.description,
@@ -417,6 +481,8 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
             raise HTTPException(403, "Forbidden")
         allowed = {"status", "description"}  # можно расширить
         incoming = {k: v for k, v in incoming.items() if k in allowed}
+
+    validate_ticket_links(db, incoming.get("project_id"), incoming.get("executor_id"))
 
     old_deadline = t.deadline
     old_executor_id = t.executor_id
@@ -463,11 +529,9 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
         raise HTTPException(403, "Forbidden")
 
     UPLOAD_DIR.mkdir(exist_ok=True)
-    safe_name = f"{int(datetime.utcnow().timestamp())}_{file.filename}"
+    safe_name = make_safe_upload_name(file.filename)
     path = UPLOAD_DIR / safe_name
-
-    with path.open("wb") as f:
-        f.write(file.file.read())
+    write_upload_file(file, path)
 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path))
     db.add(a)
@@ -494,7 +558,13 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
 
     token = create_access_token(str(user.id))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
-    resp.set_cookie("access_token", token, httponly=True, samesite="lax")
+    resp.set_cookie(
+        "access_token",
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=(request.url.scheme == "https"),
+    )
     return resp
 
 @app.get("/web/logout")
@@ -797,8 +867,6 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
-from starlette.responses import JSONResponse  # добавь импорт, если нет
-
 @app.post("/web/tickets/{ticket_id}/status")
 async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = db.get(Ticket, ticket_id)
@@ -862,10 +930,6 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
-import uuid
-import os
-
-
 @app.post("/web/tickets/{ticket_id}/attachments")
 async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile = File(...),
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -884,15 +948,10 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    # безопасное имя + уникальность
-    orig = file.filename or "file"
-    _, ext = os.path.splitext(orig)
-    ext = (ext or "").lower()[:10]
-    safe_name = f"{ticket_id}_{uuid.uuid4().hex}{ext}"
+    safe_name = make_safe_upload_name(file.filename, ticket_id=ticket_id)
 
     dest_path = UPLOAD_DIR / safe_name
-    content = await file.read()
-    dest_path.write_bytes(content)
+    await write_upload_file_async(file, dest_path)
 
     # сохраняем путь как URL (удобно для шаблонов)
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}")
@@ -989,35 +1048,32 @@ async def web_ticket_edit_save(
     old_executor_id = t.executor_id
     old_project_id = t.project_id
 
-    if can_edit_full and status_raw:
-        try:
-            t.status = TicketStatus(status_raw)
-        except ValueError:
-            pass
-
-
     if status_raw:
         try:
             t.status = TicketStatus(status_raw)
         except ValueError:
             pass
 
-
     if title:
         t.title = title
     t.description = description
 
-    # project_id
-    try:
-        t.project_id = int(project_id_raw) if project_id_raw else None
-    except ValueError:
-        pass
+    if can_edit_full:
+        try:
+            project_id_candidate = int(project_id_raw)
+        except ValueError:
+            project_id_candidate = None
 
-    # executor_id
-    try:
-        t.executor_id = int(executor_id_raw) if executor_id_raw else None
-    except ValueError:
-        pass
+        try:
+            executor_id_candidate = int(executor_id_raw) if executor_id_raw else None
+        except ValueError:
+            executor_id_candidate = None
+
+        validate_ticket_links(db, project_id_candidate, executor_id_candidate)
+
+        if project_id_candidate is not None:
+            t.project_id = project_id_candidate
+        t.executor_id = executor_id_candidate
 
     # срок (как у создания)
     deadline = None
@@ -1237,4 +1293,3 @@ def web_ticket_detail(
             "status_labels": status_labels,
         },
     )
-
