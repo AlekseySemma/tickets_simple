@@ -23,7 +23,7 @@ from starlette.responses import JSONResponse
 # =========================
 # Настройки (простые)
 # =========================
-JWT_SECRET = os.getenv("JWT_SECRET") or secrets.token_urlsafe(48)
+JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_later")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
 DB_URL = "sqlite:///./app.db"
@@ -394,6 +394,14 @@ templates = Jinja2Templates(directory="templates")
 templates.env.globals["format_dt"] = format_dt
 templates.env.globals["to_local_dt"] = to_local_dt
 templates.env.globals["format_deadline"] = format_deadline
+
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401 and request.url.path.startswith("/web"):
+        return RedirectResponse(url="/web/login", status_code=HTTP_303_SEE_OTHER)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 @app.get("/health")
 def health():
