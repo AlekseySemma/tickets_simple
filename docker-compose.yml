@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: tickets
+      POSTGRES_USER: tickets
+      POSTGRES_PASSWORD: change_me_strong
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://tickets:change_me_strong@db:5432/tickets
+      # куда сохранять загруженные файлы (внутри контейнера)
+      UPLOAD_DIR: /data/uploads
+    ports:
+      - "8000:8000"
+    volumes:
+      # файлы будут жить на диске сервера, не внутри контейнера
+      - uploads:/data/uploads
+
+volumes:
+  pgdata:
+  uploads:
