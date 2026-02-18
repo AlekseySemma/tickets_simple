@@ -18,6 +18,7 @@ from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
+from fastapi.responses import RedirectResponse
 
 
 # =========================
@@ -367,6 +368,9 @@ def require_role(*roles: Role):
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
 
+@app.get("/")
+def root():
+    return RedirectResponse(url="/web/login", status_code=302)
 
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
