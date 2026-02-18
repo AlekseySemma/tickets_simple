@@ -16,14 +16,13 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql://tickets:change_me_strong@db:5432/tickets
-      # куда сохранять загруженные файлы (внутри контейнера)
       UPLOAD_DIR: /data/uploads
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      # файлы будут жить на диске сервера, не внутри контейнера
       - uploads:/data/uploads
 
 volumes:
   pgdata:
   uploads:
+
