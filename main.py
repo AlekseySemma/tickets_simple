@@ -375,6 +375,8 @@ def root(request: Request):
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
+        if request.url.path == "/web/login":
+            return await call_next(request)
         origin = (request.headers.get("origin") or "").strip()
         referer = (request.headers.get("referer") or "").strip()
         forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
