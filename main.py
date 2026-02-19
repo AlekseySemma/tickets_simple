@@ -369,8 +369,8 @@ def require_role(*roles: Role):
 app = FastAPI(title="Tickets Simple + Web UI")
 
 @app.get("/")
-def root():
-    return RedirectResponse(url="/web/login", status_code=302)
+def root(request: Request):
+    return templates.TemplateResponse("landing.html", {"request": request})
 
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
