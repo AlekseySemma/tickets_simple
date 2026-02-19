@@ -157,6 +157,41 @@
       border-radius: 12px;
       padding: 12px;
     }
+    .tickets-table-wrap {
+      border: 1px solid #dfe7f5;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .05);
+    }
+    .tickets-table thead th {
+      background: #f3f8ff;
+      color: #24406c;
+      font-weight: 700;
+      border-bottom: 1px solid #dfe7f5;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .tickets-table tbody td {
+      vertical-align: middle;
+      font-size: 14px;
+      border-color: #e9eef8;
+    }
+    .tickets-table tbody tr.overdue td {
+      background: #fff4f6;
+    }
+    .tickets-table .col-title a {
+      color: #0d3a8f;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .tickets-table .col-title a:hover {
+      color: #0a2e72;
+      text-decoration: underline;
+    }
+    .view-switch .btn {
+      min-width: 120px;
+    }
 
   </style>
   <input type="hidden" name="next" value="/web">
@@ -257,6 +292,7 @@
             <span class="panel-chevron">▼</span>
           </summary>
           <form method="get" action="/web" class="row g-2 align-items-end mt-1">
+            <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <div class="col-12 col-md-4">
               <label class="form-label mb-1">Поиск</label>
               <input name="q" class="form-control" placeholder="Название или описание..." value="{{ q }}" />
@@ -319,12 +355,30 @@
                 </select>
               </div>
 
-              <a class="small" href="/web">Сбросить фильтры</a>
+              <a class="small" href="/web{% if user.role == 'CURATOR' %}?view_mode={{ view_mode }}{% endif %}">Сбросить фильтры</a>
             </div>
           </form>
         </details>
       </div>
     </div>
+
+    {% if user.role == "CURATOR" %}
+    <div class="d-flex justify-content-end mb-3">
+      <form method="get" action="/web" class="view-switch">
+        <input type="hidden" name="page" value="{{ page }}">
+        <input type="hidden" name="q" value="{{ q }}">
+        <input type="hidden" name="status_filter" value="{{ status_filter }}">
+        <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+        <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
+        <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <div class="btn-group" role="group" aria-label="Режим отображения">
+          <button type="submit" name="view_mode" value="table" class="btn btn-sm {% if view_mode == 'table' %}btn-primary{% else %}btn-outline-primary{% endif %}">Таблица</button>
+          <button type="submit" name="view_mode" value="cards" class="btn btn-sm {% if view_mode == 'cards' %}btn-primary{% else %}btn-outline-primary{% endif %}">Карточки</button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
 
     <div class="row g-2 mb-3">
 
@@ -335,7 +389,8 @@
      data-project-id="{{ project_id_filter }}"
      data-executor-id="{{ executor_id_filter }}"
      data-q="{{ q }}"
-     data-sort="{{ sort }}">
+     data-sort="{{ sort }}"
+     data-view-mode="{{ view_mode }}">
 
   <div class="col-6 col-lg-2">
     <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
@@ -396,7 +451,66 @@
 </div>
 
 
-
+    {% if user.role == "CURATOR" and view_mode == "table" %}
+      <div class="tickets-table-wrap mb-3">
+        <div class="table-responsive">
+          <table class="table tickets-table mb-0">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Дата создания</th>
+                <th>Крайний срок</th>
+                <th>Проект</th>
+                <th>Исполнитель</th>
+                <th>Статус</th>
+                <th>Заявка</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for t in tickets %}
+              {% set is_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
+              <tr id="ticket-{{ t.id }}" class="{% if is_overdue %}overdue{% endif %}">
+                <td class="text-nowrap">#{{ t.id }}</td>
+                <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
+                <td class="text-nowrap">{{ format_deadline(t.deadline) }}</td>
+                <td class="text-nowrap">{{ projects_by_id.get(t.project_id, "—") }}</td>
+                <td class="text-nowrap">{{ users_by_id.get(t.executor_id, "—") }}</td>
+                <td>
+                  <div class="position-relative d-inline-block">
+                    {% if is_overdue %}
+                    <span id="overdue-badge-{{ t.id }}" class="badge badge-status st-OVERDUE me-1">Просрочено</span>
+                    {% endif %}
+                    <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
+                      {{ status_labels[t.status.value] }} ▼
+                    </span>
+                    <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded">
+                      <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="NEW">Новая</button>
+                      <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">В работе</button>
+                      <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
+                      <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
+                    </div>
+                  </div>
+                </td>
+                <td class="col-title">
+                  <a href="/web/tickets/{{ t.id }}">{{ t.title }}</a>
+                </td>
+                <td class="text-nowrap">
+                  <div class="d-flex gap-1">
+                    <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next=/web">Изменить</a>
+                    <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
+                      <input type="hidden" name="next" value="/web">
+                      <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% else %}
     {% for t in tickets %}
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
         <div class="d-flex justify-content-between align-items-start gap-3">
@@ -474,6 +588,7 @@
 
       </div>
     {% endfor %}
+    {% endif %}
 
 
     {% if total_pages > 1 %}
@@ -488,6 +603,7 @@
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
             <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
             <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <button class="btn btn-sm btn-outline-secondary" {% if not has_prev %}disabled{% endif %}>← Назад</button>
           </form>
           <form method="get" action="/web" class="m-0">
@@ -498,6 +614,7 @@
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
             <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
             <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <button class="btn btn-sm btn-outline-secondary" {% if not has_next %}disabled{% endif %}>Вперёд →</button>
           </form>
         </div>
@@ -696,6 +813,7 @@ document.addEventListener("DOMContentLoaded", function () {
       executor_id: dash.dataset.executorId || "",
       q: dash.dataset.q || "",
       sort: dash.dataset.sort || "id_desc",
+      view_mode: dash.dataset.viewMode || "table",
     };
   }
 
@@ -707,6 +825,7 @@ document.addEventListener("DOMContentLoaded", function () {
     p.set("q", next.q || "");
     p.set("only_overdue", next.only_overdue || "");
     p.set("sort", next.sort || "id_desc");
+    p.set("view_mode", next.view_mode || "table");
     return "/web?" + p.toString();
   }
 

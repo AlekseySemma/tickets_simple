@@ -624,6 +624,7 @@ def web_tickets(
     q: str | None = None,
     only_overdue: str | None = None,
     sort: str | None = None,
+    view_mode: str | None = None,
     open_create: str | None = None,
     page: int = 1,
 ):
@@ -699,6 +700,11 @@ def web_tickets(
 
         # сортировка
     sort_value = (sort or "").strip() or "id_desc"
+    raw_view_mode = (view_mode or "").strip().lower()
+    if user.role == Role.curator:
+        view_mode_value = "cards" if raw_view_mode == "cards" else "table"
+    else:
+        view_mode_value = "cards"
 
     if sort_value == "deadline_asc":
         tickets.sort(key=lambda t: (t.deadline is None, t.deadline or datetime.max, -t.id))
@@ -768,6 +774,7 @@ def web_tickets(
             "q": q or "",
             "only_overdue": "1" if overdue_enabled else "",
             "sort": sort_value,
+            "view_mode": view_mode_value,
             "status_labels": status_labels,
             "total_count": total_count,
             "counts_by_status": counts_by_status,
