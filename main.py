@@ -33,6 +33,14 @@ if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ext.strip().lower()
+    for ext in os.getenv(
+        "ALLOWED_UPLOAD_EXTENSIONS",
+        ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx,.zip,.rar",
+    ).split(",")
+    if ext.strip()
+}
 
 # =========================
 # База данных (SQLite)
@@ -228,6 +236,8 @@ def validate_ticket_links(db: Session, project_id: int | None, executor_id: int 
 
 def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
     ext = Path(filename or "").suffix.lower()[:10]
+    if not ext or ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(400, "Unsupported file type")
     prefix = f"{ticket_id}_" if ticket_id is not None else ""
     return f"{prefix}{uuid.uuid4().hex}{ext}"
 
@@ -401,6 +411,19 @@ async def csrf_middleware(request: Request, call_next):
         else:
             return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=()",
+    )
+    return response
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
