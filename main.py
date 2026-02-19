@@ -19,7 +19,6 @@ from starlette.status import HTTP_303_SEE_OTHER
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
 from fastapi.responses import RedirectResponse
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 
 # =========================
@@ -368,7 +367,6 @@ def require_role(*roles: Role):
 # Приложение
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 @app.get("/")
 def root(request: Request):
