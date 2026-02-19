@@ -19,6 +19,7 @@ from starlette.status import HTTP_303_SEE_OTHER
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
 from fastapi.responses import RedirectResponse
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 
 # =========================
@@ -367,6 +368,7 @@ def require_role(*roles: Role):
 # Приложение
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 @app.get("/")
 def root(request: Request):
@@ -377,7 +379,13 @@ async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
         origin = (request.headers.get("origin") or "").strip()
         referer = (request.headers.get("referer") or "").strip()
-        host = str(request.base_url).rstrip("/")
+        forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+        forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+        if forwarded_host:
+            scheme = forwarded_proto or "https"
+            host = f"{scheme}://{forwarded_host}"
+        else:
+            host = str(request.base_url).rstrip("/")
         if origin:
             if not origin.startswith(host):
                 return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
