@@ -5,6 +5,7 @@ from pathlib import Path
 import secrets
 from typing import Optional
 import uuid
+from urllib.parse import quote
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
 from fastapi.responses import RedirectResponse
@@ -747,6 +748,10 @@ def web_tickets(
         or sort_value != "id_desc"
     )
     create_form_open = (open_create == "1")
+    current_list_url = request.url.path
+    if request.url.query:
+        current_list_url = f"{current_list_url}?{request.url.query}"
+    current_list_url_encoded = quote(current_list_url, safe="")
 
     # Пагинация
     per_page = 10
@@ -781,6 +786,8 @@ def web_tickets(
             "overdue_count": overdue_count,
             "filters_form_open": filters_form_open,
             "create_form_open": create_form_open,
+            "current_list_url": current_list_url,
+            "current_list_url_encoded": current_list_url_encoded,
             "page": page,
             "total_pages": total_pages,
             "has_prev": page > 1,

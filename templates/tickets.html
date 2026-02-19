@@ -497,7 +497,7 @@
                 </td>
                 <td class="text-nowrap">
                   <div class="d-flex gap-1">
-                    <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next=/web">Изменить</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
                     <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
                       <input type="hidden" name="next" value="/web">
                       <button class="btn btn-sm btn-outline-danger">Удалить</button>
@@ -572,7 +572,7 @@
 </div>
 
             {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
-  <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next=/web">Изменить</a>
+  <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
 {% endif %}
 
             {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and t.created_by == user.id) %}
@@ -707,6 +707,39 @@
 
     render();
   })();
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const isCurator = "{{ user.role }}" === "CURATOR";
+  if (!isCurator) return;
+
+  const KEY = "tickets_view_mode";
+  const isValidMode = (v) => v === "table" || v === "cards";
+
+  const url = new URL(window.location.href);
+  const currentMode = (url.searchParams.get("view_mode") || "").toLowerCase();
+  const savedMode = (localStorage.getItem(KEY) || "").toLowerCase();
+
+  if (isValidMode(currentMode)) {
+    localStorage.setItem(KEY, currentMode);
+  } else if (isValidMode(savedMode)) {
+    url.searchParams.set("view_mode", savedMode);
+    window.location.replace(url.toString());
+    return;
+  } else {
+    localStorage.setItem(KEY, "table");
+  }
+
+  document.querySelectorAll('button[name="view_mode"]').forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const nextMode = (btn.value || "").toLowerCase();
+      if (isValidMode(nextMode)) {
+        localStorage.setItem(KEY, nextMode);
+      }
+    });
+  });
+});
 </script>
 
 <script>
