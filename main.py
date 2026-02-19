@@ -28,14 +28,19 @@ from fastapi.responses import RedirectResponse
 JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_later")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
-DB_URL = "sqlite:///./app.db"
-UPLOAD_DIR = Path("./uploads")
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))
 
 # =========================
 # База данных (SQLite)
 # =========================
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+engine_kwargs = {}
+if DB_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+engine = create_engine(DB_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 class Base(DeclarativeBase):
@@ -397,8 +402,7 @@ async def csrf_middleware(request: Request, call_next):
             return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
     return await call_next(request)
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
@@ -1323,3 +1327,4 @@ def web_ticket_detail(
             "status_labels": status_labels,
         },
     )
+

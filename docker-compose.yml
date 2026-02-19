@@ -24,5 +24,7 @@ services:
 
 volumes:
   pgdata:
+    name: tickets_pgdata
   uploads:
+    name: tickets_uploads
 
