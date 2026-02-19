@@ -111,22 +111,6 @@
   outline-offset: 2px;
 }
 
-    .comments-list { display: flex; flex-direction: column; gap: 8px; }
-    .comment-row { display: flex; }
-    .comment-row.theirs { justify-content: flex-start; }
-    .comment-row.mine { justify-content: flex-end; }
-    .comment-bubble {
-      max-width: 85%;
-      border-radius: 12px;
-      padding: .5rem .65rem;
-      border: 1px solid #e9ecef;
-      background: #fff;
-    }
-    .comment-row.mine .comment-bubble {
-      background: #e7f1ff;
-      border-color: #b6d4fe;
-    }
-
     .ticket-head {
       background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 55%, #e7f1ff 100%);
       border: 1px solid #dce7fb;
@@ -488,54 +472,6 @@
           </div>
         </div>
 
-        <hr />
-
-        <div class="row g-3">
-          <div class="col-12 col-lg-7">
-            <h6>Комментарии</h6>
-            <div class="mb-2 comments-list sub-card">
-              {% set recent_comments = comments_by_ticket.get(t.id, [])[-2:] %}
-              {% for c in recent_comments %}
-                {% set is_mine = c.author_id == user.id %}
-                <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
-                  <div class="comment-bubble">
-                    <div class="small muted">
-                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
-                    </div>
-                    <div>{{ c.text }}</div>
-                  </div>
-                </div>
-              {% endfor %}
-              {% if recent_comments|length == 0 %}
-                <div class="muted small">Нет комментариев</div>
-              {% endif %}
-            </div>
-
-            <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2">
-              <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
-              <button class="btn btn-outline-secondary">Отправить</button>
-            </form>
-          </div>
-
-          <!-- <div class="col-12 col-lg-5">
-            <h6>Файлы</h6>
-            <div class="mb-2">
-              {% for a in attachments_by_ticket.get(t.id, []) %}
-                <div class="small">
-                  📎 {{ a.file_path }}
-                </div>
-              {% endfor %}
-              {% if attachments_by_ticket.get(t.id, [])|length == 0 %}
-                <div class="muted small">Нет файлов</div>
-              {% endif %}
-            </div>
-
-            <form method="post" action="/web/tickets/{{ t.id }}/attachments" enctype="multipart/form-data" class="d-flex gap-2">
-              <input type="file" name="file" class="form-control" required />
-              <button class="btn btn-outline-secondary">Загрузить</button>
-            </form>
-          </div> -->
-        </div>
       </div>
     {% endfor %}
 

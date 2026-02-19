@@ -643,19 +643,8 @@ def web_tickets(
     users = db.query(User).order_by(User.id.desc()).all()
     executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
 
-    comments = db.query(Comment).order_by(Comment.id.asc()).all()
-    attachments = db.query(Attachment).order_by(Attachment.id.asc()).all()
-
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
-
-    comments_by_ticket = {}
-    for c in comments:
-        comments_by_ticket.setdefault(c.ticket_id, []).append(c)
-
-    attachments_by_ticket = {}
-    for a in attachments:
-        attachments_by_ticket.setdefault(a.ticket_id, []).append(a)
 
     # 3) фильтры
     project_id_int: int | None = None
@@ -771,8 +760,6 @@ def web_tickets(
             "executors": executors,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,
-            "comments_by_ticket": comments_by_ticket,
-            "attachments_by_ticket": attachments_by_ticket,
             "now": now,
             "now_plus_24h": now_plus_24h,
             "status_filter": status_filter or "",
