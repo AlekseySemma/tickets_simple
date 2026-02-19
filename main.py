@@ -586,12 +586,22 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
 
     token = create_access_token(str(user.id))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    scheme = forwarded_proto or request.url.scheme
+
+    cookie_domain = None
+    if host.endswith(".servora.ru") or host == "servora.ru":
+        cookie_domain = ".servora.ru"
+
     resp.set_cookie(
         "access_token",
         token,
         httponly=True,
         samesite="lax",
-        secure=(request.url.scheme == "https"),
+        secure=(scheme == "https"),
+        domain=cookie_domain,
     )
     return resp
 
