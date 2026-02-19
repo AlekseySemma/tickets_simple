@@ -1,25 +1,35 @@
 from datetime import datetime, timedelta
 from enum import Enum
+import json
 import os
 from pathlib import Path
 import secrets
+import threading
+import time
 from typing import Optional
 import uuid
 from urllib.parse import quote
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
-from fastapi.responses import RedirectResponse
+try:
+    from pywebpush import webpush, WebPushException
+    PYWEBPUSH_AVAILABLE = True
+except Exception:
+    webpush = None
+    class WebPushException(Exception):
+        pass
+    PYWEBPUSH_AVAILABLE = False
 
 
 # =========================
@@ -41,6 +51,12 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     ).split(",")
     if ext.strip()
 }
+PWA_STATIC_DIR = Path(os.getenv("PWA_STATIC_DIR", "./static"))
+PUSH_REMINDER_MINUTES = int(os.getenv("PUSH_REMINDER_MINUTES", "60"))
+PUSH_REMINDER_POLL_SECONDS = int(os.getenv("PUSH_REMINDER_POLL_SECONDS", "30"))
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
+VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
 
 # =========================
 # База данных (SQLite)
@@ -109,6 +125,7 @@ class Attachment(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     uploader_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     file_path: Mapped[str] = mapped_column(String(500))
+    original_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class TicketLog(Base):
@@ -119,7 +136,34 @@ class TicketLog(Base):
     action: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    endpoint: Mapped[str] = mapped_column(String(1000), unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class DeadlineReminderLog(Base):
+    __tablename__ = "deadline_reminder_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    reminder_key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 Base.metadata.create_all(bind=engine)
+
+def ensure_runtime_schema() -> None:
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns("attachments")}
+    if "original_name" not in cols:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE attachments ADD COLUMN original_name VARCHAR(255)")
+
+ensure_runtime_schema()
 
 # =========================
 # Схемы API
@@ -201,6 +245,13 @@ class AttachmentOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str
+    keys: dict[str, str]
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str
 
 # =========================
 # Безопасность
@@ -346,6 +397,167 @@ def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> N
     db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
 
 
+def push_is_configured() -> bool:
+    return bool(PYWEBPUSH_AVAILABLE and VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY and VAPID_SUBJECT)
+
+
+def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
+    if not push_is_configured():
+        return
+
+    subs = db.query(PushSubscription).filter(PushSubscription.user_id == user_id).all()
+    if not subs:
+        return
+
+    payload = json.dumps({"title": title, "body": body, "url": url})
+    vapid_claims = {"sub": VAPID_SUBJECT}
+    for sub in subs:
+        subscription_info = {
+            "endpoint": sub.endpoint,
+            "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+        }
+        try:
+            webpush(
+                subscription_info=subscription_info,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=vapid_claims,
+                ttl=60 * 60,
+            )
+            sub.updated_at = datetime.utcnow()
+        except WebPushException as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code in {404, 410}:
+                db.delete(sub)
+        except Exception:
+            continue
+
+
+def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None:
+    if not ticket.executor_id:
+        return
+    if ticket.executor_id == actor.id:
+        return
+    send_push_to_user(
+        db=db,
+        user_id=ticket.executor_id,
+        title=f"Новая заявка #{ticket.id}",
+        body=ticket.title or "Вам назначили новую заявку",
+        url=f"/web/tickets/{ticket.id}",
+    )
+
+
+def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Optional[int], actor: User) -> None:
+    if not ticket.executor_id or ticket.executor_id == old_executor_id:
+        return
+    if ticket.executor_id == actor.id:
+        return
+    send_push_to_user(
+        db=db,
+        user_id=ticket.executor_id,
+        title=f"Вам назначена заявка #{ticket.id}",
+        body=ticket.title or "Заявка назначена на вас",
+        url=f"/web/tickets/{ticket.id}",
+    )
+
+
+def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old_status: TicketStatus) -> None:
+    if old_status == ticket.status:
+        return
+    curator_ids = [u.id for u in db.query(User).filter(User.role == Role.curator).all() if u.id != actor.id]
+    for curator_id in curator_ids:
+        send_push_to_user(
+            db=db,
+            user_id=curator_id,
+            title=f"Изменен статус заявки #{ticket.id}",
+            body=f"{actor.name}: {old_status.value} -> {ticket.status.value}",
+            url=f"/web/tickets/{ticket.id}",
+        )
+
+
+def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text: str) -> None:
+    short_text = (comment_text or "").strip()
+    if len(short_text) > 80:
+        short_text = short_text[:77] + "..."
+
+    if ticket.executor_id and ticket.executor_id != author.id:
+        send_push_to_user(
+            db=db,
+            user_id=ticket.executor_id,
+            title=f"Новый комментарий в заявке #{ticket.id}",
+            body=short_text or f"{author.name} оставил комментарий",
+            url=f"/web/tickets/{ticket.id}",
+        )
+
+    curator_ids = [u.id for u in db.query(User).filter(User.role == Role.curator).all() if u.id != author.id]
+    for curator_id in curator_ids:
+        send_push_to_user(
+            db=db,
+            user_id=curator_id,
+            title=f"Новый комментарий в заявке #{ticket.id}",
+            body=short_text or f"{author.name} оставил комментарий",
+            url=f"/web/tickets/{ticket.id}",
+        )
+
+
+def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, original_name: str | None) -> None:
+    if uploader.role != Role.executor:
+        return
+    file_name = (original_name or "").lower()
+    if "акт" not in file_name and "act" not in file_name:
+        return
+    curator_ids = [u.id for u in db.query(User).filter(User.role == Role.curator).all() if u.id != uploader.id]
+    for curator_id in curator_ids:
+        send_push_to_user(
+            db=db,
+            user_id=curator_id,
+            title=f"Исполнитель прикрепил акт #{ticket.id}",
+            body=original_name or "Добавлен файл акта",
+            url=f"/web/tickets/{ticket.id}",
+        )
+
+
+def run_deadline_reminders_forever() -> None:
+    while True:
+        try:
+            with SessionLocal() as db:
+                now = datetime.now()
+                horizon = now + timedelta(seconds=PUSH_REMINDER_POLL_SECONDS)
+                q = db.query(Ticket).filter(
+                    Ticket.executor_id.is_not(None),
+                    Ticket.deadline.is_not(None),
+                    Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+                )
+                for t in q.all():
+                    remind_at = t.deadline - timedelta(minutes=PUSH_REMINDER_MINUTES)
+                    if not (now <= remind_at <= horizon):
+                        continue
+                    reminder_key = f"{t.id}:{t.executor_id}:{int(t.deadline.timestamp())}:{PUSH_REMINDER_MINUTES}"
+                    already = db.query(DeadlineReminderLog).filter(
+                        DeadlineReminderLog.reminder_key == reminder_key
+                    ).first()
+                    if already:
+                        continue
+                    db.add(
+                        DeadlineReminderLog(
+                            ticket_id=t.id,
+                            user_id=t.executor_id,
+                            reminder_key=reminder_key,
+                        )
+                    )
+                    send_push_to_user(
+                        db=db,
+                        user_id=t.executor_id,
+                        title=f"Срок заявки #{t.id} скоро истечет",
+                        body=f"До дедлайна осталось {PUSH_REMINDER_MINUTES} минут",
+                        url=f"/web/tickets/{t.id}",
+                    )
+                db.commit()
+        except Exception:
+            pass
+        time.sleep(max(5, PUSH_REMINDER_POLL_SECONDS))
+
+
 def hash_password(p: str) -> str:
     return pwd_context.hash(p)
 
@@ -426,14 +638,22 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+PWA_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+app.mount("/static", StaticFiles(directory=str(PWA_STATIC_DIR)), name="static")
 
 
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["format_dt"] = format_dt
 templates.env.globals["to_local_dt"] = to_local_dt
 templates.env.globals["format_deadline"] = format_deadline
+
+
+@app.on_event("startup")
+def app_startup() -> None:
+    if push_is_configured():
+        threading.Thread(target=run_deadline_reminders_forever, daemon=True).start()
 
 
 
@@ -446,6 +666,62 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/manifest.webmanifest")
+def pwa_manifest():
+    return FileResponse(PWA_STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(PWA_STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
+@app.get("/api/push/public-key")
+def push_public_key(user: User = Depends(get_current_user)):
+    if not push_is_configured():
+        raise HTTPException(503, "Push is not configured")
+    return {"publicKey": VAPID_PUBLIC_KEY, "enabled": True, "user_id": user.id}
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(payload: PushSubscriptionIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    endpoint = (payload.endpoint or "").strip()
+    p256dh = (payload.keys.get("p256dh") or "").strip()
+    auth = (payload.keys.get("auth") or "").strip()
+    if not endpoint or not p256dh or not auth:
+        raise HTTPException(400, "Invalid subscription payload")
+
+    existing = db.query(PushSubscription).filter(PushSubscription.endpoint == endpoint).first()
+    if existing:
+        existing.user_id = user.id
+        existing.p256dh = p256dh
+        existing.auth = auth
+        existing.updated_at = datetime.utcnow()
+    else:
+        db.add(
+            PushSubscription(
+                user_id=user.id,
+                endpoint=endpoint,
+                p256dh=p256dh,
+                auth=auth,
+            )
+        )
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(payload: PushUnsubscribeIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    endpoint = (payload.endpoint or "").strip()
+    if endpoint:
+        db.query(PushSubscription).filter(
+            PushSubscription.user_id == user.id,
+            PushSubscription.endpoint == endpoint,
+        ).delete(synchronize_session=False)
+        db.commit()
+    return {"ok": True}
 
 # =========================
 # AUTH API
@@ -517,6 +793,8 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
     db.commit()
     db.refresh(t)
+    notify_executor_new_ticket(db, t, user)
+    db.commit()
     return t
 
 @app.get("/tickets", response_model=list[TicketOut])
@@ -545,6 +823,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     old_deadline = t.deadline
     old_executor_id = t.executor_id
     old_project_id = t.project_id
+    old_status = t.status
 
     for k, v in incoming.items():
         setattr(t, k, v)
@@ -564,6 +843,9 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
 
     db.commit(); db.refresh(t)
+    notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
+    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
+    db.commit()
     return t
 
 @app.post("/tickets/{ticket_id}/comments", response_model=CommentOut)
@@ -576,6 +858,8 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=payload.text)
     db.add(c); db.commit(); db.refresh(c)
+    notify_comment_added(db, ticket=t, author=user, comment_text=payload.text)
+    db.commit()
     return c
 
 @app.post("/tickets/{ticket_id}/attachments", response_model=AttachmentOut)
@@ -591,10 +875,12 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
     path = UPLOAD_DIR / safe_name
     write_upload_file(file, path)
 
-    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path))
+    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path), original_name=file.filename)
     db.add(a)
     add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
     db.commit(); db.refresh(a)
+    notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
+    db.commit()
     return a
 
 # =========================
@@ -897,6 +1183,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     db.flush()
     add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
     db.commit()
+    notify_executor_new_ticket(db, t, user)
+    db.commit()
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
@@ -949,8 +1237,11 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
     if not status_raw:
         raise HTTPException(400, "Missing status")
 
+    old_status = t.status
     t.status = TicketStatus(status_raw)
     add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+    db.commit()
+    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
     db.commit()
 
     now = datetime.now()
@@ -987,6 +1278,8 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=text)
     db.add(c); db.commit()
+    notify_comment_added(db, ticket=t, author=user, comment_text=text)
+    db.commit()
 
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
@@ -1015,9 +1308,11 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     await write_upload_file_async(file, dest_path)
 
     # сохраняем путь как URL (удобно для шаблонов)
-    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}")
+    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
     db.add(a)
     add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
+    db.commit()
+    notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
 
     form = await request.form()
@@ -1104,6 +1399,7 @@ async def web_ticket_edit_save(
     old_deadline = t.deadline
     old_executor_id = t.executor_id
     old_project_id = t.project_id
+    old_status = t.status
 
     if status_raw:
         try:
@@ -1175,6 +1471,9 @@ async def web_ticket_edit_save(
 
     db.commit()          # ✅ без этого не сохранится
     db.refresh(t)
+    notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
+    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
+    db.commit()
 
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
@@ -1350,4 +1649,6 @@ def web_ticket_detail(
             "status_labels": status_labels,
         },
     )
+
+
 
