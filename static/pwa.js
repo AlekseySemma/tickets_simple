@@ -1,6 +1,16 @@
 ﻿(function () {
   const btn = document.getElementById("enable-push-btn");
   const testBtn = document.getElementById("test-push-btn");
+  const resultEl = document.getElementById("test-push-result");
+
+  function setResult(text, ok) {
+    if (!resultEl) return;
+    resultEl.textContent = text || "";
+    resultEl.classList.remove("text-success", "text-danger", "text-muted");
+    if (ok === true) resultEl.classList.add("text-success");
+    else if (ok === false) resultEl.classList.add("text-danger");
+    else resultEl.classList.add("text-muted");
+  }
 
   function urlBase64ToUint8Array(base64String) {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -28,6 +38,7 @@
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       if (btn) btn.style.display = "none";
       if (testBtn) testBtn.style.display = "none";
+      setResult("", null);
       return;
     }
 
@@ -39,6 +50,7 @@
     } catch (_) {
       if (btn) btn.style.display = "none";
       if (testBtn) testBtn.style.display = "none";
+      setResult("", null);
       return;
     }
 
@@ -49,6 +61,7 @@
         btn.title = "Нужно задать VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY и VAPID_SUBJECT";
       }
       if (testBtn) testBtn.disabled = true;
+      setResult("Push не настроен", false);
       return;
     }
 
@@ -60,10 +73,16 @@
         const prev = testBtn.textContent;
         testBtn.disabled = true;
         testBtn.textContent = "Отправка...";
+        setResult("", null);
         try {
-          await postJson("/api/push/test", {});
+          const data = await postJson("/api/push/test", {});
+          const sent = Number(data?.sent || 0);
+          const total = Number(data?.total || 0);
+          const allOk = total > 0 && sent === total;
+          setResult(`Доставлено: ${sent}/${total}`, allOk);
           testBtn.textContent = "Отправлено";
         } catch (err) {
+          setResult("Ошибка теста", false);
           testBtn.textContent = "Ошибка теста";
         } finally {
           setTimeout(function () {
@@ -115,6 +134,7 @@
     initPush().catch(function () {
       if (btn) btn.style.display = "none";
       if (testBtn) testBtn.style.display = "none";
+      setResult("", null);
     });
   });
 })();
