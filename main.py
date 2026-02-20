@@ -76,6 +76,7 @@ class Base(DeclarativeBase):
 # Модели
 # =========================
 class Role(str, Enum):
+    platform_admin = "PLATFORM_ADMIN"
     admin = "ADMIN"
     curator = "CURATOR"
     executor = "EXECUTOR"
@@ -111,6 +112,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
 
 class Company(Base):
     __tablename__ = "companies"
@@ -123,6 +125,7 @@ class RegistrationInvite(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     used_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -134,6 +137,7 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -142,6 +146,7 @@ class Ticket(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     status: Mapped[TicketStatus] = mapped_column(SAEnum(TicketStatus), default=TicketStatus.new, index=True)
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
 
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
@@ -196,15 +201,69 @@ Base.metadata.create_all(bind=engine)
 
 def ensure_runtime_schema() -> None:
     insp = inspect(engine)
-    cols = {c["name"] for c in insp.get_columns("attachments")}
-    if "original_name" not in cols:
-        with engine.begin() as conn:
+    with engine.begin() as conn:
+        cols = {c["name"] for c in insp.get_columns("attachments")}
+        if "original_name" not in cols:
             conn.exec_driver_sql("ALTER TABLE attachments ADD COLUMN original_name VARCHAR(255)")
+
+        users_cols = {c["name"] for c in insp.get_columns("users")}
+        if "company_id" not in users_cols:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN company_id INTEGER")
+
+        projects_cols = {c["name"] for c in insp.get_columns("projects")}
+        if "company_id" not in projects_cols:
+            conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN company_id INTEGER")
+
+        tickets_cols = {c["name"] for c in insp.get_columns("tickets")}
+        if "company_id" not in tickets_cols:
+            conn.exec_driver_sql("ALTER TABLE tickets ADD COLUMN company_id INTEGER")
+
+        if insp.has_table("registration_invites"):
+            invites_cols = {c["name"] for c in insp.get_columns("registration_invites")}
+            if "company_id" not in invites_cols:
+                conn.exec_driver_sql("ALTER TABLE registration_invites ADD COLUMN company_id INTEGER")
+
     if engine.dialect.name == "postgresql":
         enum_type_name = getattr(User.__table__.c.role.type, "name", "role") or "role"
         if enum_type_name.replace("_", "").isalnum():
             with engine.begin() as conn:
                 conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'admin'")
+                conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'platform_admin'")
+
+    with engine.begin() as conn:
+        default_company_id = conn.exec_driver_sql("SELECT id FROM companies ORDER BY id LIMIT 1").scalar()
+        if default_company_id is None:
+            users_without_company = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM users WHERE role <> 'platform_admin' AND company_id IS NULL"
+            ).scalar() or 0
+            projects_without_company = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM projects WHERE company_id IS NULL"
+            ).scalar() or 0
+            tickets_without_company = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM tickets WHERE company_id IS NULL"
+            ).scalar() or 0
+            if users_without_company or projects_without_company or tickets_without_company:
+                conn.exec_driver_sql("INSERT INTO companies(name, created_at) VALUES ('Default Company', CURRENT_TIMESTAMP)")
+                default_company_id = conn.exec_driver_sql("SELECT id FROM companies ORDER BY id DESC LIMIT 1").scalar()
+
+        if default_company_id is not None:
+            conn.exec_driver_sql(
+                "UPDATE users SET company_id = :cid WHERE role <> 'platform_admin' AND company_id IS NULL",
+                {"cid": int(default_company_id)},
+            )
+            conn.exec_driver_sql(
+                "UPDATE projects SET company_id = :cid WHERE company_id IS NULL",
+                {"cid": int(default_company_id)},
+            )
+            conn.exec_driver_sql(
+                "UPDATE tickets SET company_id = :cid WHERE company_id IS NULL",
+                {"cid": int(default_company_id)},
+            )
+            if insp.has_table("registration_invites"):
+                conn.exec_driver_sql(
+                    "UPDATE registration_invites SET company_id = :cid WHERE company_id IS NULL",
+                    {"cid": int(default_company_id)},
+                )
 
 ensure_runtime_schema()
 
@@ -226,6 +285,7 @@ class UserOut(BaseModel):
     email: EmailStr
     name: str
     role: Role
+    company_id: Optional[int] = None
     class Config:
         from_attributes = True
 
@@ -335,13 +395,17 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     return n if n.startswith("/web") else fallback
 
 
-def validate_ticket_links(db: Session, project_id: int | None, executor_id: int | None) -> None:
-    if project_id is not None and not db.get(Project, project_id):
-        raise HTTPException(400, "Project not found")
+def validate_ticket_links(db: Session, company_id: int | None, project_id: int | None, executor_id: int | None) -> None:
+    if project_id is not None:
+        project = db.get(Project, project_id)
+        if not project or (company_id is not None and project.company_id != company_id):
+            raise HTTPException(400, "Project not found")
 
     if executor_id is not None:
         executor = db.get(User, executor_id)
         if not executor or executor.role != Role.executor:
+            raise HTTPException(400, "Executor not found")
+        if company_id is not None and executor.company_id != company_id:
             raise HTTPException(400, "Executor not found")
 
 
@@ -545,7 +609,11 @@ def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Opt
 def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old_status: TicketStatus) -> None:
     if old_status == ticket.status:
         return
-    curator_ids = [u.id for u in db.query(User).filter(User.role == Role.curator).all() if u.id != actor.id]
+    curator_ids = [
+        u.id
+        for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
+        if u.id != actor.id
+    ]
     for curator_id in curator_ids:
         send_push_to_user(
             db=db,
@@ -570,7 +638,11 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
             url=f"/web/tickets/{ticket.id}",
         )
 
-    curator_ids = [u.id for u in db.query(User).filter(User.role == Role.curator).all() if u.id != author.id]
+    curator_ids = [
+        u.id
+        for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
+        if u.id != author.id
+    ]
     for curator_id in curator_ids:
         send_push_to_user(
             db=db,
@@ -587,7 +659,11 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
     file_name = (original_name or "").lower()
     if "акт" not in file_name and "act" not in file_name:
         return
-    curator_ids = [u.id for u in db.query(User).filter(User.role == Role.curator).all() if u.id != uploader.id]
+    curator_ids = [
+        u.id
+        for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
+        if u.id != uploader.id
+    ]
     for curator_id in curator_ids:
         send_push_to_user(
             db=db,
@@ -681,6 +757,51 @@ def is_manager(user: User) -> bool:
     return user.role in (Role.admin, Role.curator)
 
 
+def is_platform_admin(user: User) -> bool:
+    return user.role == Role.platform_admin
+
+
+def ensure_company_user(user: User) -> None:
+    if is_platform_admin(user):
+        return
+    if user.company_id is None:
+        raise HTTPException(403, "Company is not assigned")
+
+
+def delete_company_with_data(db: Session, company_id: int) -> None:
+    ticket_ids = [row[0] for row in db.query(Ticket.id).filter(Ticket.company_id == company_id).all()]
+    user_ids = [row[0] for row in db.query(User.id).filter(User.company_id == company_id).all()]
+
+    if ticket_ids:
+        attachments = db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).all()
+        for a in attachments:
+            raw_path = (a.file_path or "").strip()
+            if raw_path:
+                if raw_path.startswith("/uploads/"):
+                    path = UPLOAD_DIR / raw_path.replace("/uploads/", "", 1)
+                else:
+                    path = Path(raw_path)
+                try:
+                    if path.exists():
+                        path.unlink()
+                except OSError:
+                    pass
+
+        db.query(Comment).filter(Comment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
+        db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
+        db.query(TicketLog).filter(TicketLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
+        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
+
+    db.query(Ticket).filter(Ticket.company_id == company_id).delete(synchronize_session=False)
+    db.query(Project).filter(Project.company_id == company_id).delete(synchronize_session=False)
+    db.query(RegistrationInvite).filter(RegistrationInvite.company_id == company_id).delete(synchronize_session=False)
+    if user_ids:
+        db.query(PushSubscription).filter(PushSubscription.user_id.in_(user_ids)).delete(synchronize_session=False)
+        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id.in_(user_ids)).delete(synchronize_session=False)
+    db.query(User).filter(User.company_id == company_id).delete(synchronize_session=False)
+    db.query(Company).filter(Company.id == company_id).delete(synchronize_session=False)
+
+
 def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | None:
     token_value = (token or "").strip()
     if not token_value:
@@ -691,6 +812,8 @@ def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | No
     if invite.used_by is not None:
         return None
     if invite.expires_at and invite.expires_at < datetime.utcnow():
+        return None
+    if invite.company_id is None:
         return None
     return invite
 
@@ -706,7 +829,7 @@ def root(request: Request):
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
-        if request.url.path in {"/web/login", "/web/register"}:
+        if request.url.path in {"/web/login", "/web/register", "/web/register-company"}:
             return await call_next(request)
         origin = (request.headers.get("origin") or "").strip()
         referer = (request.headers.get("referer") or "").strip()
@@ -755,6 +878,25 @@ templates.env.globals["format_deadline"] = format_deadline
 
 @app.on_event("startup")
 def app_startup() -> None:
+    platform_email = (os.getenv("PLATFORM_ADMIN_EMAIL", "") or "").strip()
+    platform_password = (os.getenv("PLATFORM_ADMIN_PASSWORD", "") or "").strip()
+    if platform_email and platform_password:
+        db = SessionLocal()
+        try:
+            existing = db.query(User).filter(User.email == platform_email).first()
+            if not existing:
+                platform_name = (os.getenv("PLATFORM_ADMIN_NAME", "") or "").strip() or "Platform Admin"
+                user = User(
+                    email=platform_email,
+                    name=platform_name,
+                    password_hash=hash_password(platform_password),
+                    role=Role.platform_admin,
+                    company_id=None,
+                )
+                db.add(user)
+                db.commit()
+        finally:
+            db.close()
     if push_is_configured():
         threading.Thread(target=run_deadline_reminders_forever, daemon=True).start()
 
@@ -871,17 +1013,13 @@ def push_reset(db: Session = Depends(get_db), user: User = Depends(get_current_u
 # AUTH API
 # =========================
 @app.post("/auth/bootstrap", response_model=BootstrapSetupOut)
-def bootstrap_company_and_admin(payload: BootstrapSetupIn, db: Session = Depends(get_db)):
-    if db.query(Company).first() or db.query(User).filter(User.role == Role.admin).first():
+def bootstrap_platform_admin(payload: BootstrapSetupIn, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.role == Role.platform_admin).first():
         raise HTTPException(400, "Bootstrap already done")
-
-    company_name = (payload.company_name or "").strip()
-    if not company_name:
-        raise HTTPException(422, "Company name is required")
     if db.query(User).filter(User.email == payload.admin_email).first():
         raise HTTPException(400, "Admin email already exists")
 
-    company = Company(name=company_name)
+    company = Company(name=(payload.company_name or "").strip() or "Platform")
     db.add(company)
     db.flush()
 
@@ -889,11 +1027,40 @@ def bootstrap_company_and_admin(payload: BootstrapSetupIn, db: Session = Depends
         email=payload.admin_email,
         name=payload.admin_name,
         password_hash=hash_password(payload.admin_password),
-        role=Role.admin,
+        role=Role.platform_admin,
+        company_id=None,
     )
     db.add(u); db.commit(); db.refresh(u)
     db.refresh(company)
     return BootstrapSetupOut(company=company, admin=u)
+
+
+@app.post("/auth/register-company", response_model=BootstrapSetupOut)
+def register_company_and_owner(payload: BootstrapSetupIn, db: Session = Depends(get_db)):
+    company_name = (payload.company_name or "").strip()
+    if not company_name:
+        raise HTTPException(422, "Company name is required")
+    if db.query(Company).filter(Company.name == company_name).first():
+        raise HTTPException(400, "Company already exists")
+    if db.query(User).filter(User.email == payload.admin_email).first():
+        raise HTTPException(400, "Email already exists")
+
+    company = Company(name=company_name)
+    db.add(company)
+    db.flush()
+
+    owner = User(
+        email=payload.admin_email,
+        name=payload.admin_name,
+        password_hash=hash_password(payload.admin_password),
+        role=Role.admin,
+        company_id=company.id,
+    )
+    db.add(owner)
+    db.commit()
+    db.refresh(owner)
+    db.refresh(company)
+    return BootstrapSetupOut(company=company, admin=owner)
 
 @app.post("/auth/login", response_model=TokenOut)
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -911,11 +1078,18 @@ def me(user: User = Depends(get_current_user)):
 
 @app.post("/users", response_model=UserOut)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User = Depends(require_role(Role.admin))):
+    ensure_company_user(_admin)
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400, "Email already exists")
     if payload.role not in (Role.curator, Role.executor):
         raise HTTPException(400, "Only CURATOR or EXECUTOR can be created")
-    u = User(email=payload.email, name=payload.name, password_hash=hash_password(payload.password), role=payload.role)
+    u = User(
+        email=payload.email,
+        name=payload.name,
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+        company_id=_admin.company_id,
+    )
     db.add(u); db.commit(); db.refresh(u)
     return u
 
@@ -924,32 +1098,40 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
 # =========================
 @app.post("/projects", response_model=ProjectOut)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db), _manager: User = Depends(require_role(Role.admin, Role.curator))):
-    if db.query(Project).filter(Project.name == payload.name).first():
+    ensure_company_user(_manager)
+    if db.query(Project).filter(Project.name == payload.name, Project.company_id == _manager.company_id).first():
         raise HTTPException(400, "Project already exists")
-    p = Project(name=payload.name, description=payload.description)
+    p = Project(name=payload.name, description=payload.description, company_id=_manager.company_id)
     db.add(p); db.commit(); db.refresh(p)
     return p
 
 @app.get("/projects", response_model=list[ProjectOut])
 def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_user)):
-    return db.query(Project).order_by(Project.id.desc()).all()
+    if is_platform_admin(_u):
+        return db.query(Project).order_by(Project.id.desc()).all()
+    ensure_company_user(_u)
+    return db.query(Project).filter(Project.company_id == _u.company_id).order_by(Project.id.desc()).all()
 
 # =========================
 # TICKETS API
 # =========================
 @app.post("/tickets", response_model=TicketOut)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if is_platform_admin(user):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
     title = normalize_ticket_title(payload.title)
     if not title:
         raise HTTPException(422, "Title is required")
     if is_ticket_title_too_long(title):
         raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
-    validate_ticket_links(db, payload.project_id, payload.executor_id)
+    validate_ticket_links(db, user.company_id, payload.project_id, payload.executor_id)
     t = Ticket(
         title=title,
         description=payload.description,
         deadline=payload.deadline,
+        company_id=user.company_id,
         executor_id=payload.executor_id,
         project_id=payload.project_id,
         created_by=user.id
@@ -973,6 +1155,9 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
 @app.get("/tickets", response_model=list[TicketOut])
 def list_tickets(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(Ticket).order_by(Ticket.id.desc())
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        q = q.filter(Ticket.company_id == user.company_id)
     if user.role == Role.executor:
         q = q.filter((Ticket.executor_id == user.id) | (Ticket.created_by == user.id))
     return q.all()
@@ -982,6 +1167,10 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        if t.company_id != user.company_id:
+            raise HTTPException(403, "Forbidden")
 
     incoming = patch.model_dump(exclude_unset=True)
 
@@ -996,7 +1185,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         if incoming["title"] and is_ticket_title_too_long(incoming["title"]):
             raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
-    validate_ticket_links(db, incoming.get("project_id"), incoming.get("executor_id"))
+    validate_ticket_links(db, t.company_id, incoming.get("project_id"), incoming.get("executor_id"))
 
     old_deadline = t.deadline
     old_executor_id = t.executor_id
@@ -1031,6 +1220,10 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        if t.company_id != user.company_id:
+            raise HTTPException(403, "Forbidden")
     if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
         raise HTTPException(403, "Forbidden")
 
@@ -1045,6 +1238,10 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        if t.company_id != user.company_id:
+            raise HTTPException(403, "Forbidden")
     if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
         raise HTTPException(403, "Forbidden")
 
@@ -1100,6 +1297,46 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
     return resp
 
 
+@app.get("/web/register-company")
+def web_register_company_page(request: Request):
+    return templates.TemplateResponse(
+        "register_company.html",
+        {"request": request, "error": None, "success": False},
+    )
+
+
+@app.post("/web/register-company")
+async def web_register_company_submit(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    company_name = (form.get("company_name") or "").strip()
+    admin_name = (form.get("admin_name") or "").strip()
+    admin_email = (form.get("admin_email") or "").strip()
+    admin_password = (form.get("admin_password") or "").strip()
+
+    try:
+        payload = BootstrapSetupIn(
+            company_name=company_name,
+            admin_name=admin_name,
+            admin_email=admin_email,
+            admin_password=admin_password,
+        )
+        _ = register_company_and_owner(payload, db)
+        return templates.TemplateResponse(
+            "register_company.html",
+            {"request": request, "error": None, "success": True},
+        )
+    except HTTPException as exc:
+        return templates.TemplateResponse(
+            "register_company.html",
+            {"request": request, "error": str(exc.detail), "success": False},
+        )
+    except Exception:
+        return templates.TemplateResponse(
+            "register_company.html",
+            {"request": request, "error": "Проверьте введенные данные", "success": False},
+        )
+
+
 @app.get("/web/register")
 def web_register_page(request: Request, token: str | None = None, db: Session = Depends(get_db)):
     invite = get_active_invite(db, token)
@@ -1144,7 +1381,13 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
         )
 
     try:
-        user = User(email=email, name=name, password_hash=hash_password(password), role=invite.role)
+        user = User(
+            email=email,
+            name=name,
+            password_hash=hash_password(password),
+            role=invite.role,
+            company_id=invite.company_id,
+        )
         db.add(user)
         db.flush()
 
@@ -1185,21 +1428,25 @@ def web_tickets(
     create_error: str | None = None,
     page: int = 1,
 ):
+    if is_platform_admin(user):
+        return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
+    ensure_company_user(user)
     # 1) tickets с учетом роли
     if user.role == Role.executor:
         tickets = list(
             db.query(Ticket)
+            .filter(Ticket.company_id == user.company_id)
             .filter((Ticket.executor_id == user.id) | (Ticket.created_by == user.id))
             .order_by(Ticket.id.desc())
             .all()
         )
     else:
-        tickets = list(db.query(Ticket).order_by(Ticket.id.desc()).all())
+        tickets = list(db.query(Ticket).filter(Ticket.company_id == user.company_id).order_by(Ticket.id.desc()).all())
 
     # 2) данные для UI
-    projects = db.query(Project).order_by(Project.id.desc()).all()
-    users = db.query(User).order_by(User.id.desc()).all()
-    executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
+    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
+    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.id.desc()).all()
+    executors = db.query(User).filter(User.company_id == user.company_id, User.role == Role.executor).order_by(User.id.desc()).all()
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
@@ -1368,6 +1615,56 @@ def web_settings(request: Request, user: User = Depends(get_current_user)):
     )
 
 
+@app.get("/web/admin/companies")
+def web_admin_companies(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+
+    companies = db.query(Company).order_by(Company.id.desc()).all()
+    items = []
+    for c in companies:
+        users_count = db.query(User).filter(User.company_id == c.id).count()
+        projects_count = db.query(Project).filter(Project.company_id == c.id).count()
+        tickets_count = db.query(Ticket).filter(Ticket.company_id == c.id).count()
+        items.append(
+            {
+                "id": c.id,
+                "name": c.name,
+                "created_at": c.created_at,
+                "users_count": users_count,
+                "projects_count": projects_count,
+                "tickets_count": tickets_count,
+            }
+        )
+
+    return templates.TemplateResponse(
+        "admin_companies.html",
+        {
+            "request": request,
+            "user": user,
+            "companies": items,
+        },
+    )
+
+
+@app.post("/web/admin/companies/{company_id}/delete")
+async def web_admin_company_delete(
+    company_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    delete_company_with_data(db, company_id)
+    db.commit()
+    return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
+
+
 @app.get("/web/pwa-check")
 def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
     return templates.TemplateResponse(
@@ -1384,6 +1681,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     # куратор и исполнитель могут создавать
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
 
     form = await request.form()
 
@@ -1439,13 +1737,14 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
 
     try:
-        validate_ticket_links(db, project_id, executor_id)
+        validate_ticket_links(db, user.company_id, project_id, executor_id)
 
         # ВАЖНО: именно deadline=deadline
         t = Ticket(
             title=title,
             description=description,
             deadline=deadline,
+            company_id=user.company_id,
             executor_id=executor_id,
             project_id=project_id,
             created_by=user.id,
@@ -1468,9 +1767,12 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
 @app.post("/web/tickets/{ticket_id}/delete")
 def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    ensure_company_user(user)
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     # права
     if is_manager(user):
@@ -1495,9 +1797,12 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
 
 @app.post("/web/tickets/{ticket_id}/status")
 async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    ensure_company_user(user)
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     # права: куратор всегда, исполнитель — если заявка его (создал или назначена)
     if is_manager(user):
@@ -1549,6 +1854,9 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    ensure_company_user(user)
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
         raise HTTPException(403, "Forbidden")
@@ -1568,6 +1876,9 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    ensure_company_user(user)
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     # права (как у комментариев/статусов)
     if is_manager(user):
@@ -1602,6 +1913,9 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    ensure_company_user(user)
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     # права на просмотр/редактирование
     if is_manager(user):
@@ -1612,8 +1926,8 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
         raise HTTPException(403, "Forbidden")
 
 
-    projects = db.query(Project).order_by(Project.id.desc()).all()
-    executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
+    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
+    executors = db.query(User).filter(User.company_id == user.company_id, User.role == Role.executor).order_by(User.id.desc()).all()
     next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
     next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
     error_code = (request.query_params.get("error") or "").strip().lower()
@@ -1655,9 +1969,12 @@ async def web_ticket_edit_save(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    ensure_company_user(user)
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     # права: куратор — всегда, исполнитель — только свои (создал/назначен)
     if is_manager(user):
@@ -1709,7 +2026,7 @@ async def web_ticket_edit_save(
         except ValueError:
             executor_id_candidate = None
 
-        validate_ticket_links(db, project_id_candidate, executor_id_candidate)
+        validate_ticket_links(db, user.company_id, project_id_candidate, executor_id_candidate)
 
         if project_id_candidate is not None:
             t.project_id = project_id_candidate
@@ -1827,21 +2144,23 @@ async def web_ticket_edit_save(
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
-    projects = db.query(Project).order_by(Project.id.desc()).all()
+    ensure_company_user(user)
+    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
     return templates.TemplateResponse("projects.html", {"request": request, "projects": projects})
 
 @app.post("/web/projects/create")
 async def web_projects_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
     form = await request.form()
     name = (form.get("name") or "").strip()
     description = (form.get("description") or "").strip() or None
     if not name:
         return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
-    if db.query(Project).filter(Project.name == name).first():
+    if db.query(Project).filter(Project.name == name, Project.company_id == user.company_id).first():
         return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
-    p = Project(name=name, description=description)
+    p = Project(name=name, description=description, company_id=user.company_id)
     db.add(p); db.commit()
     return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
 
@@ -1850,8 +2169,9 @@ async def web_projects_create(request: Request, db: Session = Depends(get_db), u
 def web_users(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_admin(user):
         raise HTTPException(403, "Only admin")
-    users = db.query(User).order_by(User.id.desc()).all()
-    invites = db.query(RegistrationInvite).order_by(RegistrationInvite.id.desc()).limit(30).all()
+    ensure_company_user(user)
+    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.id.desc()).all()
+    invites = db.query(RegistrationInvite).filter(RegistrationInvite.company_id == user.company_id).order_by(RegistrationInvite.id.desc()).limit(30).all()
     base_url = str(request.base_url).rstrip("/")
     invite_links = []
     for inv in invites:
@@ -1875,6 +2195,7 @@ def web_users(request: Request, db: Session = Depends(get_db), user: User = Depe
 async def web_users_invite_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_admin(user):
         raise HTTPException(403, "Only admin")
+    ensure_company_user(user)
 
     form = await request.form()
     role_raw = (form.get("role") or "").strip().upper()
@@ -1891,6 +2212,7 @@ async def web_users_invite_create(request: Request, db: Session = Depends(get_db
     invite = RegistrationInvite(
         token=secrets.token_urlsafe(24),
         role=Role(role_raw),
+        company_id=user.company_id,
         created_by=user.id,
         expires_at=datetime.utcnow() + timedelta(days=expires_days),
     )
@@ -1902,6 +2224,7 @@ async def web_users_invite_create(request: Request, db: Session = Depends(get_db
 async def web_users_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_admin(user):
         raise HTTPException(403, "Only admin")
+    ensure_company_user(user)
     form = await request.form()
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
@@ -1914,7 +2237,7 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     if role_raw not in ("CURATOR", "EXECUTOR"):
         return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
-    u = User(email=email, name=name, password_hash=hash_password(password), role=Role(role_raw))
+    u = User(email=email, name=name, password_hash=hash_password(password), role=Role(role_raw), company_id=user.company_id)
     db.add(u); db.commit()
     return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
@@ -1925,9 +2248,12 @@ def web_ticket_detail(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    ensure_company_user(user)
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    if t.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
 
     # права
     if is_manager(user):
@@ -1939,9 +2265,9 @@ def web_ticket_detail(
     if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    projects = db.query(Project).order_by(Project.id.desc()).all()
-    users = db.query(User).order_by(User.id.desc()).all()
-    executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
+    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
+    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.id.desc()).all()
+    executors = db.query(User).filter(User.company_id == user.company_id, User.role == Role.executor).order_by(User.id.desc()).all()
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}

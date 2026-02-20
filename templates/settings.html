@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -38,7 +38,12 @@
         <div class="mb-3">
           <a class="btn btn-outline-primary" href="/web/pwa-check">PWA diagnostic</a>
         </div>
-        {% if user.role in ["ADMIN", "CURATOR"] %}
+
+        {% if user.role == "PLATFORM_ADMIN" %}
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary" href="/web/admin/companies">Компании</a>
+          </div>
+        {% elif user.role in ["ADMIN", "CURATOR"] %}
           <div class="d-flex flex-wrap gap-2">
             <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
             {% if user.role == "ADMIN" %}
@@ -46,7 +51,7 @@
             {% endif %}
           </div>
         {% else %}
-          <div class="text-muted">Разделы управления доступны куратору и администратору. Пользователей создаёт только администратор.</div>
+          <div class="text-muted">Разделы управления доступны владельцу компании, куратору или администратору платформы.</div>
         {% endif %}
       </div>
     </div>

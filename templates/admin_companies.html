@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Компании</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0d6efd">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 1050px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h3 class="mb-0">Компании</h3>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+      </div>
+    </div>
+
+    {% if companies and companies|length > 0 %}
+      {% for c in companies %}
+      <div class="card shadow-sm mb-2">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <div><b>#{{ c.id }} — {{ c.name }}</b></div>
+              <div class="small text-muted">
+                Пользователи: {{ c.users_count }} · Проекты: {{ c.projects_count }} · Заявки: {{ c.tickets_count }}
+              </div>
+              <div class="small text-muted">Создана: {{ format_dt(c.created_at) }}</div>
+            </div>
+            <form method="post" action="/web/admin/companies/{{ c.id }}/delete" onsubmit="return confirm('Удалить компанию {{ c.name }} и все связанные данные?');">
+              <button class="btn btn-outline-danger btn-sm">Удалить компанию</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="alert alert-info">Компаний пока нет.</div>
+    {% endif %}
+  </div>
+  <script src="/static/sw-register.js"></script>
+</body>
+</html>
