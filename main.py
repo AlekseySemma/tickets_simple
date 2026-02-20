@@ -226,7 +226,9 @@ def ensure_runtime_schema() -> None:
     if engine.dialect.name == "postgresql":
         enum_type_name = getattr(User.__table__.c.role.type, "name", "role") or "role"
         if enum_type_name.replace("_", "").isalnum():
-            with engine.begin() as conn:
+            # Some PostgreSQL versions reject ALTER TYPE ... ADD VALUE inside a transaction.
+            with engine.connect() as raw_conn:
+                conn = raw_conn.execution_options(isolation_level="AUTOCOMMIT")
                 conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'admin'")
                 conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'platform_admin'")
 
@@ -234,7 +236,7 @@ def ensure_runtime_schema() -> None:
         default_company_id = conn.exec_driver_sql("SELECT id FROM companies ORDER BY id LIMIT 1").scalar()
         if default_company_id is None:
             users_without_company = conn.exec_driver_sql(
-                "SELECT COUNT(*) FROM users WHERE role <> 'platform_admin' AND company_id IS NULL"
+                "SELECT COUNT(*) FROM users WHERE CAST(role AS TEXT) <> 'platform_admin' AND company_id IS NULL"
             ).scalar() or 0
             projects_without_company = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM projects WHERE company_id IS NULL"
@@ -248,7 +250,7 @@ def ensure_runtime_schema() -> None:
 
         if default_company_id is not None:
             conn.exec_driver_sql(
-                "UPDATE users SET company_id = :cid WHERE role <> 'platform_admin' AND company_id IS NULL",
+                "UPDATE users SET company_id = :cid WHERE CAST(role AS TEXT) <> 'platform_admin' AND company_id IS NULL",
                 {"cid": int(default_company_id)},
             )
             conn.exec_driver_sql(
