@@ -1018,9 +1018,12 @@ def bootstrap_platform_admin(payload: BootstrapSetupIn, db: Session = Depends(ge
     if db.query(User).filter(User.email == payload.admin_email).first():
         raise HTTPException(400, "Admin email already exists")
 
-    company = Company(name=(payload.company_name or "").strip() or "Platform")
-    db.add(company)
-    db.flush()
+    company_name = (payload.company_name or "").strip() or "Platform"
+    company = db.query(Company).filter(Company.name == company_name).first()
+    if not company:
+        company = Company(name=company_name)
+        db.add(company)
+        db.flush()
 
     u = User(
         email=payload.admin_email,
@@ -1029,7 +1032,13 @@ def bootstrap_platform_admin(payload: BootstrapSetupIn, db: Session = Depends(ge
         role=Role.platform_admin,
         company_id=None,
     )
-    db.add(u); db.commit(); db.refresh(u)
+    try:
+        db.add(u)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(400, "Could not create platform admin")
+    db.refresh(u)
     db.refresh(company)
     return BootstrapSetupOut(company=company, admin=u)
 
