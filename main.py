@@ -58,6 +58,7 @@ VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
 MAX_TICKET_TITLE_LEN = 255
+LOCAL_TIME_OFFSET_HOURS = int(os.getenv("LOCAL_TIME_OFFSET_HOURS", "3"))
 
 # =========================
 # База данных (SQLite)
@@ -341,7 +342,11 @@ async def write_upload_file_async(upload: UploadFile, destination: Path, max_siz
 def to_local_dt(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
-    return dt + timedelta(hours=3)
+    return dt + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
+
+
+def local_now() -> datetime:
+    return datetime.utcnow() + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
 
 
 def format_dt(dt: datetime | None) -> str:
@@ -381,7 +386,7 @@ def format_deadline(dt: datetime | None) -> str:
     if dt is None:
         return "—"
 
-    now_local = datetime.now()
+    now_local = local_now()
     date_part = dt.date()
     now_date = now_local.date()
 
@@ -539,7 +544,7 @@ def run_deadline_reminders_forever() -> None:
     while True:
         try:
             with SessionLocal() as db:
-                now = datetime.now()
+                now = local_now()
                 horizon = now + timedelta(seconds=PUSH_REMINDER_POLL_SECONDS)
                 q = db.query(Ticket).filter(
                     Ticket.executor_id.is_not(None),
@@ -1079,7 +1084,7 @@ def web_tickets(
             or (t.description is None and False)
         ]
 
-    now = datetime.now()
+    now = local_now()
     now_plus_24h = now + timedelta(hours=24)
 
         # только просроченные
@@ -1242,7 +1247,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
     # если дату выбрали, а время не ввели — ставим текущее время
     if deadline_date and not time4:
-        time4 = datetime.now().strftime("%H%M")
+        time4 = local_now().strftime("%H%M")
 
     if deadline_date and time4:
         time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
@@ -1345,7 +1350,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
     notify_curators_status_changed(db, t, actor=user, old_status=old_status)
     db.commit()
 
-    now = datetime.now()
+    now = local_now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled))
 
     # если запрос пришёл через fetch (Accept: application/json) — вернём JSON
@@ -1545,7 +1550,7 @@ async def web_ticket_edit_save(
     time4 = (form.get("deadline_time4") or "").strip()
 
     if deadline_date and not time4:
-        time4 = datetime.now().strftime("%H%M")
+        time4 = local_now().strftime("%H%M")
 
     if deadline_date and time4:
         time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
@@ -1601,7 +1606,7 @@ async def web_ticket_edit_save(
     time4 = (form.get("deadline_time4") or "").strip()   
         # если дату выбрали, а время не ввели — ставим текущее время
     if deadline_date and not time4:
-        time4 = datetime.now().strftime("%H%M")
+        time4 = local_now().strftime("%H%M")
 
        # 1-4 цифры
 
@@ -1726,7 +1731,7 @@ def web_ticket_detail(
     attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
     ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.desc()).all()
 
-    now = datetime.now()
+    now = local_now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
     is_deadline_soon = bool(
         t.deadline
