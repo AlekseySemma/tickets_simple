@@ -42,7 +42,8 @@
     if (!keyResp.ok) {
       if (btn) {
         btn.disabled = true;
-        btn.textContent = "Push off";
+        btn.textContent = "Push не настроен";
+        btn.title = "Нужно задать VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY и VAPID_SUBJECT";
       }
       return;
     }

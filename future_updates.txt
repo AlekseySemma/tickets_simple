@@ -5,6 +5,9 @@ git config --global user.email "alekseysemma@gmail.com"
 
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 .\venv\Scripts\Activate.ps1
+$env:VAPID_PUBLIC_KEY="BGLcQN0Gj6HpKXLckUwz1Q9f9bRexe9yfAzSkTxBWMQPexpdJpYF2fzDuQmYAg3VM4rPw3IsfqMpRJhvbFF3Z1w"
+$env:VAPID_PRIVATE_KEY="private_key.pem"
+$env:VAPID_SUBJECT="mailto:admin@example.com"
 uvicorn main:app --reload
 
 
