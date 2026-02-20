@@ -2,6 +2,8 @@
   const btn = document.getElementById("enable-push-btn");
   const testBtn = document.getElementById("test-push-btn");
   const resultEl = document.getElementById("test-push-result");
+  const ua = (navigator.userAgent || "").toLowerCase();
+  const isFirefox = ua.includes("firefox");
 
   function setResult(text, ok) {
     if (!resultEl) return;
@@ -35,6 +37,13 @@
   }
 
   async function initPush() {
+    if (isFirefox) {
+      if (btn) btn.style.display = "none";
+      if (testBtn) testBtn.style.display = "none";
+      setResult("Push в Firefox отключен. Используйте Chrome или Яндекс Браузер.", false);
+      return;
+    }
+
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       if (btn) btn.style.display = "none";
       if (testBtn) testBtn.style.display = "none";
