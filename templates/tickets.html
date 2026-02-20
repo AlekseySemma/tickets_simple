@@ -206,13 +206,7 @@
         <div class="muted">Вы вошли как: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="d-flex gap-2">
-  <button id="enable-push-btn" class="btn btn-outline-primary" type="button">Уведомления</button>
-  <button id="test-push-btn" class="btn btn-outline-success" type="button">Тест push</button>
-  <span id="test-push-result" class="small text-muted align-self-center"></span>
-  {% if user.role == "CURATOR" %}
-    <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
-    <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
-  {% endif %}
+  <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
   <a class="btn btn-outline-secondary" href="/docs" target="_blank">Swagger</a>
   <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
 </div>
@@ -904,8 +898,6 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 </script>
-
-<script src="/static/pwa.js"></script>
 
 
 
