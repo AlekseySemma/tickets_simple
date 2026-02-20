@@ -9,7 +9,6 @@ import time
 from typing import Optional
 import uuid
 from urllib.parse import quote
-
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -17,6 +16,7 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
@@ -57,6 +57,7 @@ PUSH_REMINDER_POLL_SECONDS = int(os.getenv("PUSH_REMINDER_POLL_SECONDS", "30"))
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
+MAX_TICKET_TITLE_LEN = 255
 
 # =========================
 # База данных (SQLite)
@@ -291,6 +292,13 @@ def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) ->
         raise HTTPException(400, "Unsupported file type")
     prefix = f"{ticket_id}_" if ticket_id is not None else ""
     return f"{prefix}{uuid.uuid4().hex}{ext}"
+
+
+def normalize_ticket_title(raw_title: str | None) -> str:
+    title = (raw_title or "").strip()
+    if len(title) > MAX_TICKET_TITLE_LEN:
+        return title[:MAX_TICKET_TITLE_LEN]
+    return title
 
 
 def write_upload_file(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:
@@ -829,22 +837,33 @@ def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_
 # =========================
 @app.post("/tickets", response_model=TicketOut)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    title = normalize_ticket_title(payload.title)
+    if not title:
+        raise HTTPException(422, "Title is required")
+
     validate_ticket_links(db, payload.project_id, payload.executor_id)
     t = Ticket(
-        title=payload.title,
+        title=title,
         description=payload.description,
         deadline=payload.deadline,
         executor_id=payload.executor_id,
         project_id=payload.project_id,
         created_by=user.id
     )
-    db.add(t)
-    db.flush()
-    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
-    db.commit()
+    try:
+        db.add(t)
+        db.flush()
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(400, "Не удалось создать заявку")
     db.refresh(t)
     notify_executor_new_ticket(db, t, user)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
     return t
 
 @app.get("/tickets", response_model=list[TicketOut])
@@ -1181,7 +1200,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
     form = await request.form()
 
-    title = (form.get("title") or "").strip()
+    title = normalize_ticket_title(form.get("title"))
     description = (form.get("description") or "").strip() or None
 
     project_id_raw = (form.get("project_id") or "").strip()
@@ -1229,23 +1248,30 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 deadline = None
 
 
-    validate_ticket_links(db, project_id, executor_id)
+    try:
+        validate_ticket_links(db, project_id, executor_id)
 
-    # ВАЖНО: именно deadline=deadline
-    t = Ticket(
-        title=title,
-        description=description,
-        deadline=deadline,
-        executor_id=executor_id,
-        project_id=project_id,
-        created_by=user.id,
-    )
-    db.add(t)
-    db.flush()
-    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
-    db.commit()
+        # ВАЖНО: именно deadline=deadline
+        t = Ticket(
+            title=title,
+            description=description,
+            deadline=deadline,
+            executor_id=executor_id,
+            project_id=project_id,
+            created_by=user.id,
+        )
+        db.add(t)
+        db.flush()
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
     notify_executor_new_ticket(db, t, user)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
@@ -1710,6 +1736,3 @@ def web_ticket_detail(
             "status_labels": status_labels,
         },
     )
-
-
-
