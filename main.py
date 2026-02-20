@@ -430,7 +430,7 @@ def send_push_to_user_report(db: Session, user_id: int, title: str, body: str, u
         except WebPushException as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
             results.append({"id": sub.id, "ok": False, "status_code": status_code})
-            if status_code in {404, 410}:
+            if status_code in {401, 404, 410}:
                 db.delete(sub)
         except Exception:
             results.append({"id": sub.id, "ok": False, "status_code": "error"})
