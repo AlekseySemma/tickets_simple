@@ -401,16 +401,17 @@ def push_is_configured() -> bool:
     return bool(PYWEBPUSH_AVAILABLE and VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY and VAPID_SUBJECT)
 
 
-def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
+def send_push_to_user_report(db: Session, user_id: int, title: str, body: str, url: str) -> list[dict]:
     if not push_is_configured():
-        return
+        return []
 
     subs = db.query(PushSubscription).filter(PushSubscription.user_id == user_id).all()
     if not subs:
-        return
+        return []
 
     payload = json.dumps({"title": title, "body": body, "url": url})
     vapid_claims = {"sub": VAPID_SUBJECT}
+    results: list[dict] = []
     for sub in subs:
         subscription_info = {
             "endpoint": sub.endpoint,
@@ -425,12 +426,20 @@ def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str
                 ttl=60 * 60,
             )
             sub.updated_at = datetime.utcnow()
+            results.append({"id": sub.id, "ok": True})
         except WebPushException as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            results.append({"id": sub.id, "ok": False, "status_code": status_code})
             if status_code in {404, 410}:
                 db.delete(sub)
         except Exception:
+            results.append({"id": sub.id, "ok": False, "status_code": "error"})
             continue
+    return results
+
+
+def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
+    _ = send_push_to_user_report(db=db, user_id=user_id, title=title, body=body, url=url)
 
 
 def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None:
@@ -728,7 +737,7 @@ def push_unsubscribe(payload: PushUnsubscribeIn, db: Session = Depends(get_db), 
 def push_test(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not push_is_configured():
         raise HTTPException(503, "Push is not configured")
-    send_push_to_user(
+    report = send_push_to_user_report(
         db=db,
         user_id=user.id,
         title="Тест push",
@@ -736,7 +745,8 @@ def push_test(db: Session = Depends(get_db), user: User = Depends(get_current_us
         url="/web",
     )
     db.commit()
-    return {"ok": True}
+    ok_count = sum(1 for r in report if r.get("ok"))
+    return {"ok": True, "sent": ok_count, "total": len(report), "report": report}
 
 
 @app.get("/api/push/debug")
