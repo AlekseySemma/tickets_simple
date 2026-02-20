@@ -738,6 +738,24 @@ def push_test(db: Session = Depends(get_db), user: User = Depends(get_current_us
     db.commit()
     return {"ok": True}
 
+
+@app.get("/api/push/debug")
+def push_debug(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).order_by(PushSubscription.updated_at.desc()).all()
+    items = []
+    for s in subs:
+        endpoint = s.endpoint or ""
+        masked = endpoint[:42] + ("..." if len(endpoint) > 42 else "")
+        items.append(
+            {
+                "id": s.id,
+                "endpoint": masked,
+                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+        )
+    return {"user_id": user.id, "count": len(subs), "subscriptions": items}
+
 # =========================
 # AUTH API
 # =========================

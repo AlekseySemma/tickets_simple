@@ -22,8 +22,8 @@ self.addEventListener("push", (event) => {
       icon: "/static/icon-192.png",
       badge: "/static/icon-192.png",
       data: { url: payload.url || "/web" },
-      tag: "servora-ticket",
-      renotify: true,
+      tag: "servora-ticket-" + Date.now(),
+      renotify: false,
     })
   );
 });
