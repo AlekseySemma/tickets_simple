@@ -200,6 +200,11 @@ def ensure_runtime_schema() -> None:
     if "original_name" not in cols:
         with engine.begin() as conn:
             conn.exec_driver_sql("ALTER TABLE attachments ADD COLUMN original_name VARCHAR(255)")
+    if engine.dialect.name == "postgresql":
+        enum_type_name = getattr(User.__table__.c.role.type, "name", "role") or "role"
+        if enum_type_name.replace("_", "").isalnum():
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'admin'")
 
 ensure_runtime_schema()
 
