@@ -249,22 +249,19 @@ def ensure_runtime_schema() -> None:
                 default_company_id = conn.exec_driver_sql("SELECT id FROM companies ORDER BY id DESC LIMIT 1").scalar()
 
         if default_company_id is not None:
+            cid = int(default_company_id)
             conn.exec_driver_sql(
-                "UPDATE users SET company_id = :cid WHERE CAST(role AS TEXT) <> 'platform_admin' AND company_id IS NULL",
-                {"cid": int(default_company_id)},
+                f"UPDATE users SET company_id = {cid} WHERE CAST(role AS TEXT) <> 'platform_admin' AND company_id IS NULL"
             )
             conn.exec_driver_sql(
-                "UPDATE projects SET company_id = :cid WHERE company_id IS NULL",
-                {"cid": int(default_company_id)},
+                f"UPDATE projects SET company_id = {cid} WHERE company_id IS NULL"
             )
             conn.exec_driver_sql(
-                "UPDATE tickets SET company_id = :cid WHERE company_id IS NULL",
-                {"cid": int(default_company_id)},
+                f"UPDATE tickets SET company_id = {cid} WHERE company_id IS NULL"
             )
             if insp.has_table("registration_invites"):
                 conn.exec_driver_sql(
-                    "UPDATE registration_invites SET company_id = :cid WHERE company_id IS NULL",
-                    {"cid": int(default_company_id)},
+                    f"UPDATE registration_invites SET company_id = {cid} WHERE company_id IS NULL"
                 )
 
 ensure_runtime_schema()
