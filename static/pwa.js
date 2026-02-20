@@ -51,7 +51,10 @@
       return;
     }
 
-    const swRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    let swRegistration = await navigator.serviceWorker.getRegistration("/");
+    if (!swRegistration) {
+      swRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    }
 
     let keyResp;
     try {
