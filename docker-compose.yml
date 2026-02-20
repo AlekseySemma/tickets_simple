@@ -17,10 +17,14 @@ services:
     environment:
       DATABASE_URL: postgresql://tickets:change_me_strong@db:5432/tickets
       UPLOAD_DIR: /data/uploads
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: /app/private_key.pem
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - uploads:/data/uploads
+      - ./private_key.pem:/app/private_key.pem:ro
 
 volumes:
   pgdata:
