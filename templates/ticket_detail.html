@@ -104,17 +104,73 @@
       padding: 12px;
     }
     .log-item.hidden { display: none; }
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .page-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .ticket-layout {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .ticket-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .ticket-side {
+      min-width: 280px;
+    }
+    @media (max-width: 991.98px) {
+      .container {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      .ticket-layout {
+        flex-direction: column;
+      }
+      .ticket-side {
+        width: 100%;
+        min-width: 0;
+        text-align: left !important;
+      }
+      .status-menu {
+        right: auto;
+        left: 0;
+      }
+    }
+    @media (max-width: 575.98px) {
+      .meta-chip {
+        white-space: normal;
+      }
+      .comment-bubble {
+        max-width: 100%;
+      }
+      .page-actions .btn {
+        flex: 1 1 auto;
+        min-width: 120px;
+      }
+    }
   </style>
 </head>
 
 <body class="bg-light">
   <div class="container py-4" style="max-width: 1000px;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="page-head mb-3">
       <div>
         <h3 class="mb-0">Заявка</h3>
         <div class="muted">ID: #{{ t.id }}</div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="page-actions">
         <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
         <a class="btn btn-outline-secondary" href="/web">← Назад к списку</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
@@ -123,8 +179,8 @@
 
     <div id="ticket-{{ t.id }}" class="card shadow-sm ticket {% if is_overdue %}overdue{% endif %}">
       <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start gap-3">
-          <div style="flex:1">
+        <div class="ticket-layout">
+          <div class="ticket-main">
             <div class="ticket-head">
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
               <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
@@ -146,7 +202,7 @@
             </div>
           </div>
 
-          <div class="text-end" style="min-width: 280px;">
+          <div class="ticket-side text-md-end">
             <div class="d-flex justify-content-end gap-2 align-items-center">
               <div class="position-relative d-inline-block">
                 <span id="status-badge-{{ t.id }}"
@@ -215,7 +271,7 @@
               {% endif %}
             </div>
 
-            <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2">
+            <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
   <input type="hidden" name="next" value="/web/tickets/{{ t.id }}">
   <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
   <button class="btn btn-outline-secondary">Отправить</button>
@@ -256,7 +312,7 @@
 
 
         <form method="post" action="/web/tickets/{{ t.id }}/attachments"
-      enctype="multipart/form-data" class="d-flex gap-2">
+      enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
   <input type="hidden" name="next" value="/web/tickets/{{ t.id }}">
   <input type="file" name="file" class="form-control" required />
   <button class="btn btn-outline-secondary">Загрузить</button>

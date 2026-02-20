@@ -194,18 +194,89 @@
     .view-switch .btn {
       min-width: 120px;
     }
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .page-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .ticket-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .ticket-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .ticket-side {
+      min-width: 220px;
+    }
+    @media (max-width: 991.98px) {
+      .container {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      .view-switch {
+        width: 100%;
+      }
+      .view-switch .btn-group {
+        width: 100%;
+      }
+      .view-switch .btn {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .ticket-row {
+        flex-direction: column;
+      }
+      .ticket-side {
+        width: 100%;
+        min-width: 0;
+        text-align: left !important;
+      }
+      .status-menu {
+        right: auto;
+        left: 0;
+      }
+    }
+    @media (max-width: 575.98px) {
+      .meta-chip {
+        white-space: normal;
+      }
+      .ticket {
+        padding: 12px;
+      }
+      .ticket-head {
+        padding: 10px;
+      }
+      .page-actions .btn {
+        flex: 1 1 auto;
+        min-width: 120px;
+      }
+      .form-check.mt-4 {
+        margin-top: 0.5rem !important;
+      }
+    }
 
   </style>
-  <input type="hidden" name="next" value="/web">
 </head>
 <body class="bg-light">
   <div class="container py-4">
-    <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="page-head mb-3">
       <div>
         <h3 class="mb-0">Заявки</h3>
         <div class="muted">Вы вошли как: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="page-actions">
   <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
   <a class="btn btn-outline-secondary" href="/docs" target="_blank">Swagger</a>
   <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
@@ -353,8 +424,7 @@
               </div>
             {% endif %}
 
-            <div class="col-12">
-              <div class="col-6 col-md-3">
+            <div class="col-6 col-md-3">
                 <label class="form-label mb-1">Сортировка</label>
                 <select name="sort" class="form-select">
                   <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
@@ -365,6 +435,7 @@
                 </select>
               </div>
 
+            <div class="col-6 col-md-3 d-flex align-items-end">
               <a class="small" href="/web{% if user.role == 'CURATOR' %}?view_mode={{ view_mode }}{% endif %}">Сбросить фильтры</a>
             </div>
           </form>
@@ -390,7 +461,6 @@
     </div>
     {% endif %}
 
-    <div class="row g-2 mb-3">
 
   <!--ДАШБОАРД -- ВСЕ -->
   <div class="row g-2 mb-3" id="dashboard"
@@ -458,7 +528,6 @@
 </div>
 
 
-</div>
 
 
     {% if user.role == "CURATOR" and view_mode == "table" %}
@@ -523,8 +592,8 @@
     {% else %}
     {% for t in tickets %}
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
-        <div class="d-flex justify-content-between align-items-start gap-3">
-          <div style="flex:1">
+        <div class="ticket-row">
+          <div class="ticket-main">
             <div class="ticket-head">
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
               <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
@@ -545,10 +614,10 @@
             </div>
           </div>
 
-          <div class="text-end">
+          <div class="ticket-side text-md-end">
             {% set is_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
 
-<div class="d-flex justify-content-between align-items-center gap-2">
+<div class="d-flex flex-wrap justify-content-md-between justify-content-start align-items-center gap-2">
   <div class="d-flex flex-wrap gap-2 align-items-center">
     {% if is_overdue %}
       <span id="overdue-badge-{{ t.id }}" class="badge badge-status st-OVERDUE"
