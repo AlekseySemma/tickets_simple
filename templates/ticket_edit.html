@@ -27,7 +27,13 @@
           {% if can_edit_full %}
             <div class="col-12 col-md-6">
               <label class="form-label">Название</label>
-              <input name="title" class="form-control" value="{{ t.title }}" required />
+              <input name="title" class="form-control ticket-title-input" value="{{ t.title }}" required maxlength="{{ max_ticket_title_len }}" data-title-limit="{{ max_ticket_title_len }}" data-counter-target="edit-title-counter" />
+              <div class="d-flex justify-content-end mt-1">
+                <small id="edit-title-counter" class="text-muted">0/{{ max_ticket_title_len }}</small>
+              </div>
+              <div class="invalid-feedback">
+                Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
+              </div>
             </div>
 
             <div class="col-12 col-md-6">
@@ -149,6 +155,40 @@
 
     render();
   })();
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const form = document.querySelector('form[action*="/web/tickets/"][action$="/edit"]');
+  const titleInput = document.querySelector("input.ticket-title-input");
+  if (!form || !titleInput) return;
+
+  const limit = parseInt(titleInput.dataset.titleLimit || "255", 10);
+  const counterId = titleInput.dataset.counterTarget || "";
+  const counter = counterId ? document.getElementById(counterId) : null;
+
+  function renderCounter() {
+    const len = (titleInput.value || "").length;
+    const tooLong = len > limit;
+    if (counter) {
+      counter.textContent = `${len}/${limit}`;
+      counter.classList.toggle("text-danger", tooLong);
+    }
+    titleInput.classList.toggle("is-invalid", tooLong);
+    titleInput.setCustomValidity(tooLong ? `Максимум ${limit} символов` : "");
+  }
+
+  titleInput.addEventListener("input", renderCounter);
+  form.addEventListener("submit", function (event) {
+    renderCounter();
+    if (!form.checkValidity()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    form.classList.add("was-validated");
+  });
+
+  renderCounter();
+});
 </script>
 </body>
 </html>

@@ -295,10 +295,11 @@ def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) ->
 
 
 def normalize_ticket_title(raw_title: str | None) -> str:
-    title = (raw_title or "").strip()
-    if len(title) > MAX_TICKET_TITLE_LEN:
-        return title[:MAX_TICKET_TITLE_LEN]
-    return title
+    return (raw_title or "").strip()
+
+
+def is_ticket_title_too_long(title: str | None) -> bool:
+    return len(title or "") > MAX_TICKET_TITLE_LEN
 
 
 def write_upload_file(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:
@@ -840,6 +841,8 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     title = normalize_ticket_title(payload.title)
     if not title:
         raise HTTPException(422, "Title is required")
+    if is_ticket_title_too_long(title):
+        raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
     validate_ticket_links(db, payload.project_id, payload.executor_id)
     t = Ticket(
@@ -886,6 +889,11 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
             raise HTTPException(403, "Forbidden")
         allowed = {"status", "description"}  # можно расширить
         incoming = {k: v for k, v in incoming.items() if k in allowed}
+
+    if "title" in incoming:
+        incoming["title"] = normalize_ticket_title(incoming.get("title"))
+        if incoming["title"] and is_ticket_title_too_long(incoming["title"]):
+            raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
     validate_ticket_links(db, incoming.get("project_id"), incoming.get("executor_id"))
 
@@ -1009,6 +1017,7 @@ def web_tickets(
     sort: str | None = None,
     view_mode: str | None = None,
     open_create: str | None = None,
+    create_error: str | None = None,
     page: int = 1,
 ):
     # 1) tickets с учетом роли
@@ -1168,6 +1177,8 @@ def web_tickets(
             "overdue_count": overdue_count,
             "filters_form_open": filters_form_open,
             "create_form_open": create_form_open,
+            "create_error": create_error or "",
+            "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
             "current_list_url": current_list_url,
             "current_list_url_encoded": current_list_url_encoded,
             "page": page,
@@ -1202,6 +1213,9 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
     title = normalize_ticket_title(form.get("title"))
     description = (form.get("description") or "").strip() or None
+
+    if is_ticket_title_too_long(title):
+        return RedirectResponse(url="/web?open_create=1&create_error=title_too_long", status_code=HTTP_303_SEE_OTHER)
 
     project_id_raw = (form.get("project_id") or "").strip()
     if not title or not project_id_raw:
@@ -1426,6 +1440,11 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
     executors = db.query(User).filter(User.role == Role.executor).order_by(User.id.desc()).all()
     next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
     next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
+    error_code = (request.query_params.get("error") or "").strip().lower()
+    if error_code == "title_too_long":
+        error_message = f"Название слишком длинное. Максимум: {MAX_TICKET_TITLE_LEN} символов."
+    else:
+        error_message = None
 
 
     # подготовим дату/время для формы
@@ -1446,7 +1465,8 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
             "can_edit_full": can_edit_full,
             "deadline_date": deadline_date,
             "deadline_time4": deadline_time4,
-            "error": None,
+            "error": error_message,
+            "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
             "next_url": next_url,
         },
     )
@@ -1478,10 +1498,14 @@ async def web_ticket_edit_save(
     status_raw = (form.get("status") or "").strip()
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
 
-    title = (form.get("title") or "").strip()
+    title = normalize_ticket_title(form.get("title"))
     description = (form.get("description") or "").strip()
     project_id_raw = (form.get("project_id") or "").strip()
     executor_id_raw = (form.get("executor_id") or "").strip()
+
+    if is_ticket_title_too_long(title):
+        edit_url = f"/web/tickets/{ticket_id}/edit?error=title_too_long&next={quote(next_url, safe='')}"
+        return RedirectResponse(url=edit_url, status_code=HTTP_303_SEE_OTHER)
 
     old_deadline = t.deadline
     old_executor_id = t.executor_id
