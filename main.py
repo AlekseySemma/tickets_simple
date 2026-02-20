@@ -723,6 +723,21 @@ def push_unsubscribe(payload: PushUnsubscribeIn, db: Session = Depends(get_db), 
         db.commit()
     return {"ok": True}
 
+
+@app.post("/api/push/test")
+def push_test(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not push_is_configured():
+        raise HTTPException(503, "Push is not configured")
+    send_push_to_user(
+        db=db,
+        user_id=user.id,
+        title="Тест push",
+        body=f"Проверка уведомлений для {user.name}",
+        url="/web",
+    )
+    db.commit()
+    return {"ok": True}
+
 # =========================
 # AUTH API
 # =========================
