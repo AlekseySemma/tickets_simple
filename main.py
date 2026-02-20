@@ -1208,6 +1208,17 @@ def web_settings(request: Request, user: User = Depends(get_current_user)):
     )
 
 
+@app.get("/web/pwa-check")
+def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
+    return templates.TemplateResponse(
+        "pwa_check.html",
+        {
+            "request": request,
+            "user": user,
+        },
+    )
+
+
 @app.post("/web/tickets/create")
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # куратор и исполнитель могут создавать
