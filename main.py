@@ -867,12 +867,14 @@ def push_reset(db: Session = Depends(get_db), user: User = Depends(get_current_u
 # =========================
 @app.post("/auth/bootstrap", response_model=BootstrapSetupOut)
 def bootstrap_company_and_admin(payload: BootstrapSetupIn, db: Session = Depends(get_db)):
-    if db.query(User).first() or db.query(Company).first():
+    if db.query(Company).first() or db.query(User).filter(User.role == Role.admin).first():
         raise HTTPException(400, "Bootstrap already done")
 
     company_name = (payload.company_name or "").strip()
     if not company_name:
         raise HTTPException(422, "Company name is required")
+    if db.query(User).filter(User.email == payload.admin_email).first():
+        raise HTTPException(400, "Admin email already exists")
 
     company = Company(name=company_name)
     db.add(company)
