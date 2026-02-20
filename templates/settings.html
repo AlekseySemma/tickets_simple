@@ -38,13 +38,15 @@
         <div class="mb-3">
           <a class="btn btn-outline-primary" href="/web/pwa-check">PWA diagnostic</a>
         </div>
-        {% if user.role == "CURATOR" %}
+        {% if user.role in ["ADMIN", "CURATOR"] %}
           <div class="d-flex flex-wrap gap-2">
             <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
-            <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
+            {% if user.role == "ADMIN" %}
+              <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
+            {% endif %}
           </div>
         {% else %}
-          <div class="text-muted">Разделы Проекты и Пользователи доступны только куратору.</div>
+          <div class="text-muted">Разделы управления доступны куратору и администратору. Пользователей создаёт только администратор.</div>
         {% endif %}
       </div>
     </div>

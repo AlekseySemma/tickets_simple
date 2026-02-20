@@ -287,7 +287,7 @@
       Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
     </div>
     {% endif %}
-    {% if user.role in ["CURATOR", "EXECUTOR"] %}
+    {% if user.role in ["ADMIN", "CURATOR", "EXECUTOR"] %}
     <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">
         <details class="panel-toggle" {% if create_form_open %}open{% endif %}>
@@ -340,7 +340,7 @@
               </div>
             </div>
             <div class="col-12 col-md-6">
-              {% if user.role == "CURATOR" %}
+              {% if user.role in ["ADMIN", "CURATOR"] %}
                 <select name="executor_id" class="form-select">
                   <option value="" selected>Исполнитель (необязательно)</option>
                   {% for e in executors %}
@@ -403,7 +403,7 @@
               <button class="btn btn-primary w-100">Применить</button>
             </div>
 
-            {% if user.role == "CURATOR" %}
+            {% if user.role in ["ADMIN", "CURATOR"] %}
               <div class="col-6 col-md-3">
                 <label class="form-label mb-1">Исполнитель</label>
                 <select name="executor_id" class="form-select">
@@ -436,14 +436,14 @@
               </div>
 
             <div class="col-6 col-md-3 d-flex align-items-end">
-              <a class="small" href="/web{% if user.role == 'CURATOR' %}?view_mode={{ view_mode }}{% endif %}">Сбросить фильтры</a>
+              <a class="small" href="/web{% if user.role in ['ADMIN', 'CURATOR'] %}?view_mode={{ view_mode }}{% endif %}">Сбросить фильтры</a>
             </div>
           </form>
         </details>
       </div>
     </div>
 
-    {% if user.role == "CURATOR" %}
+    {% if user.role in ["ADMIN", "CURATOR"] %}
     <div class="d-flex justify-content-end mb-3">
       <form method="get" action="/web" class="view-switch">
         <input type="hidden" name="page" value="{{ page }}">
@@ -530,7 +530,7 @@
 
 
 
-    {% if user.role == "CURATOR" and view_mode == "table" %}
+    {% if user.role in ["ADMIN", "CURATOR"] and view_mode == "table" %}
       <div class="tickets-table-wrap mb-3">
         <div class="table-responsive">
           <table class="table tickets-table mb-0">
@@ -650,11 +650,11 @@
 
 </div>
 
-            {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
+            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
   <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
 {% endif %}
 
-            {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
             <form method="post" action="/web/tickets/{{ t.id }}/delete" class="mt-2"
               onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
             <input type="hidden" name="next" value="/web">
@@ -827,8 +827,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  const isCurator = "{{ user.role }}" === "CURATOR";
-  if (!isCurator) return;
+  const isManager = ["ADMIN", "CURATOR"].includes("{{ user.role }}");
+  if (!isManager) return;
 
   const KEY = "tickets_view_mode";
   const isValidMode = (v) => v === "table" || v === "cards";

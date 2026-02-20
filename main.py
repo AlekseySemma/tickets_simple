@@ -76,6 +76,7 @@ class Base(DeclarativeBase):
 # Модели
 # =========================
 class Role(str, Enum):
+    admin = "ADMIN"
     curator = "CURATOR"
     executor = "EXECUTOR"
 
@@ -110,6 +111,23 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
+
+class Company(Base):
+    __tablename__ = "companies"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class RegistrationInvite(Base):
+    __tablename__ = "registration_invites"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    used_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
 
 class Project(Base):
     __tablename__ = "projects"
@@ -205,6 +223,23 @@ class UserOut(BaseModel):
     role: Role
     class Config:
         from_attributes = True
+
+class CompanyOut(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+class BootstrapSetupIn(BaseModel):
+    company_name: str
+    admin_email: EmailStr
+    admin_name: str
+    admin_password: str
+
+class BootstrapSetupOut(BaseModel):
+    company: CompanyOut
+    admin: UserOut
 
 class ProjectCreate(BaseModel):
     name: str
@@ -632,6 +667,28 @@ def require_role(*roles: Role):
         return user
     return checker
 
+
+def is_admin(user: User) -> bool:
+    return user.role == Role.admin
+
+
+def is_manager(user: User) -> bool:
+    return user.role in (Role.admin, Role.curator)
+
+
+def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | None:
+    token_value = (token or "").strip()
+    if not token_value:
+        return None
+    invite = db.query(RegistrationInvite).filter(RegistrationInvite.token == token_value).first()
+    if not invite:
+        return None
+    if invite.used_by is not None:
+        return None
+    if invite.expires_at and invite.expires_at < datetime.utcnow():
+        return None
+    return invite
+
 # =========================
 # Приложение
 # =========================
@@ -644,7 +701,7 @@ def root(request: Request):
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
-        if request.url.path == "/web/login":
+        if request.url.path in {"/web/login", "/web/register"}:
             return await call_next(request)
         origin = (request.headers.get("origin") or "").strip()
         referer = (request.headers.get("referer") or "").strip()
@@ -808,16 +865,28 @@ def push_reset(db: Session = Depends(get_db), user: User = Depends(get_current_u
 # =========================
 # AUTH API
 # =========================
-@app.post("/auth/bootstrap", response_model=UserOut)
-def bootstrap_first_curator(payload: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).first():
+@app.post("/auth/bootstrap", response_model=BootstrapSetupOut)
+def bootstrap_company_and_admin(payload: BootstrapSetupIn, db: Session = Depends(get_db)):
+    if db.query(User).first() or db.query(Company).first():
         raise HTTPException(400, "Bootstrap already done")
-    if payload.role != Role.curator:
-        raise HTTPException(400, "First user must be CURATOR")
 
-    u = User(email=payload.email, name=payload.name, password_hash=hash_password(payload.password), role=payload.role)
+    company_name = (payload.company_name or "").strip()
+    if not company_name:
+        raise HTTPException(422, "Company name is required")
+
+    company = Company(name=company_name)
+    db.add(company)
+    db.flush()
+
+    u = User(
+        email=payload.admin_email,
+        name=payload.admin_name,
+        password_hash=hash_password(payload.admin_password),
+        role=Role.admin,
+    )
     db.add(u); db.commit(); db.refresh(u)
-    return u
+    db.refresh(company)
+    return BootstrapSetupOut(company=company, admin=u)
 
 @app.post("/auth/login", response_model=TokenOut)
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -834,9 +903,11 @@ def me(user: User = Depends(get_current_user)):
     return user
 
 @app.post("/users", response_model=UserOut)
-def create_user(payload: UserCreate, db: Session = Depends(get_db), _curator: User = Depends(require_role(Role.curator))):
+def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User = Depends(require_role(Role.admin))):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400, "Email already exists")
+    if payload.role not in (Role.curator, Role.executor):
+        raise HTTPException(400, "Only CURATOR or EXECUTOR can be created")
     u = User(email=payload.email, name=payload.name, password_hash=hash_password(payload.password), role=payload.role)
     db.add(u); db.commit(); db.refresh(u)
     return u
@@ -845,7 +916,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _curator: Us
 # PROJECTS API
 # =========================
 @app.post("/projects", response_model=ProjectOut)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db), _curator: User = Depends(require_role(Role.curator))):
+def create_project(payload: ProjectCreate, db: Session = Depends(get_db), _manager: User = Depends(require_role(Role.admin, Role.curator))):
     if db.query(Project).filter(Project.name == payload.name).first():
         raise HTTPException(400, "Project already exists")
     p = Project(name=payload.name, description=payload.description)
@@ -1021,6 +1092,70 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
     )
     return resp
 
+
+@app.get("/web/register")
+def web_register_page(request: Request, token: str | None = None, db: Session = Depends(get_db)):
+    invite = get_active_invite(db, token)
+    role_value = invite.role.value if invite else ""
+    return templates.TemplateResponse(
+        "register.html",
+        {
+            "request": request,
+            "token": (token or "").strip(),
+            "role_value": role_value,
+            "error": None,
+            "success": False,
+        },
+    )
+
+
+@app.post("/web/register")
+async def web_register_submit(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    token = (form.get("token") or "").strip()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    password = (form.get("password") or "").strip()
+
+    invite = get_active_invite(db, token)
+    role_value = invite.role.value if invite else ""
+
+    if not invite:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "token": token, "role_value": role_value, "error": "Ссылка недействительна", "success": False},
+        )
+    if not (name and email and password):
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "token": token, "role_value": role_value, "error": "Заполните все поля", "success": False},
+        )
+    if db.query(User).filter(User.email == email).first():
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "token": token, "role_value": role_value, "error": "Email уже используется", "success": False},
+        )
+
+    try:
+        user = User(email=email, name=name, password_hash=hash_password(password), role=invite.role)
+        db.add(user)
+        db.flush()
+
+        invite.used_by = user.id
+        invite.used_at = datetime.utcnow()
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "token": token, "role_value": role_value, "error": "Не удалось завершить регистрацию", "success": False},
+        )
+
+    return templates.TemplateResponse(
+        "register.html",
+        {"request": request, "token": "", "role_value": invite.role.value, "error": None, "success": True},
+    )
+
 @app.get("/web/logout")
 def web_logout():
     resp = RedirectResponse(url="/web/login", status_code=HTTP_303_SEE_OTHER)
@@ -1088,7 +1223,7 @@ def web_tickets(
         tickets = [t for t in tickets if t.project_id == project_id_int]
 
     # Фильтр по исполнителю — только куратор
-    if user.role == Role.curator:
+    if is_manager(user):
         if executor_none:
             tickets = [t for t in tickets if t.executor_id is None]
         elif executor_id_int is not None:
@@ -1116,7 +1251,7 @@ def web_tickets(
         # сортировка
     sort_value = (sort or "").strip() or "id_desc"
     raw_view_mode = (view_mode or "").strip().lower()
-    if user.role == Role.curator:
+    if is_manager(user):
         view_mode_value = "cards" if raw_view_mode == "cards" else "table"
     else:
         view_mode_value = "cards"
@@ -1240,7 +1375,7 @@ def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
 @app.post("/web/tickets/create")
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # куратор и исполнитель могут создавать
-    if user.role not in (Role.curator, Role.executor):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
 
     form = await request.form()
@@ -1331,7 +1466,7 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
         raise HTTPException(404, "Ticket not found")
 
     # права
-    if user.role == Role.curator:
+    if is_manager(user):
         allowed = True
     elif user.role == Role.executor and t.created_by == user.id:
         allowed = True
@@ -1358,7 +1493,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
         raise HTTPException(404, "Ticket not found")
 
     # права: куратор всегда, исполнитель — если заявка его (создал или назначена)
-    if user.role == Role.curator:
+    if is_manager(user):
         allowed = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
         allowed = True
@@ -1428,7 +1563,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
         raise HTTPException(404, "Ticket not found")
 
     # права (как у комментариев/статусов)
-    if user.role == Role.curator:
+    if is_manager(user):
         allowed = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
         allowed = True
@@ -1462,7 +1597,7 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
         raise HTTPException(404, "Ticket not found")
 
     # права на просмотр/редактирование
-    if user.role == Role.curator:
+    if is_manager(user):
         can_edit_full = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
         can_edit_full = True
@@ -1518,7 +1653,7 @@ async def web_ticket_edit_save(
         raise HTTPException(404, "Ticket not found")
 
     # права: куратор — всегда, исполнитель — только свои (создал/назначен)
-    if user.role == Role.curator:
+    if is_manager(user):
         allowed = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
         allowed = True
@@ -1527,7 +1662,7 @@ async def web_ticket_edit_save(
     if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    can_edit_full = (user.role == Role.curator)
+    can_edit_full = is_manager(user)
     form = await request.form()
     status_raw = (form.get("status") or "").strip()
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
@@ -1683,15 +1818,15 @@ async def web_ticket_edit_save(
 # ====== WEB: Projects ======
 @app.get("/web/projects")
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role != Role.curator:
-        raise HTTPException(403, "Only curator")
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
     projects = db.query(Project).order_by(Project.id.desc()).all()
     return templates.TemplateResponse("projects.html", {"request": request, "projects": projects})
 
 @app.post("/web/projects/create")
 async def web_projects_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role != Role.curator:
-        raise HTTPException(403, "Only curator")
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
     form = await request.form()
     name = (form.get("name") or "").strip()
     description = (form.get("description") or "").strip() or None
@@ -1706,25 +1841,73 @@ async def web_projects_create(request: Request, db: Session = Depends(get_db), u
 # ====== WEB: Users (Executors) ======
 @app.get("/web/users")
 def web_users(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role != Role.curator:
-        raise HTTPException(403, "Only curator")
+    if not is_admin(user):
+        raise HTTPException(403, "Only admin")
     users = db.query(User).order_by(User.id.desc()).all()
-    return templates.TemplateResponse("users.html", {"request": request, "users": users})
+    invites = db.query(RegistrationInvite).order_by(RegistrationInvite.id.desc()).limit(30).all()
+    base_url = str(request.base_url).rstrip("/")
+    invite_links = []
+    for inv in invites:
+        invite_links.append(
+            {
+                "id": inv.id,
+                "role": inv.role.value,
+                "url": f"{base_url}/web/register?token={inv.token}",
+                "created_at": inv.created_at,
+                "expires_at": inv.expires_at,
+                "is_used": inv.used_by is not None,
+            }
+        )
+    return templates.TemplateResponse(
+        "users.html",
+        {"request": request, "users": users, "invite_links": invite_links},
+    )
+
+
+@app.post("/web/users/invites/create")
+async def web_users_invite_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_admin(user):
+        raise HTTPException(403, "Only admin")
+
+    form = await request.form()
+    role_raw = (form.get("role") or "").strip().upper()
+    expires_days_raw = (form.get("expires_days") or "").strip()
+    if role_raw not in ("CURATOR", "EXECUTOR"):
+        return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        expires_days = int(expires_days_raw) if expires_days_raw else 7
+    except ValueError:
+        expires_days = 7
+    expires_days = max(1, min(expires_days, 30))
+
+    invite = RegistrationInvite(
+        token=secrets.token_urlsafe(24),
+        role=Role(role_raw),
+        created_by=user.id,
+        expires_at=datetime.utcnow() + timedelta(days=expires_days),
+    )
+    db.add(invite)
+    db.commit()
+    return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
 @app.post("/web/users/create")
 async def web_users_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role != Role.curator:
-        raise HTTPException(403, "Only curator")
+    if not is_admin(user):
+        raise HTTPException(403, "Only admin")
     form = await request.form()
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
-    if not (name and email and password):
+    role_raw = (form.get("role") or "").strip().upper()
+    if not (name and email and password and role_raw):
         return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
     if db.query(User).filter(User.email == email).first():
         return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+    if role_raw not in ("CURATOR", "EXECUTOR"):
+        return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
-    u = User(email=email, name=name, password_hash=hash_password(password), role=Role.executor)
+    u = User(email=email, name=name, password_hash=hash_password(password), role=Role(role_raw))
     db.add(u); db.commit()
     return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
 
@@ -1740,7 +1923,7 @@ def web_ticket_detail(
         raise HTTPException(404, "Ticket not found")
 
     # права
-    if user.role == Role.curator:
+    if is_manager(user):
         allowed = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
         allowed = True

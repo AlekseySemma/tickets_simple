@@ -229,13 +229,13 @@
               </span>
             </div>
 
-            {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
+            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
               <a class="btn btn-sm btn-outline-secondary w-100 mt-2"
    href="/web/tickets/{{ t.id }}/edit?next=/web/tickets/{{ t.id }}">Изменить</a>
 
             {% endif %}
 
-            {% if user.role == "CURATOR" or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
     <form method="post"
       action="/web/tickets/{{ t.id }}/delete"
       onsubmit="return confirm('Удалить заявку?');">
