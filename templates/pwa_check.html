@@ -38,6 +38,8 @@
         <div class="status-row"><div><div class="status-label">Service Worker registration</div><div class="status-detail" id="d-sw-reg"></div></div><span id="s-sw-reg" class="badge text-bg-secondary status-badge">WAIT</span></div>
         <div class="status-row"><div><div class="status-label">Page is controlled by SW</div><div class="status-detail" id="d-sw-control"></div></div><span id="s-sw-control" class="badge text-bg-secondary status-badge">WAIT</span></div>
         <div class="status-row"><div><div class="status-label">Install prompt available</div><div class="status-detail" id="d-install"></div></div><span id="s-install" class="badge text-bg-secondary status-badge">WAIT</span></div>
+        <div class="status-row"><div><div class="status-label">Browser / platform</div><div class="status-detail" id="d-browser"></div></div><span id="s-browser" class="badge text-bg-secondary status-badge">WAIT</span></div>
+        <div class="status-row"><div><div class="status-label">Possible blockers</div><div class="status-detail" id="d-blockers"></div></div><span id="s-blockers" class="badge text-bg-secondary status-badge">WAIT</span></div>
         <div class="status-row"><div><div class="status-label">Running in standalone</div><div class="status-detail" id="d-standalone"></div></div><span id="s-standalone" class="badge text-bg-secondary status-badge">WAIT</span></div>
       </div>
     </div>
@@ -66,6 +68,7 @@
       function setStatus(key, ok, detail) {
         const badge = document.getElementById(`s-${key}`);
         const text = document.getElementById(`d-${key}`);
+        if (!badge || !text) return;
         text.textContent = detail || "";
         badge.className = "badge status-badge ";
         if (ok === true) {
@@ -144,6 +147,59 @@
         setStatus("standalone", null, standalone ? "Opened as installed app (standalone)." : "Opened in browser tab.");
       }
 
+      function detectBrowserInfo() {
+        const ua = navigator.userAgent || "";
+        const uaDataBrands = navigator.userAgentData && Array.isArray(navigator.userAgentData.brands)
+          ? navigator.userAgentData.brands.map((b) => b.brand).join(", ")
+          : "";
+        const isFirefox = /firefox/i.test(ua);
+        const isYandex = /yabrowser/i.test(ua);
+        const isEdge = /edg\//i.test(ua);
+        const isOpera = /opr\//i.test(ua);
+        const isChrome = /(chrome|crios)/i.test(ua) && !isEdge && !isOpera && !isYandex;
+        const isSafari = /safari/i.test(ua) && !isChrome && !isEdge && !isOpera && !isYandex;
+        const isAndroid = /android/i.test(ua);
+        const isIOS = /iphone|ipad|ipod/i.test(ua);
+        const isMobile = isAndroid || isIOS || /mobile/i.test(ua);
+
+        let browser = "Unknown";
+        if (isYandex) browser = "Yandex Browser";
+        else if (isEdge) browser = "Microsoft Edge";
+        else if (isOpera) browser = "Opera";
+        else if (isFirefox) browser = "Firefox";
+        else if (isChrome) browser = "Google Chrome";
+        else if (isSafari) browser = "Safari";
+
+        const platform = isAndroid ? "Android" : isIOS ? "iOS" : "Desktop";
+        const detail = `browser=${browser}, platform=${platform}, mobile=${isMobile}${uaDataBrands ? `, brands=${uaDataBrands}` : ""}`;
+        setStatus("browser", null, detail);
+        appendLog(detail);
+
+        return { browser, isChrome, isFirefox, isSafari, isYandex, isMobile, isAndroid, isIOS };
+      }
+
+      function evaluateBlockers(info, hasPrompt) {
+        const blockers = [];
+
+        if (info.isFirefox) {
+          blockers.push("Firefox often does not expose beforeinstallprompt, install is usually manual/limited.");
+        }
+        if (info.isSafari) {
+          blockers.push("Safari does not use beforeinstallprompt; install via Share -> Add to Home Screen.");
+        }
+        if (info.isChrome && info.isIOS) {
+          blockers.push("Chrome on iOS uses WebKit limitations; install flow is not same as Android Chrome.");
+        }
+        if (info.isChrome && !hasPrompt) {
+          blockers.push("Chrome can suppress prompt after dismissals, low engagement, or browser policy.");
+        }
+        blockers.push("If Google shows 'Dangerous site', Chrome may restrict installability until domain reputation is restored.");
+        blockers.push("If app/shortcut already exists on device, install prompt may not appear.");
+
+        const detail = blockers.join(" ");
+        setStatus("blockers", blockers.length ? false : true, detail || "No obvious blockers detected.");
+      }
+
       async function runChecks() {
         logEl.textContent = "";
         deferredInstallPrompt = null;
@@ -156,12 +212,14 @@
 
         await checkManifest();
         await checkServiceWorker();
+        const browserInfo = detectBrowserInfo();
         checkStandalone();
 
         if (!deferredInstallPrompt) {
           setStatus("install", false, "beforeinstallprompt not fired yet. Common reasons: app already installed, criteria not met, or browser policy.");
           appendLog("beforeinstallprompt not available");
         }
+        evaluateBlockers(browserInfo, !!deferredInstallPrompt);
       }
 
       installBtn.addEventListener("click", async () => {
