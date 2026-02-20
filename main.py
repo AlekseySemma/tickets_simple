@@ -85,6 +85,24 @@ class TicketStatus(str, Enum):
     done = "DONE"
     canceled = "CANCELED"
 
+
+STATUS_LABELS_RU = {
+    TicketStatus.new: "\u041d\u043e\u0432\u0430\u044f",
+    TicketStatus.in_progress: "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
+    TicketStatus.done: "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
+    TicketStatus.canceled: "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
+}
+
+
+def status_label_ru(value: TicketStatus | str) -> str:
+    if isinstance(value, TicketStatus):
+        return STATUS_LABELS_RU.get(value, value.value)
+    try:
+        status_value = TicketStatus(value)
+    except ValueError:
+        return value
+    return STATUS_LABELS_RU.get(status_value, status_value.value)
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -493,7 +511,7 @@ def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old
             db=db,
             user_id=curator_id,
             title=f"Изменен статус заявки #{ticket.id}",
-            body=f"{actor.name}: {old_status.value} -> {ticket.status.value}",
+            body=f"{actor.name}: {status_label_ru(old_status)} -> {status_label_ru(ticket.status)}",
             url=f"/web/tickets/{ticket.id}",
         )
 
