@@ -756,6 +756,13 @@ def push_debug(db: Session = Depends(get_db), user: User = Depends(get_current_u
         )
     return {"user_id": user.id, "count": len(subs), "subscriptions": items}
 
+
+@app.post("/api/push/reset")
+def push_reset(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    deleted = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "deleted": int(deleted)}
+
 # =========================
 # AUTH API
 # =========================
