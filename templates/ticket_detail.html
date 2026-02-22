@@ -285,19 +285,21 @@
             <div class="mb-2 section-card">
   {% for a in attachments %}
     {% set p = a.file_path or "" %}
-    {% set lower = p|lower %}
+    {% set file_url = "/attachments/" ~ a.id %}
+    {% set file_label = a.original_name or p %}
+    {% set lower = (a.original_name or p)|lower %}
     {% set is_img = lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".gif") or lower.endswith(".webp") %}
 
     <div class="border rounded p-2 mb-2 bg-white">
       <div class="small mb-2">
-  📎 <a href="{{ p }}" target="_blank">{{ p }}</a>
+  📎 <a href="{{ file_url }}" target="_blank">{{ file_label }}</a>
   <span class="muted">· загрузил: {{ users_by_id.get(a.uploader_id, "—") }}</span>
 </div>
 
 
       {% if is_img %}
-        <a href="{{ p }}" target="_blank">
-          <img src="{{ p }}" class="img-fluid rounded" style="max-height: 260px;" />
+        <a href="{{ file_url }}" target="_blank">
+          <img src="{{ file_url }}" class="img-fluid rounded" style="max-height: 260px;" />
         </a>
       {% endif %}
     </div>

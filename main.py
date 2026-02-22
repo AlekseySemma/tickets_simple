@@ -8,14 +8,14 @@ import threading
 import time
 from typing import Optional
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect, Integer, Boolean
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -35,7 +35,9 @@ except Exception:
 # =========================
 # Настройки (простые)
 # =========================
-JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_later")
+JWT_SECRET = (os.getenv("JWT_SECRET") or "").strip()
+if len(JWT_SECRET) < 32:
+    raise RuntimeError("JWT_SECRET must be set and contain at least 32 characters")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
@@ -59,6 +61,12 @@ VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
 MAX_TICKET_TITLE_LEN = 255
 LOCAL_TIME_OFFSET_HOURS = int(os.getenv("LOCAL_TIME_OFFSET_HOURS", "3"))
+RL_LOGIN_LIMIT = int(os.getenv("RL_LOGIN_LIMIT", "10"))
+RL_LOGIN_WINDOW_SEC = int(os.getenv("RL_LOGIN_WINDOW_SEC", "300"))
+RL_REGISTER_LIMIT = int(os.getenv("RL_REGISTER_LIMIT", "8"))
+RL_REGISTER_WINDOW_SEC = int(os.getenv("RL_REGISTER_WINDOW_SEC", "3600"))
+RL_PUSH_TEST_LIMIT = int(os.getenv("RL_PUSH_TEST_LIMIT", "10"))
+RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
 
 # =========================
 # База данных (SQLite)
@@ -195,6 +203,18 @@ class DeadlineReminderLog(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     reminder_key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class SecurityEvent(Base):
+    __tablename__ = "security_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    endpoint: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64), index=True, default=None)
+    email: Mapped[Optional[str]] = mapped_column(String(255), index=True, default=None)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, index=True, default=None)
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    detail: Mapped[Optional[str]] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
@@ -376,6 +396,8 @@ class PushUnsubscribeIn(BaseModel):
 # Безопасность
 # =========================
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+RATE_LIMIT_LOCK = threading.Lock()
+RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
 
 # ВАЖНО: auto_error=False чтобы cookie-логин для веба работал без Bearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
@@ -392,6 +414,119 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     if not n:
         return fallback
     return n if n.startswith("/web") else fallback
+
+
+def first_header_value(value: str | None) -> str:
+    return (value or "").split(",")[0].strip()
+
+
+def get_client_ip(request: Request | None) -> str:
+    if request is None:
+        return "unknown"
+    forwarded_for = first_header_value(request.headers.get("x-forwarded-for"))
+    if forwarded_for:
+        return forwarded_for
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def normalize_email(value: str | None) -> str | None:
+    v = (value or "").strip().lower()
+    return v or None
+
+
+def normalize_origin(value: str | None) -> tuple[str, str, int] | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    parsed = urlsplit(raw)
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname.lower()
+    port = parsed.port if parsed.port is not None else (443 if scheme == "https" else 80)
+    return scheme, host, port
+
+
+def request_origin(request: Request) -> tuple[str, str, int] | None:
+    forwarded_proto = first_header_value(request.headers.get("x-forwarded-proto"))
+    forwarded_host = first_header_value(request.headers.get("x-forwarded-host"))
+    host_header = first_header_value(request.headers.get("host"))
+    scheme = (forwarded_proto or request.url.scheme or "http").lower()
+    host = forwarded_host or host_header or request.url.netloc
+    if not host:
+        return None
+    return normalize_origin(f"{scheme}://{host}")
+
+
+def hit_rate_limit(bucket: str, max_calls: int, window_seconds: int) -> tuple[bool, int]:
+    now = time.time()
+    cutoff = now - max(1, window_seconds)
+    with RATE_LIMIT_LOCK:
+        hits = [ts for ts in RATE_LIMIT_BUCKETS.get(bucket, []) if ts >= cutoff]
+        if len(hits) >= max_calls:
+            RATE_LIMIT_BUCKETS[bucket] = hits
+            retry_after = max(1, int(window_seconds - (now - hits[0])) + 1)
+            return True, retry_after
+        hits.append(now)
+        RATE_LIMIT_BUCKETS[bucket] = hits
+    return False, 0
+
+
+def audit_security_event(
+    event_type: str,
+    request: Request | None = None,
+    *,
+    success: bool,
+    email: str | None = None,
+    user_id: int | None = None,
+    detail: str | None = None,
+) -> None:
+    db = SessionLocal()
+    try:
+        db.add(
+            SecurityEvent(
+                event_type=(event_type or "").strip()[:80] or "security_event",
+                endpoint=(request.url.path if request else "")[:255] or None,
+                ip_address=get_client_ip(request)[:64],
+                email=normalize_email(email),
+                user_id=user_id,
+                success=bool(success),
+                detail=((detail or "").strip()[:1000] or None),
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+def can_access_ticket(user: User, ticket: Ticket) -> bool:
+    if is_platform_admin(user):
+        return True
+    if is_manager(user):
+        return True
+    return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
+
+
+def resolve_attachment_disk_path(raw_path: str | None) -> Path | None:
+    raw = (raw_path or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("/uploads/"):
+        candidate = UPLOAD_DIR / raw.replace("/uploads/", "", 1)
+    else:
+        parsed = Path(raw)
+        candidate = parsed if parsed.is_absolute() else (UPLOAD_DIR / parsed)
+    upload_root = UPLOAD_DIR.resolve(strict=False)
+    resolved = candidate.resolve(strict=False)
+    try:
+        resolved.relative_to(upload_root)
+    except ValueError:
+        return None
+    return resolved
 
 
 def validate_ticket_links(db: Session, company_id: int | None, project_id: int | None, executor_id: int | None) -> None:
@@ -774,17 +909,14 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
     if ticket_ids:
         attachments = db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).all()
         for a in attachments:
-            raw_path = (a.file_path or "").strip()
-            if raw_path:
-                if raw_path.startswith("/uploads/"):
-                    path = UPLOAD_DIR / raw_path.replace("/uploads/", "", 1)
-                else:
-                    path = Path(raw_path)
-                try:
-                    if path.exists():
-                        path.unlink()
-                except OSError:
-                    pass
+            path = resolve_attachment_disk_path(a.file_path)
+            if not path:
+                continue
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                pass
 
         db.query(Comment).filter(Comment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
@@ -830,22 +962,14 @@ async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
         if request.url.path in {"/web/login", "/web/register", "/web/register-company"}:
             return await call_next(request)
-        origin = (request.headers.get("origin") or "").strip()
-        referer = (request.headers.get("referer") or "").strip()
-        forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
-        forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
-        if forwarded_host:
-            scheme = forwarded_proto or "https"
-            host = f"{scheme}://{forwarded_host}"
-        else:
-            host = str(request.base_url).rstrip("/")
-        if origin:
-            if not origin.startswith(host):
-                return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
-        elif referer:
-            if not referer.startswith(host):
-                return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
-        else:
+        expected_origin = request_origin(request)
+        if not expected_origin:
+            return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
+        source = (request.headers.get("origin") or "").strip() or (request.headers.get("referer") or "").strip()
+        if not source:
+            return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
+        source_origin = normalize_origin(source)
+        if source_origin != expected_origin:
             return JSONResponse(status_code=403, content={"detail": "CSRF blocked"})
     return await call_next(request)
 
@@ -865,7 +989,6 @@ async def security_headers_middleware(request: Request, call_next):
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PWA_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/static", StaticFiles(directory=str(PWA_STATIC_DIR)), name="static")
 
 
@@ -969,8 +1092,14 @@ def push_unsubscribe(payload: PushUnsubscribeIn, db: Session = Depends(get_db), 
 
 
 @app.post("/api/push/test")
-def push_test(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def push_test(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    limited_user, _ = hit_rate_limit(f"push-test-user:{user.id}", RL_PUSH_TEST_LIMIT, RL_PUSH_TEST_WINDOW_SEC)
+    limited_ip, _ = hit_rate_limit(f"push-test-ip:{get_client_ip(request)}", RL_PUSH_TEST_LIMIT * 2, RL_PUSH_TEST_WINDOW_SEC)
+    if limited_user or limited_ip:
+        audit_security_event("push_test", request, success=False, user_id=user.id, detail="rate_limited")
+        raise HTTPException(status_code=429, detail="Too many push test requests")
     if not push_is_configured():
+        audit_security_event("push_test", request, success=False, user_id=user.id, detail="push_not_configured")
         raise HTTPException(503, "Push is not configured")
     report = send_push_to_user_report(
         db=db,
@@ -981,6 +1110,13 @@ def push_test(db: Session = Depends(get_db), user: User = Depends(get_current_us
     )
     db.commit()
     ok_count = sum(1 for r in report if r.get("ok"))
+    audit_security_event(
+        "push_test",
+        request,
+        success=True,
+        user_id=user.id,
+        detail=f"sent={ok_count}/{len(report)}",
+    )
     return {"ok": True, "sent": ok_count, "total": len(report), "report": report}
 
 
@@ -1044,13 +1180,22 @@ def bootstrap_platform_admin(payload: BootstrapSetupIn, db: Session = Depends(ge
 
 
 @app.post("/auth/register-company", response_model=BootstrapSetupOut)
-def register_company_and_owner(payload: BootstrapSetupIn, db: Session = Depends(get_db)):
+def register_company_and_owner(payload: BootstrapSetupIn, request: Request, db: Session = Depends(get_db)):
+    ip = get_client_ip(request)
+    limited, _ = hit_rate_limit(f"register-company:{ip}", RL_REGISTER_LIMIT, RL_REGISTER_WINDOW_SEC)
+    if limited:
+        audit_security_event("register_company", request, success=False, email=payload.admin_email, detail="rate_limited")
+        raise HTTPException(429, "Too many registration attempts")
+
     company_name = (payload.company_name or "").strip()
     if not company_name:
+        audit_security_event("register_company", request, success=False, email=payload.admin_email, detail="missing_company_name")
         raise HTTPException(422, "Company name is required")
     if db.query(Company).filter(Company.name == company_name).first():
+        audit_security_event("register_company", request, success=False, email=payload.admin_email, detail="company_exists")
         raise HTTPException(400, "Company already exists")
     if db.query(User).filter(User.email == payload.admin_email).first():
+        audit_security_event("register_company", request, success=False, email=payload.admin_email, detail="email_exists")
         raise HTTPException(400, "Email already exists")
 
     company = Company(name=company_name)
@@ -1068,13 +1213,23 @@ def register_company_and_owner(payload: BootstrapSetupIn, db: Session = Depends(
     db.commit()
     db.refresh(owner)
     db.refresh(company)
+    audit_security_event("register_company", request, success=True, email=payload.admin_email, user_id=owner.id)
     return BootstrapSetupOut(company=company, admin=owner)
 
 @app.post("/auth/login", response_model=TokenOut)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    ip = get_client_ip(request)
+    email = (form.username or "").strip()
+    limited_ip, _ = hit_rate_limit(f"auth-login-ip:{ip}", RL_LOGIN_LIMIT * 3, RL_LOGIN_WINDOW_SEC)
+    limited_user, _ = hit_rate_limit(f"auth-login-user:{ip}:{(email or '').lower()}", RL_LOGIN_LIMIT, RL_LOGIN_WINDOW_SEC)
+    if limited_ip or limited_user:
+        audit_security_event("auth_login", request, success=False, email=email, detail="rate_limited")
+        raise HTTPException(status_code=429, detail="Too many login attempts")
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not verify_password(form.password, user.password_hash):
+        audit_security_event("auth_login", request, success=False, email=email, detail="invalid_credentials")
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    audit_security_event("auth_login", request, success=True, email=email, user_id=user.id)
     return TokenOut(access_token=create_access_token(str(user.id)))
 
 # =========================
@@ -1258,13 +1413,37 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
     path = UPLOAD_DIR / safe_name
     write_upload_file(file, path)
 
-    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=str(path), original_name=file.filename)
+    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
     db.add(a)
     add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
     db.commit(); db.refresh(a)
     notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
     return a
+
+
+@app.get("/attachments/{attachment_id}")
+def download_attachment(attachment_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    a = db.get(Attachment, attachment_id)
+    if not a:
+        raise HTTPException(404, "Attachment not found")
+    t = db.get(Ticket, a.ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        if t.company_id != user.company_id:
+            raise HTTPException(403, "Forbidden")
+    if not can_access_ticket(user, t):
+        raise HTTPException(403, "Forbidden")
+
+    disk_path = resolve_attachment_disk_path(a.file_path)
+    if not disk_path or not disk_path.exists() or not disk_path.is_file():
+        raise HTTPException(404, "Attachment file not found")
+
+    display_name = ((a.original_name or "").strip() or disk_path.name)[:255]
+    return FileResponse(disk_path, filename=display_name, content_disposition_type="inline")
 
 # =========================
 # WEB UI
@@ -1276,11 +1455,23 @@ def web_login_page(request: Request):
 @app.post("/web/login")
 async def web_login(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
-    email = form.get("email")
+    email = (form.get("email") or "").strip()
     password = form.get("password")
+    ip = get_client_ip(request)
+
+    limited_ip, _ = hit_rate_limit(f"web-login-ip:{ip}", RL_LOGIN_LIMIT * 3, RL_LOGIN_WINDOW_SEC)
+    limited_user, _ = hit_rate_limit(f"web-login-user:{ip}:{email.lower()}", RL_LOGIN_LIMIT, RL_LOGIN_WINDOW_SEC)
+    if limited_ip or limited_user:
+        audit_security_event("web_login", request, success=False, email=email, detail="rate_limited")
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Слишком много попыток входа. Попробуйте позже."},
+            status_code=429,
+        )
 
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.password_hash):
+        audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный email или пароль"})
 
     token = create_access_token(str(user.id))
@@ -1302,6 +1493,7 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
         secure=(scheme == "https"),
         domain=cookie_domain,
     )
+    audit_security_event("web_login", request, success=True, email=email, user_id=user.id)
     return resp
 
 
@@ -1328,7 +1520,7 @@ async def web_register_company_submit(request: Request, db: Session = Depends(ge
             admin_email=admin_email,
             admin_password=admin_password,
         )
-        _ = register_company_and_owner(payload, db)
+        _ = register_company_and_owner(payload=payload, request=request, db=db)
         return templates.TemplateResponse(
             "register_company.html",
             {"request": request, "error": None, "success": True},
@@ -1339,6 +1531,7 @@ async def web_register_company_submit(request: Request, db: Session = Depends(ge
             {"request": request, "error": str(exc.detail), "success": False},
         )
     except Exception:
+        audit_security_event("register_company", request, success=False, email=admin_email, detail="validation_error")
         return templates.TemplateResponse(
             "register_company.html",
             {"request": request, "error": "Проверьте введенные данные", "success": False},
@@ -1368,21 +1561,33 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
+    ip = get_client_ip(request)
+    limited, _ = hit_rate_limit(f"web-register:{ip}", RL_REGISTER_LIMIT * 2, RL_REGISTER_WINDOW_SEC)
+    if limited:
+        audit_security_event("web_register", request, success=False, email=email, detail="rate_limited")
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "token": token, "role_value": "", "error": "Слишком много попыток. Попробуйте позже.", "success": False},
+            status_code=429,
+        )
 
     invite = get_active_invite(db, token)
     role_value = invite.role.value if invite else ""
 
     if not invite:
+        audit_security_event("web_register", request, success=False, email=email, detail="invalid_invite")
         return templates.TemplateResponse(
             "register.html",
             {"request": request, "token": token, "role_value": role_value, "error": "Ссылка недействительна", "success": False},
         )
     if not (name and email and password):
+        audit_security_event("web_register", request, success=False, email=email, detail="missing_fields")
         return templates.TemplateResponse(
             "register.html",
             {"request": request, "token": token, "role_value": role_value, "error": "Заполните все поля", "success": False},
         )
     if db.query(User).filter(User.email == email).first():
+        audit_security_event("web_register", request, success=False, email=email, detail="email_exists")
         return templates.TemplateResponse(
             "register.html",
             {"request": request, "token": token, "role_value": role_value, "error": "Email уже используется", "success": False},
@@ -1403,12 +1608,14 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
         invite.used_at = datetime.utcnow()
         db.commit()
     except SQLAlchemyError:
+        audit_security_event("web_register", request, success=False, email=email, detail="db_error")
         db.rollback()
         return templates.TemplateResponse(
             "register.html",
             {"request": request, "token": token, "role_value": role_value, "error": "Не удалось завершить регистрацию", "success": False},
         )
 
+    audit_security_event("web_register", request, success=True, email=email, user_id=user.id)
     return templates.TemplateResponse(
         "register.html",
         {"request": request, "token": "", "role_value": invite.role.value, "error": None, "success": True},
@@ -2318,3 +2525,4 @@ def web_ticket_detail(
             "status_labels": status_labels,
         },
     )
+

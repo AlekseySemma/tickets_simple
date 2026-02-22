@@ -16,6 +16,7 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql://tickets:change_me_strong@db:5432/tickets
+      JWT_SECRET: ${JWT_SECRET}
       UPLOAD_DIR: /data/uploads
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: /app/private_key.pem
