@@ -15,7 +15,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -1595,16 +1595,9 @@ def web_tickets(
         return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
     ensure_company_user(user)
     # 1) tickets с учетом роли
+    base_query = db.query(Ticket).filter(Ticket.company_id == user.company_id)
     if user.role == Role.executor:
-        tickets = list(
-            db.query(Ticket)
-            .filter(Ticket.company_id == user.company_id)
-            .filter((Ticket.executor_id == user.id) | (Ticket.created_by == user.id))
-            .order_by(Ticket.id.desc())
-            .all()
-        )
-    else:
-        tickets = list(db.query(Ticket).filter(Ticket.company_id == user.company_id).order_by(Ticket.id.desc()).all())
+        base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
 
     # 2) данные для UI
     projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
@@ -1633,26 +1626,31 @@ def web_tickets(
             except ValueError:
                 executor_id_int = None
 
+    filtered_query = base_query
     if status_filter:
-        tickets = [t for t in tickets if t.status.value == status_filter]
+        try:
+            status_enum = TicketStatus(status_filter)
+            filtered_query = filtered_query.filter(Ticket.status == status_enum)
+        except ValueError:
+            filtered_query = filtered_query.filter(Ticket.id == -1)
 
     if project_id_int is not None:
-        tickets = [t for t in tickets if t.project_id == project_id_int]
+        filtered_query = filtered_query.filter(Ticket.project_id == project_id_int)
 
     # Фильтр по исполнителю — только куратор
     if is_manager(user):
         if executor_none:
-            tickets = [t for t in tickets if t.executor_id is None]
+            filtered_query = filtered_query.filter(Ticket.executor_id.is_(None))
         elif executor_id_int is not None:
-            tickets = [t for t in tickets if t.executor_id == executor_id_int]
+            filtered_query = filtered_query.filter(Ticket.executor_id == executor_id_int)
 
     if q:
-        q_lower = q.lower()
-        tickets = [
-            t for t in tickets
-            if (t.title and q_lower in t.title.lower()) or (t.description and q_lower in t.description.lower())
-            or (t.description is None and False)
-        ]
+        q_value = q.strip()
+        if q_value:
+            pattern = f"%{q_value}%"
+            filtered_query = filtered_query.filter(
+                or_(Ticket.title.ilike(pattern), Ticket.description.ilike(pattern))
+            )
 
     now = local_now()
     now_plus_24h = now + timedelta(hours=24)
@@ -1660,10 +1658,11 @@ def web_tickets(
         # только просроченные
     overdue_enabled = (only_overdue == "1")
     if overdue_enabled:
-        tickets = [
-            t for t in tickets
-            if t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled)
-        ]
+        filtered_query = filtered_query.filter(
+            Ticket.deadline.is_not(None),
+            Ticket.deadline < now,
+            Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+        )
 
         # сортировка
     sort_value = (sort or "").strip() or "id_desc"
@@ -1673,16 +1672,51 @@ def web_tickets(
     else:
         view_mode_value = "cards"
 
+    total_count = filtered_query.count()
+
+    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0}
+    status_counts = (
+        filtered_query.with_entities(Ticket.status, func.count(Ticket.id))
+        .group_by(Ticket.status)
+        .all()
+    )
+    for status_value, count_value in status_counts:
+        status_code = status_value.value if isinstance(status_value, TicketStatus) else str(status_value)
+        if status_code in counts_by_status:
+            counts_by_status[status_code] = int(count_value)
+
+    overdue_count = (
+        filtered_query.filter(
+            Ticket.deadline.is_not(None),
+            Ticket.deadline < now,
+            Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+        ).count()
+    )
+
+    tickets_query = filtered_query
     if sort_value == "deadline_asc":
-        tickets.sort(key=lambda t: (t.deadline is None, t.deadline or datetime.max, -t.id))
+        tickets_query = tickets_query.order_by(
+            Ticket.deadline.is_(None).asc(),
+            Ticket.deadline.asc(),
+            Ticket.id.desc(),
+        )
     elif sort_value == "deadline_desc":
-        tickets.sort(key=lambda t: (t.deadline is None, t.deadline or datetime.min, t.id), reverse=True)
+        tickets_query = tickets_query.order_by(
+            Ticket.deadline.is_(None).desc(),
+            Ticket.deadline.desc(),
+            Ticket.id.desc(),
+        )
     elif sort_value == "status":
-        tickets.sort(key=lambda t: (t.status.value, -(t.deadline.timestamp() if t.deadline else 10**18), -t.id))
+        tickets_query = tickets_query.order_by(
+            Ticket.status.asc(),
+            Ticket.deadline.is_(None).desc(),
+            Ticket.deadline.desc(),
+            Ticket.id.desc(),
+        )
     elif sort_value == "id_asc":
-        tickets.sort(key=lambda t: t.id)
+        tickets_query = tickets_query.order_by(Ticket.id.asc())
     else:  # id_desc
-        tickets.sort(key=lambda t: t.id, reverse=True)
+        tickets_query = tickets_query.order_by(Ticket.id.desc())
 
     status_labels = {
         "NEW": "Новая",
@@ -1692,19 +1726,6 @@ def web_tickets(
     }
 
     # Дашборд по текущему списку tickets (после фильтров)
-    total_count = len(tickets)
-    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0}
-    overdue_count = 0
-
-    for t in tickets:
-        code = t.status.value
-        if code in counts_by_status:
-            counts_by_status[code] += 1
-
-        if t.deadline and t.deadline < now and code not in ("DONE", "CANCELED"):
-            overdue_count += 1
-
-
     filters_form_open = bool(
         (status_filter or "").strip()
         or project_id_int is not None
@@ -1724,8 +1745,7 @@ def web_tickets(
     total_pages = max(1, (total_count + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     start = (page - 1) * per_page
-    end = start + per_page
-    tickets = tickets[start:end]
+    tickets = tickets_query.offset(start).limit(per_page).all()
 
     return templates.TemplateResponse(
         "tickets.html",
@@ -2473,4 +2493,3 @@ def web_ticket_detail(
             "status_labels": status_labels,
         },
     )
-
