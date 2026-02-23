@@ -30,6 +30,47 @@ def _normalize_attachment_path(raw_path: str | None) -> str | None:
     return f"/uploads/{basename}"
 
 
+def _dedupe_projects(bind) -> None:
+    rows = bind.execute(
+        sa.text(
+            """
+            SELECT company_id, name, MIN(id) AS keep_id, COUNT(*) AS cnt
+            FROM projects
+            GROUP BY company_id, name
+            HAVING COUNT(*) > 1
+            """
+        )
+    ).fetchall()
+    for row in rows:
+        company_id = row[0]
+        name = row[1]
+        keep_id = int(row[2])
+        dup_ids_rows = bind.execute(
+            sa.text(
+                """
+                SELECT id
+                FROM projects
+                WHERE name = :name
+                  AND id <> :keep_id
+                  AND (
+                    (:company_id IS NULL AND company_id IS NULL)
+                    OR company_id = :company_id
+                  )
+                """
+            ),
+            {"name": name, "keep_id": keep_id, "company_id": company_id},
+        ).fetchall()
+        dup_ids = [int(r[0]) for r in dup_ids_rows]
+        if not dup_ids:
+            continue
+        for dup_id in dup_ids:
+            bind.execute(
+                sa.text("UPDATE tickets SET project_id = :keep_id WHERE project_id = :dup_id"),
+                {"keep_id": keep_id, "dup_id": dup_id},
+            )
+            bind.execute(sa.text("DELETE FROM projects WHERE id = :dup_id"), {"dup_id": dup_id})
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     insp = sa.inspect(bind)
@@ -66,6 +107,7 @@ def upgrade() -> None:
             )
 
     if insp.has_table("projects"):
+        _dedupe_projects(bind)
         if dialect == "postgresql":
             op.execute("ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_name_key")
             op.execute("DROP INDEX IF EXISTS ix_projects_name")
