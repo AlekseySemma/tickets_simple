@@ -2,7 +2,19 @@
 
 Сервис для управления заявками (FastAPI + PostgreSQL + Docker Compose).
 
-## Быстрый старт (Docker Compose)
+## Contents
+
+- [Overview](#overview)
+- [Quick Start (Docker Compose)](#quick-start-docker-compose)
+- [Environment Variables](#environment-variables)
+- [Migrations](#migrations)
+- [Deploy (Ubuntu)](#deploy-ubuntu)
+
+## Overview
+
+`tickets_simple` — веб-сервис для работы с заявками, пользователями, проектами и вложениями.
+
+## Quick Start (Docker Compose)
 
 Из корня проекта:
 
@@ -11,7 +23,7 @@ docker compose up -d --build
 docker compose logs --tail=120 app
 ```
 
-## Обязательные переменные окружения
+## Environment Variables
 
 В `.env` должны быть заданы минимум:
 
@@ -40,11 +52,10 @@ VAPID_SUBJECT=mailto:admin@example.com
 docker compose run --rm --no-deps app alembic upgrade head
 ```
 
-## Деплой (Ubuntu)
+## Deploy (Ubuntu)
 
 ```bash
 git pull
 docker compose up -d --build
 docker compose logs --tail=120 app
 ```
-
