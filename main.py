@@ -2476,16 +2476,32 @@ def web_ticket_detail(
     if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
-    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.id.desc()).all()
-    executors = db.query(User).filter(User.company_id == user.company_id, User.role == Role.executor).order_by(User.id.desc()).all()
-
-    users_by_id = {u.id: f"{u.name}" for u in users}
-    projects_by_id = {p.id: p.name for p in projects}
-
     comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
     attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
     ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.desc()).all()
+
+    project_row = (
+        db.query(Project.id, Project.name)
+        .filter(Project.company_id == user.company_id, Project.id == t.project_id)
+        .first()
+    )
+    projects_by_id = {project_row[0]: project_row[1]} if project_row else {}
+
+    relevant_user_ids: set[int] = {t.created_by}
+    if t.executor_id is not None:
+        relevant_user_ids.add(t.executor_id)
+    relevant_user_ids.update(c.author_id for c in comments if c.author_id is not None)
+    relevant_user_ids.update(a.uploader_id for a in attachments if a.uploader_id is not None)
+    relevant_user_ids.update(log.actor_id for log in ticket_logs if log.actor_id is not None)
+
+    users_by_id: dict[int, str] = {}
+    if relevant_user_ids:
+        users = (
+            db.query(User.id, User.name)
+            .filter(User.company_id == user.company_id, User.id.in_(relevant_user_ids))
+            .all()
+        )
+        users_by_id = {uid: uname for uid, uname in users}
 
     now = local_now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
@@ -2511,7 +2527,6 @@ def web_ticket_detail(
             "t": t,
             "projects_by_id": projects_by_id,
             "users_by_id": users_by_id,
-            "executors": executors,
             "comments": comments,
             "attachments": attachments,
             "ticket_logs": ticket_logs,
