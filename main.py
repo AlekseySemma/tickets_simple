@@ -1804,19 +1804,47 @@ def web_admin_companies(request: Request, db: Session = Depends(get_db), user: U
         raise HTTPException(403, "Only platform admin")
 
     companies = db.query(Company).order_by(Company.id.desc()).all()
+    company_ids = [c.id for c in companies]
+
+    users_count_by_company: dict[int, int] = {}
+    projects_count_by_company: dict[int, int] = {}
+    tickets_count_by_company: dict[int, int] = {}
+
+    if company_ids:
+        users_count_rows = (
+            db.query(User.company_id, func.count(User.id))
+            .filter(User.company_id.in_(company_ids))
+            .group_by(User.company_id)
+            .all()
+        )
+        users_count_by_company = {int(company_id): int(count_value) for company_id, count_value in users_count_rows if company_id is not None}
+
+        projects_count_rows = (
+            db.query(Project.company_id, func.count(Project.id))
+            .filter(Project.company_id.in_(company_ids))
+            .group_by(Project.company_id)
+            .all()
+        )
+        projects_count_by_company = {int(company_id): int(count_value) for company_id, count_value in projects_count_rows if company_id is not None}
+
+        tickets_count_rows = (
+            db.query(Ticket.company_id, func.count(Ticket.id))
+            .filter(Ticket.company_id.in_(company_ids))
+            .group_by(Ticket.company_id)
+            .all()
+        )
+        tickets_count_by_company = {int(company_id): int(count_value) for company_id, count_value in tickets_count_rows if company_id is not None}
+
     items = []
     for c in companies:
-        users_count = db.query(User).filter(User.company_id == c.id).count()
-        projects_count = db.query(Project).filter(Project.company_id == c.id).count()
-        tickets_count = db.query(Ticket).filter(Ticket.company_id == c.id).count()
         items.append(
             {
                 "id": c.id,
                 "name": c.name,
                 "created_at": c.created_at,
-                "users_count": users_count,
-                "projects_count": projects_count,
-                "tickets_count": tickets_count,
+                "users_count": users_count_by_company.get(c.id, 0),
+                "projects_count": projects_count_by_company.get(c.id, 0),
+                "tickets_count": tickets_count_by_company.get(c.id, 0),
             }
         )
 
