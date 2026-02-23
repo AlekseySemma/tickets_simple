@@ -1600,9 +1600,24 @@ def web_tickets(
         base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
 
     # 2) данные для UI
-    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
-    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.id.desc()).all()
-    executors = db.query(User).filter(User.company_id == user.company_id, User.role == Role.executor).order_by(User.id.desc()).all()
+    projects = (
+        db.query(Project.id, Project.name)
+        .filter(Project.company_id == user.company_id)
+        .order_by(Project.id.desc())
+        .all()
+    )
+    users = (
+        db.query(User.id, User.name)
+        .filter(User.company_id == user.company_id)
+        .order_by(User.id.desc())
+        .all()
+    )
+    executors = (
+        db.query(User.id, User.name, User.email)
+        .filter(User.company_id == user.company_id, User.role == Role.executor)
+        .order_by(User.id.desc())
+        .all()
+    )
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
@@ -2137,8 +2152,18 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
         raise HTTPException(403, "Forbidden")
 
 
-    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
-    executors = db.query(User).filter(User.company_id == user.company_id, User.role == Role.executor).order_by(User.id.desc()).all()
+    projects = (
+        db.query(Project.id, Project.name)
+        .filter(Project.company_id == user.company_id)
+        .order_by(Project.id.desc())
+        .all()
+    )
+    executors = (
+        db.query(User.id, User.name, User.email)
+        .filter(User.company_id == user.company_id, User.role == Role.executor)
+        .order_by(User.id.desc())
+        .all()
+    )
     next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
     next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
     error_code = (request.query_params.get("error") or "").strip().lower()
