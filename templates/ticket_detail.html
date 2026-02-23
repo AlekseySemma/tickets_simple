@@ -286,6 +286,7 @@
   {% for a in attachments %}
     {% set p = a.file_path or "" %}
     {% set file_url = "/attachments/" ~ a.id %}
+    {% set file_download_url = file_url ~ "?download=1" %}
     {% set file_label = a.original_name or p %}
     {% set lower = (a.original_name or p)|lower %}
     {% set is_img = lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".gif") or lower.endswith(".webp") %}
@@ -301,6 +302,9 @@
         <a href="{{ file_url }}" target="_blank">
           <img src="{{ file_url }}" class="img-fluid rounded" style="max-height: 260px;" />
         </a>
+        <div class="mt-2">
+          <a href="{{ file_download_url }}" class="btn btn-sm btn-outline-primary" download>Скачать</a>
+        </div>
       {% endif %}
     </div>
   {% endfor %}

@@ -15,7 +15,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect, Integer, Boolean
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect, Integer, Boolean, UniqueConstraint
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -142,8 +142,9 @@ class RegistrationInvite(Base):
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_projects_company_name"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
 
@@ -283,6 +284,32 @@ def ensure_runtime_schema() -> None:
                 conn.exec_driver_sql(
                     f"UPDATE registration_invites SET company_id = {cid} WHERE company_id IS NULL"
                 )
+
+    # Normalize legacy attachment paths (absolute paths) to URL form /uploads/<filename>.
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("SELECT id, file_path FROM attachments").fetchall()
+        for row in rows:
+            aid = int(row[0])
+            raw_path = (row[1] or "").strip()
+            if not raw_path or raw_path.startswith("/uploads/"):
+                continue
+            basename = Path(raw_path).name.strip()
+            if not basename:
+                continue
+            normalized = f"/uploads/{basename}"
+            conn.exec_driver_sql(
+                "UPDATE attachments SET file_path = :p WHERE id = :id",
+                {"p": normalized, "id": aid},
+            )
+
+    # PostgreSQL: migrate from globally unique project name to per-company uniqueness.
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_name_key")
+            conn.exec_driver_sql("DROP INDEX IF EXISTS ix_projects_name")
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_company_name ON projects (company_id, name)"
+            )
 
 ensure_runtime_schema()
 
@@ -1423,7 +1450,12 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
 
 
 @app.get("/attachments/{attachment_id}")
-def download_attachment(attachment_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def download_attachment(
+    attachment_id: int,
+    download: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     a = db.get(Attachment, attachment_id)
     if not a:
         raise HTTPException(404, "Attachment not found")
@@ -1443,7 +1475,8 @@ def download_attachment(attachment_id: int, db: Session = Depends(get_db), user:
         raise HTTPException(404, "Attachment file not found")
 
     display_name = ((a.original_name or "").strip() or disk_path.name)[:255]
-    return FileResponse(disk_path, filename=display_name, content_disposition_type="inline")
+    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
+    return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
 
 # =========================
 # WEB UI
