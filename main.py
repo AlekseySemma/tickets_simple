@@ -15,7 +15,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, inspect, Integer, Boolean, UniqueConstraint
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -218,100 +218,15 @@ class SecurityEvent(Base):
     detail: Mapped[Optional[str]] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-Base.metadata.create_all(bind=engine)
+def ensure_migrations_ready() -> None:
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SELECT version_num FROM alembic_version LIMIT 1")
+    except Exception as exc:
+        raise RuntimeError("Database schema is not initialized. Run 'alembic upgrade head'.") from exc
 
-def ensure_runtime_schema() -> None:
-    insp = inspect(engine)
-    with engine.begin() as conn:
-        cols = {c["name"] for c in insp.get_columns("attachments")}
-        if "original_name" not in cols:
-            conn.exec_driver_sql("ALTER TABLE attachments ADD COLUMN original_name VARCHAR(255)")
 
-        users_cols = {c["name"] for c in insp.get_columns("users")}
-        if "company_id" not in users_cols:
-            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN company_id INTEGER")
-
-        projects_cols = {c["name"] for c in insp.get_columns("projects")}
-        if "company_id" not in projects_cols:
-            conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN company_id INTEGER")
-
-        tickets_cols = {c["name"] for c in insp.get_columns("tickets")}
-        if "company_id" not in tickets_cols:
-            conn.exec_driver_sql("ALTER TABLE tickets ADD COLUMN company_id INTEGER")
-
-        if insp.has_table("registration_invites"):
-            invites_cols = {c["name"] for c in insp.get_columns("registration_invites")}
-            if "company_id" not in invites_cols:
-                conn.exec_driver_sql("ALTER TABLE registration_invites ADD COLUMN company_id INTEGER")
-
-    if engine.dialect.name == "postgresql":
-        enum_type_name = getattr(User.__table__.c.role.type, "name", "role") or "role"
-        if enum_type_name.replace("_", "").isalnum():
-            # Some PostgreSQL versions reject ALTER TYPE ... ADD VALUE inside a transaction.
-            with engine.connect() as raw_conn:
-                conn = raw_conn.execution_options(isolation_level="AUTOCOMMIT")
-                conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'admin'")
-                conn.exec_driver_sql(f"ALTER TYPE {enum_type_name} ADD VALUE IF NOT EXISTS 'platform_admin'")
-
-    with engine.begin() as conn:
-        default_company_id = conn.exec_driver_sql("SELECT id FROM companies ORDER BY id LIMIT 1").scalar()
-        if default_company_id is None:
-            users_without_company = conn.exec_driver_sql(
-                "SELECT COUNT(*) FROM users WHERE CAST(role AS TEXT) <> 'platform_admin' AND company_id IS NULL"
-            ).scalar() or 0
-            projects_without_company = conn.exec_driver_sql(
-                "SELECT COUNT(*) FROM projects WHERE company_id IS NULL"
-            ).scalar() or 0
-            tickets_without_company = conn.exec_driver_sql(
-                "SELECT COUNT(*) FROM tickets WHERE company_id IS NULL"
-            ).scalar() or 0
-            if users_without_company or projects_without_company or tickets_without_company:
-                conn.exec_driver_sql("INSERT INTO companies(name, created_at) VALUES ('Default Company', CURRENT_TIMESTAMP)")
-                default_company_id = conn.exec_driver_sql("SELECT id FROM companies ORDER BY id DESC LIMIT 1").scalar()
-
-        if default_company_id is not None:
-            cid = int(default_company_id)
-            conn.exec_driver_sql(
-                f"UPDATE users SET company_id = {cid} WHERE CAST(role AS TEXT) <> 'platform_admin' AND company_id IS NULL"
-            )
-            conn.exec_driver_sql(
-                f"UPDATE projects SET company_id = {cid} WHERE company_id IS NULL"
-            )
-            conn.exec_driver_sql(
-                f"UPDATE tickets SET company_id = {cid} WHERE company_id IS NULL"
-            )
-            if insp.has_table("registration_invites"):
-                conn.exec_driver_sql(
-                    f"UPDATE registration_invites SET company_id = {cid} WHERE company_id IS NULL"
-                )
-
-    # Normalize legacy attachment paths (absolute paths) to URL form /uploads/<filename>.
-    with engine.begin() as conn:
-        rows = conn.exec_driver_sql("SELECT id, file_path FROM attachments").fetchall()
-        for row in rows:
-            aid = int(row[0])
-            raw_path = (row[1] or "").strip()
-            if not raw_path or raw_path.startswith("/uploads/"):
-                continue
-            basename = Path(raw_path).name.strip()
-            if not basename:
-                continue
-            normalized = f"/uploads/{basename}"
-            conn.exec_driver_sql(
-                "UPDATE attachments SET file_path = :p WHERE id = :id",
-                {"p": normalized, "id": aid},
-            )
-
-    # PostgreSQL: migrate from globally unique project name to per-company uniqueness.
-    if engine.dialect.name == "postgresql":
-        with engine.begin() as conn:
-            conn.exec_driver_sql("ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_name_key")
-            conn.exec_driver_sql("DROP INDEX IF EXISTS ix_projects_name")
-            conn.exec_driver_sql(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_company_name ON projects (company_id, name)"
-            )
-
-ensure_runtime_schema()
+ensure_migrations_ready()
 
 # =========================
 # Схемы API
