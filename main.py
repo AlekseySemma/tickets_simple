@@ -2333,65 +2333,6 @@ async def web_ticket_edit_save(
     db.commit()
 
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-
-
-
-    # описание может менять и куратор и исполнитель (если разрешено)
-    t.description = (form.get("description") or "").strip() or None
-
-        # срок (дата + HHMM) — "человеческая" интерпретация
-    deadline = None
-    deadline_date = (form.get("deadline_date") or "").strip()   # YYYY-MM-DD
-    time4 = (form.get("deadline_time4") or "").strip()   
-        # если дату выбрали, а время не ввели — ставим текущее время
-    if deadline_date and not time4:
-        time4 = local_now().strftime("%H%M")
-
-       # 1-4 цифры
-
-    if deadline_date and time4:
-        time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
-        if time4:
-            if len(time4) <= 2:
-                # 9 -> 09:00, 12 -> 12:00
-                hh = min(23, int(time4))
-                mm = 0
-                time4_fixed = f"{hh:02d}{mm:02d}"
-            else:
-                # 930 -> 09:30, 1234 -> 12:34
-                time4_fixed = time4.zfill(4)
-
-            try:
-                hh = min(23, int(time4_fixed[:2]))
-                mm = min(59, int(time4_fixed[2:]))
-                deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
-            except ValueError:
-                deadline = None
-
-
-    t.deadline = deadline
-
-    if can_edit_full:
-        # полное редактирование только куратор
-        t.title = (form.get("title") or "").strip() or t.title
-
-        project_id_raw = (form.get("project_id") or "").strip()
-        if project_id_raw:
-            t.project_id = int(project_id_raw)
-
-        executor_id_raw = (form.get("executor_id") or "").strip()
-        t.executor_id = int(executor_id_raw) if executor_id_raw else None
-
-        status_raw = (form.get("status") or "").strip()
-        if status_raw:
-            t.status = TicketStatus(status_raw)
-
-    db.commit()
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
-
-
 # ====== WEB: Projects ======
 @app.get("/web/projects")
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
