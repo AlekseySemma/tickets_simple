@@ -2381,7 +2381,12 @@ def web_projects(request: Request, db: Session = Depends(get_db), user: User = D
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
-    projects = db.query(Project).filter(Project.company_id == user.company_id).order_by(Project.id.desc()).all()
+    projects = (
+        db.query(Project.id, Project.name, Project.description)
+        .filter(Project.company_id == user.company_id)
+        .order_by(Project.id.desc())
+        .all()
+    )
     return templates.TemplateResponse("projects.html", {"request": request, "projects": projects})
 
 @app.post("/web/projects/create")
@@ -2406,8 +2411,26 @@ def web_users(request: Request, db: Session = Depends(get_db), user: User = Depe
     if not is_admin(user):
         raise HTTPException(403, "Only admin")
     ensure_company_user(user)
-    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.id.desc()).all()
-    invites = db.query(RegistrationInvite).filter(RegistrationInvite.company_id == user.company_id).order_by(RegistrationInvite.id.desc()).limit(30).all()
+    users = (
+        db.query(User.id, User.name, User.email, User.role)
+        .filter(User.company_id == user.company_id)
+        .order_by(User.id.desc())
+        .all()
+    )
+    invites = (
+        db.query(
+            RegistrationInvite.id,
+            RegistrationInvite.role,
+            RegistrationInvite.token,
+            RegistrationInvite.created_at,
+            RegistrationInvite.expires_at,
+            RegistrationInvite.used_by,
+        )
+        .filter(RegistrationInvite.company_id == user.company_id)
+        .order_by(RegistrationInvite.id.desc())
+        .limit(30)
+        .all()
+    )
     base_url = str(request.base_url).rstrip("/")
     invite_links = []
     for inv in invites:
