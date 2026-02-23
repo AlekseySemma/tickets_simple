@@ -1,6 +1,6 @@
 """Dedupe projects by company and name
 
-Revision ID: 0002_dedupe_projects_company_name
+Revision ID: 0002_dedupe_projects_company
 Revises: 0001_p1_schema_baseline
 Create Date: 2026-02-23
 
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0002_dedupe_projects_company_name"
+revision = "0002_dedupe_projects_company"
 down_revision = "0001_p1_schema_baseline"
 branch_labels = None
 depends_on = None
