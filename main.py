@@ -605,6 +605,37 @@ def format_deadline(dt: datetime | None) -> str:
         return f"{dt.day} {mon}, {dt.strftime('%H:%M')}"
 
     return dt.strftime("%d.%m.%Y %H:%M")
+
+
+def parse_deadline_inputs(deadline_date_raw: str | None, deadline_time4_raw: str | None) -> datetime | None:
+    deadline_date = (deadline_date_raw or "").strip()
+    time4 = (deadline_time4_raw or "").strip()
+    if not deadline_date:
+        return None
+
+    # If date is set and time is empty, use current local time.
+    if not time4:
+        time4 = local_now().strftime("%H%M")
+
+    time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
+    if not time4:
+        return None
+
+    if len(time4) <= 2:
+        hh = min(23, int(time4))
+        mm = 0
+        time4_fixed = f"{hh:02d}{mm:02d}"
+    else:
+        time4_fixed = time4.zfill(4)
+
+    try:
+        hh = min(23, int(time4_fixed[:2]))
+        mm = min(59, int(time4_fixed[2:]))
+        return datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
+    except ValueError:
+        return None
+
+
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
     db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
 
@@ -1952,31 +1983,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     if user.role == Role.executor and executor_id is None:
         executor_id = user.id
 
-        # ---- СРОК (date + HHMM) ----
-    deadline = None
-    deadline_date = (form.get("deadline_date") or "").strip()   # YYYY-MM-DD
-    time4 = (form.get("deadline_time4") or "").strip()          # 1-4 цифры
-
-    # если дату выбрали, а время не ввели — ставим текущее время
-    if deadline_date and not time4:
-        time4 = local_now().strftime("%H%M")
-
-    if deadline_date and time4:
-        time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
-        if time4:
-            if len(time4) <= 2:
-                hh = min(23, int(time4))
-                mm = 0
-                time4_fixed = f"{hh:02d}{mm:02d}"
-            else:
-                time4_fixed = time4.zfill(4)
-
-            try:
-                hh = min(23, int(time4_fixed[:2]))
-                mm = min(59, int(time4_fixed[2:]))
-                deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
-            except ValueError:
-                deadline = None
+    deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
 
 
     try:
@@ -2285,32 +2292,8 @@ async def web_ticket_edit_save(
             t.project_id = project_id_candidate
         t.executor_id = executor_id_candidate
 
-    # срок (как у создания)
-    deadline = None
-    deadline_date = (form.get("deadline_date") or "").strip()
-    time4 = (form.get("deadline_time4") or "").strip()
-
-    if deadline_date and not time4:
-        time4 = local_now().strftime("%H%M")
-
-    if deadline_date and time4:
-        time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
-        if time4:
-            if len(time4) <= 2:
-                hh = min(23, int(time4))
-                mm = 0
-                time4_fixed = f"{hh:02d}{mm:02d}"
-            else:
-                time4_fixed = time4.zfill(4)
-
-            try:
-                hh = min(23, int(time4_fixed[:2]))
-                mm = min(59, int(time4_fixed[2:]))
-                deadline = datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
-            except ValueError:
-                deadline = None
-
-    t.deadline = deadline
+    # Deadline (same parsing logic as create form)
+    t.deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
 
     has_specific_log = False
     if t.deadline != old_deadline:
@@ -2333,6 +2316,8 @@ async def web_ticket_edit_save(
     db.commit()
 
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
 # ====== WEB: Projects ======
 @app.get("/web/projects")
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
