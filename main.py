@@ -756,21 +756,38 @@ def run_deadline_reminders_forever() -> None:
             with SessionLocal() as db:
                 now = local_now()
                 horizon = now + timedelta(seconds=PUSH_REMINDER_POLL_SECONDS)
-                q = db.query(Ticket).filter(
-                    Ticket.executor_id.is_not(None),
-                    Ticket.deadline.is_not(None),
-                    Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+                deadline_from = now + timedelta(minutes=PUSH_REMINDER_MINUTES)
+                deadline_to = horizon + timedelta(minutes=PUSH_REMINDER_MINUTES)
+                candidates = (
+                    db.query(Ticket.id, Ticket.executor_id, Ticket.deadline)
+                    .filter(
+                        Ticket.executor_id.is_not(None),
+                        Ticket.deadline.is_not(None),
+                        Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+                        Ticket.deadline >= deadline_from,
+                        Ticket.deadline <= deadline_to,
+                    )
+                    .all()
                 )
-                for t in q.all():
-                    remind_at = t.deadline - timedelta(minutes=PUSH_REMINDER_MINUTES)
-                    if not (now <= remind_at <= horizon):
-                        continue
+
+                reminder_keys = [
+                    f"{t.id}:{t.executor_id}:{int(t.deadline.timestamp())}:{PUSH_REMINDER_MINUTES}"
+                    for t in candidates
+                ]
+                existing_keys = set()
+                if reminder_keys:
+                    existing_rows = (
+                        db.query(DeadlineReminderLog.reminder_key)
+                        .filter(DeadlineReminderLog.reminder_key.in_(reminder_keys))
+                        .all()
+                    )
+                    existing_keys = {row[0] for row in existing_rows}
+
+                for t in candidates:
                     reminder_key = f"{t.id}:{t.executor_id}:{int(t.deadline.timestamp())}:{PUSH_REMINDER_MINUTES}"
-                    already = db.query(DeadlineReminderLog).filter(
-                        DeadlineReminderLog.reminder_key == reminder_key
-                    ).first()
-                    if already:
+                    if reminder_key in existing_keys:
                         continue
+                    existing_keys.add(reminder_key)
                     db.add(
                         DeadlineReminderLog(
                             ticket_id=t.id,
