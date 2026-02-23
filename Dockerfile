@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # код приложения
 COPY . .
+RUN chmod +x /app/start.sh
 
 # если у тебя другой модуль/приложение — поменяем ниже команду
-CMD ["bash", "-lc", "uvicorn main:app --host 0.0.0.0 --port 8000"]
+CMD ["bash", "-lc", "/app/start.sh"]
