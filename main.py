@@ -1425,14 +1425,7 @@ def download_attachment(
     a = db.get(Attachment, attachment_id)
     if not a:
         raise HTTPException(404, "Attachment not found")
-    t = db.get(Ticket, a.ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-
-    if not is_platform_admin(user):
-        ensure_company_user(user)
-        if t.company_id != user.company_id:
-            raise HTTPException(403, "Forbidden")
+    t = get_api_ticket_or_404(db, user, a.ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
