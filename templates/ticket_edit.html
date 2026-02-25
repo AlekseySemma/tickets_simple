@@ -73,6 +73,18 @@
                 {% endfor %}
               </select>
             </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">Тип заявки</label>
+              <select name="ticket_type_id" class="form-select">
+                <option value="">— не выбран —</option>
+                {% for tt in ticket_types %}
+                  <option value="{{ tt.id }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>
+                    {{ tt.name }}{% if not tt.is_active %} (inactive){% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
           {% endif %}
 
           <div class="col-12">

@@ -356,11 +356,31 @@ class ProjectOut(BaseModel):
     class Config:
         from_attributes = True
 
+class TicketTypeCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+class TicketTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class TicketTypeOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    is_active: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
 class TicketCreate(BaseModel):
     title: str
     description: Optional[str] = None
     deadline: Optional[datetime] = None
     executor_id: Optional[int] = None
+    ticket_type_id: Optional[int] = None
     project_id: int
 
 class TicketUpdate(BaseModel):
@@ -368,6 +388,7 @@ class TicketUpdate(BaseModel):
     description: Optional[str] = None
     deadline: Optional[datetime] = None
     executor_id: Optional[int] = None
+    ticket_type_id: Optional[int] = None
     status: Optional[TicketStatus] = None
     project_id: Optional[int] = None
 
@@ -379,6 +400,7 @@ class TicketOut(BaseModel):
     status: TicketStatus
     project_id: int
     executor_id: Optional[int]
+    ticket_type_id: Optional[int]
     created_by: int
     created_at: datetime
     class Config:
@@ -560,7 +582,13 @@ def resolve_attachment_disk_path(raw_path: str | None) -> Path | None:
     return resolved
 
 
-def validate_ticket_links(db: Session, company_id: int | None, project_id: int | None, executor_id: int | None) -> None:
+def validate_ticket_links(
+    db: Session,
+    company_id: int | None,
+    project_id: int | None,
+    executor_id: int | None,
+    ticket_type_id: int | None = None,
+) -> None:
     if project_id is not None:
         project = db.get(Project, project_id)
         if not project or (company_id is not None and project.company_id != company_id):
@@ -572,6 +600,13 @@ def validate_ticket_links(db: Session, company_id: int | None, project_id: int |
             raise HTTPException(400, "Executor not found")
         if company_id is not None and executor.company_id != company_id:
             raise HTTPException(400, "Executor not found")
+
+    if ticket_type_id is not None:
+        ticket_type = db.get(TicketType, ticket_type_id)
+        if not ticket_type or (company_id is not None and ticket_type.company_id != company_id):
+            raise HTTPException(400, "Ticket type not found")
+        if not ticket_type.is_active:
+            raise HTTPException(400, "Ticket type is inactive")
 
 
 def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
@@ -1365,6 +1400,106 @@ def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_
     return db.query(Project).filter(Project.company_id == _u.company_id).order_by(Project.id.desc()).all()
 
 # =========================
+# TICKET TYPES API
+# =========================
+@app.post("/ticket-types", response_model=TicketTypeOut)
+def create_ticket_type(
+    payload: TicketTypeCreate,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(422, "Name is required")
+    exists = (
+        db.query(TicketType)
+        .filter(TicketType.company_id == _manager.company_id, TicketType.name == name)
+        .first()
+    )
+    if exists:
+        raise HTTPException(400, "Ticket type already exists")
+    item = TicketType(
+        company_id=_manager.company_id,
+        name=name,
+        description=(payload.description or "").strip() or None,
+        is_active=bool(payload.is_active),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+@app.get("/ticket-types", response_model=list[TicketTypeOut])
+def list_ticket_types(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if is_platform_admin(user):
+        return db.query(TicketType).order_by(TicketType.id.desc()).all()
+    ensure_company_user(user)
+    return (
+        db.query(TicketType)
+        .filter(TicketType.company_id == user.company_id)
+        .order_by(TicketType.id.desc())
+        .all()
+    )
+
+@app.patch("/ticket-types/{ticket_type_id}", response_model=TicketTypeOut)
+def update_ticket_type(
+    ticket_type_id: int,
+    patch: TicketTypeUpdate,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    item = db.get(TicketType, ticket_type_id)
+    if not item or item.company_id != _manager.company_id:
+        raise HTTPException(404, "Ticket type not found")
+
+    incoming = patch.model_dump(exclude_unset=True)
+    if "name" in incoming:
+        next_name = (incoming.get("name") or "").strip()
+        if not next_name:
+            raise HTTPException(422, "Name is required")
+        exists = (
+            db.query(TicketType)
+            .filter(
+                TicketType.company_id == _manager.company_id,
+                TicketType.name == next_name,
+                TicketType.id != item.id,
+            )
+            .first()
+        )
+        if exists:
+            raise HTTPException(400, "Ticket type already exists")
+        item.name = next_name
+    if "description" in incoming:
+        item.description = (incoming.get("description") or "").strip() or None
+    if "is_active" in incoming:
+        item.is_active = bool(incoming.get("is_active"))
+    db.commit()
+    db.refresh(item)
+    return item
+
+@app.delete("/ticket-types/{ticket_type_id}")
+def delete_ticket_type(
+    ticket_type_id: int,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    item = db.get(TicketType, ticket_type_id)
+    if not item or item.company_id != _manager.company_id:
+        raise HTTPException(404, "Ticket type not found")
+
+    has_tickets = db.query(Ticket.id).filter(Ticket.ticket_type_id == item.id).first() is not None
+    has_templates = db.query(TicketTemplate.id).filter(TicketTemplate.ticket_type_id == item.id).first() is not None
+    if has_tickets or has_templates:
+        raise HTTPException(400, "Ticket type is in use")
+
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+# =========================
 # TICKETS API
 # =========================
 @app.post("/tickets", response_model=TicketOut)
@@ -1378,13 +1513,14 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     if is_ticket_title_too_long(title):
         raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
-    validate_ticket_links(db, user.company_id, payload.project_id, payload.executor_id)
+    validate_ticket_links(db, user.company_id, payload.project_id, payload.executor_id, payload.ticket_type_id)
     t = Ticket(
         title=title,
         description=payload.description,
         deadline=payload.deadline,
         company_id=user.company_id,
         executor_id=payload.executor_id,
+        ticket_type_id=payload.ticket_type_id,
         project_id=payload.project_id,
         created_by=user.id
     )
@@ -1431,11 +1567,18 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         if incoming["title"] and is_ticket_title_too_long(incoming["title"]):
             raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
-    validate_ticket_links(db, t.company_id, incoming.get("project_id"), incoming.get("executor_id"))
+    validate_ticket_links(
+        db,
+        t.company_id,
+        incoming.get("project_id"),
+        incoming.get("executor_id"),
+        incoming.get("ticket_type_id"),
+    )
 
     old_deadline = t.deadline
     old_executor_id = t.executor_id
     old_project_id = t.project_id
+    old_ticket_type_id = t.ticket_type_id
     old_status = t.status
 
     for k, v in incoming.items():
@@ -1450,6 +1593,10 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         has_specific_log = True
     if t.project_id != old_project_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        has_specific_log = True
+
+    if t.ticket_type_id != old_ticket_type_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение типа заявки")
         has_specific_log = True
 
     if not has_specific_log:
@@ -1740,6 +1887,12 @@ def web_tickets(
         .order_by(User.id.desc())
         .all()
     )
+    ticket_types = (
+        db.query(TicketType.id, TicketType.name, TicketType.is_active)
+        .filter(TicketType.company_id == user.company_id)
+        .order_by(TicketType.id.desc())
+        .all()
+    )
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
@@ -1892,6 +2045,7 @@ def web_tickets(
             "tickets": tickets,
             "projects": projects,
             "executors": executors,
+            "ticket_types": ticket_types,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,
             "now": now,
@@ -2054,6 +2208,12 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     except ValueError:
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
+    ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
+    try:
+        ticket_type_id = int(ticket_type_id_raw) if ticket_type_id_raw else None
+    except ValueError:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+
     # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него
     if user.role == Role.executor and executor_id is None:
         executor_id = user.id
@@ -2062,7 +2222,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
 
     try:
-        validate_ticket_links(db, user.company_id, project_id, executor_id)
+        validate_ticket_links(db, user.company_id, project_id, executor_id, ticket_type_id)
 
         # ВАЖНО: именно deadline=deadline
         t = Ticket(
@@ -2071,6 +2231,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             deadline=deadline,
             company_id=user.company_id,
             executor_id=executor_id,
+            ticket_type_id=ticket_type_id,
             project_id=project_id,
             created_by=user.id,
         )
@@ -2225,6 +2386,12 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
         .order_by(User.id.desc())
         .all()
     )
+    ticket_types = (
+        db.query(TicketType.id, TicketType.name, TicketType.is_active)
+        .filter(TicketType.company_id == user.company_id)
+        .order_by(TicketType.id.desc())
+        .all()
+    )
     next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
     next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
     error_code = (request.query_params.get("error") or "").strip().lower()
@@ -2249,6 +2416,7 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
             "t": t,
             "projects": projects,
             "executors": executors,
+            "ticket_types": ticket_types,
             "can_edit_full": can_edit_full,
             "deadline_date": deadline_date,
             "deadline_time4": deadline_time4,
@@ -2281,6 +2449,7 @@ async def web_ticket_edit_save(
     description = (form.get("description") or "").strip()
     project_id_raw = (form.get("project_id") or "").strip()
     executor_id_raw = (form.get("executor_id") or "").strip()
+    ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
 
     if is_ticket_title_too_long(title):
         edit_url = f"/web/tickets/{ticket_id}/edit?error=title_too_long&next={quote(next_url, safe='')}"
@@ -2289,6 +2458,7 @@ async def web_ticket_edit_save(
     old_deadline = t.deadline
     old_executor_id = t.executor_id
     old_project_id = t.project_id
+    old_ticket_type_id = t.ticket_type_id
     old_status = t.status
 
     if status_raw:
@@ -2312,11 +2482,23 @@ async def web_ticket_edit_save(
         except ValueError:
             executor_id_candidate = None
 
-        validate_ticket_links(db, user.company_id, project_id_candidate, executor_id_candidate)
+        try:
+            ticket_type_id_candidate = int(ticket_type_id_raw) if ticket_type_id_raw else None
+        except ValueError:
+            ticket_type_id_candidate = None
+
+        validate_ticket_links(
+            db,
+            user.company_id,
+            project_id_candidate,
+            executor_id_candidate,
+            ticket_type_id_candidate,
+        )
 
         if project_id_candidate is not None:
             t.project_id = project_id_candidate
         t.executor_id = executor_id_candidate
+        t.ticket_type_id = ticket_type_id_candidate
 
     # Deadline (same parsing logic as create form)
     t.deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
@@ -2330,6 +2512,10 @@ async def web_ticket_edit_save(
         has_specific_log = True
     if t.project_id != old_project_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        has_specific_log = True
+
+    if t.ticket_type_id != old_ticket_type_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение типа заявки")
         has_specific_log = True
 
     if not has_specific_log:
@@ -2373,6 +2559,113 @@ async def web_projects_create(request: Request, db: Session = Depends(get_db), u
     p = Project(name=name, description=description, company_id=user.company_id)
     db.add(p); db.commit()
     return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
+
+# ====== WEB: Ticket Types ======
+@app.get("/web/ticket-types")
+def web_ticket_types(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    ticket_types = (
+        db.query(TicketType.id, TicketType.name, TicketType.description, TicketType.is_active)
+        .filter(TicketType.company_id == user.company_id)
+        .order_by(TicketType.id.desc())
+        .all()
+    )
+    return templates.TemplateResponse(
+        "ticket_types.html",
+        {
+            "request": request,
+            "ticket_types": ticket_types,
+        },
+    )
+
+@app.post("/web/ticket-types/create")
+async def web_ticket_types_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    description = (form.get("description") or "").strip() or None
+    is_active = (form.get("is_active") or "1").strip() == "1"
+    if not name:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    exists = (
+        db.query(TicketType)
+        .filter(TicketType.company_id == user.company_id, TicketType.name == name)
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    item = TicketType(
+        company_id=user.company_id,
+        name=name,
+        description=description,
+        is_active=is_active,
+    )
+    db.add(item)
+    db.commit()
+    return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+
+@app.post("/web/ticket-types/{ticket_type_id}/update")
+async def web_ticket_types_update(
+    ticket_type_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(TicketType, ticket_type_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Ticket type not found")
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    description = (form.get("description") or "").strip() or None
+    is_active = (form.get("is_active") or "").strip() == "1"
+    if not name:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+
+    exists = (
+        db.query(TicketType)
+        .filter(
+            TicketType.company_id == user.company_id,
+            TicketType.name == name,
+            TicketType.id != item.id,
+        )
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+
+    item.name = name
+    item.description = description
+    item.is_active = is_active
+    db.commit()
+    return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+
+@app.post("/web/ticket-types/{ticket_type_id}/delete")
+async def web_ticket_types_delete(
+    ticket_type_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(TicketType, ticket_type_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Ticket type not found")
+
+    in_use = db.query(Ticket.id).filter(Ticket.ticket_type_id == item.id).first() is not None
+    if in_use:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    db.delete(item)
+    db.commit()
+    return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
 
 # ====== WEB: Users (Executors) ======
 @app.get("/web/users")

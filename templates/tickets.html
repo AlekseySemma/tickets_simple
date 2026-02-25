@@ -277,6 +277,9 @@
         <div class="muted">Вы вошли как: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="page-actions">
+  {% if user.role in ["ADMIN", "CURATOR"] %}
+  <a class="btn btn-outline-secondary" href="/web/ticket-types">Ticket types</a>
+  {% endif %}
   <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
   <a class="btn btn-outline-secondary" href="/docs" target="_blank">Swagger</a>
   <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
@@ -315,6 +318,16 @@
                 <option value="" selected disabled>Проект</option>
                 {% for p in projects %}
                   <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-6">
+              <select name="ticket_type_id" class="form-select">
+                <option value="" selected>Тип заявки (необязательно)</option>
+                {% for tt in ticket_types %}
+                  {% if tt.is_active %}
+                    <option value="{{ tt.id }}">{{ tt.name }}</option>
+                  {% endif %}
                 {% endfor %}
               </select>
             </div>
