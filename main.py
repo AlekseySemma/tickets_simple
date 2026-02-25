@@ -1851,6 +1851,7 @@ def web_tickets(
     user: User = Depends(get_current_user),
     status_filter: str | None = None,
     project_id: str | None = None,
+    ticket_type_id: str | None = None,
     executor_id: str | None = None,   # <-- ДОБАВИЛИ
     q: str | None = None,
     only_overdue: str | None = None,
@@ -1906,6 +1907,13 @@ def web_tickets(
         except ValueError:
             project_id_int = None
 
+    ticket_type_id_int: int | None = None
+    if ticket_type_id is not None and str(ticket_type_id).strip() != "":
+        try:
+            ticket_type_id_int = int(ticket_type_id)
+        except ValueError:
+            ticket_type_id_int = None
+
     executor_id_int: int | None = None
     executor_none = False
     if executor_id is not None and str(executor_id).strip() != "":
@@ -1927,6 +1935,8 @@ def web_tickets(
 
     if project_id_int is not None:
         filtered_query = filtered_query.filter(Ticket.project_id == project_id_int)
+    if ticket_type_id_int is not None:
+        filtered_query = filtered_query.filter(Ticket.ticket_type_id == ticket_type_id_int)
 
     # Фильтр по исполнителю — только куратор
     if is_manager(user):
@@ -2020,6 +2030,7 @@ def web_tickets(
     filters_form_open = bool(
         (status_filter or "").strip()
         or project_id_int is not None
+        or ticket_type_id_int is not None
         or (executor_id or "").strip()
         or (q or "").strip()
         or overdue_enabled
@@ -2054,6 +2065,7 @@ def web_tickets(
             "now_plus_24h": now_plus_24h,
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
+            "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
             "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
             "q": q or "",
             "only_overdue": "1" if overdue_enabled else "",

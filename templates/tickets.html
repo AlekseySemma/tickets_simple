@@ -417,6 +417,15 @@
                 {% endfor %}
               </select>
             </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Тип заявки</label>
+              <select name="ticket_type_id" class="form-select">
+                <option value="" {% if not ticket_type_id_filter %}selected{% endif %}>Все</option>
+                {% for tt in ticket_types %}
+                  <option value="{{ tt.id }}" {% if ticket_type_id_filter == tt.id %}selected{% endif %}>{{ tt.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="col-12 col-md-2 d-flex gap-2">
               <button class="btn btn-primary w-100">Применить</button>
             </div>
@@ -468,6 +477,7 @@
         <input type="hidden" name="q" value="{{ q }}">
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
         <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+        <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
         <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
         <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
         <input type="hidden" name="sort" value="{{ sort }}">
@@ -485,6 +495,7 @@
      data-status-filter="{{ status_filter }}"
      data-only-overdue="{{ only_overdue }}"
      data-project-id="{{ project_id_filter }}"
+     data-ticket-type-id="{{ ticket_type_id_filter }}"
      data-executor-id="{{ executor_id_filter }}"
      data-q="{{ q }}"
      data-sort="{{ sort }}"
@@ -699,6 +710,7 @@
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+            <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
             <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
             <input type="hidden" name="sort" value="{{ sort }}">
@@ -710,6 +722,7 @@
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+            <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
             <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
             <input type="hidden" name="sort" value="{{ sort }}">
@@ -979,6 +992,7 @@ document.addEventListener("DOMContentLoaded", function () {
       status_filter: dash.dataset.statusFilter || "",
       only_overdue: dash.dataset.onlyOverdue || "",
       project_id: dash.dataset.projectId || "",
+      ticket_type_id: dash.dataset.ticketTypeId || "",
       executor_id: dash.dataset.executorId || "",
       q: dash.dataset.q || "",
       sort: dash.dataset.sort || "id_desc",
@@ -990,6 +1004,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const p = new URLSearchParams();
     p.set("status_filter", next.status_filter || "");
     p.set("project_id", next.project_id || "");
+    p.set("ticket_type_id", next.ticket_type_id || "");
     p.set("executor_id", next.executor_id || "");
     p.set("q", next.q || "");
     p.set("only_overdue", next.only_overdue || "");
