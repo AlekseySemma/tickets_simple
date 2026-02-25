@@ -892,6 +892,16 @@ def ensure_company_user(user: User) -> None:
         raise HTTPException(403, "Company is not assigned")
 
 
+def get_company_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
+    ensure_company_user(user)
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    if ticket.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
+    return ticket
+
+
 def delete_company_with_data(db: Session, company_id: int) -> None:
     ticket_ids = [row[0] for row in db.query(Ticket.id).filter(Ticket.company_id == company_id).all()]
     user_ids = [row[0] for row in db.query(User.id).filter(User.company_id == company_id).all()]
@@ -2017,12 +2027,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
 @app.post("/web/tickets/{ticket_id}/delete")
 def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    ensure_company_user(user)
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
+    t = get_company_ticket_or_404(db, user, ticket_id)
 
     # права
     if is_manager(user):
@@ -2047,12 +2052,7 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
 
 @app.post("/web/tickets/{ticket_id}/status")
 async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    ensure_company_user(user)
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
+    t = get_company_ticket_or_404(db, user, ticket_id)
 
     # права: куратор всегда, исполнитель — если заявка его (создал или назначена)
     if not can_access_ticket(user, t):
@@ -2095,14 +2095,8 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     
     text = (form.get("text") or "").strip()
 
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    ensure_company_user(user)
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
-
-    if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
+    t = get_company_ticket_or_404(db, user, ticket_id)
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=text)
@@ -2117,12 +2111,7 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
 async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile = File(...),
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
 
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    ensure_company_user(user)
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
+    t = get_company_ticket_or_404(db, user, ticket_id)
 
     # права (как у комментариев/статусов)
     if not can_access_ticket(user, t):
@@ -2148,12 +2137,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
 
 @app.get("/web/tickets/{ticket_id}/edit")
 def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    ensure_company_user(user)
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
+    t = get_company_ticket_or_404(db, user, ticket_id)
 
     # права на просмотр/редактирование
     if is_manager(user):
@@ -2217,12 +2201,7 @@ async def web_ticket_edit_save(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ensure_company_user(user)
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
+    t = get_company_ticket_or_404(db, user, ticket_id)
 
     # права: куратор — всегда, исполнитель — только свои (создал/назначен)
     if not can_access_ticket(user, t):
@@ -2432,12 +2411,7 @@ def web_ticket_detail(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ensure_company_user(user)
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if t.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
+    t = get_company_ticket_or_404(db, user, ticket_id)
 
     # права
     if not can_access_ticket(user, t):
