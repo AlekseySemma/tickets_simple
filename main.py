@@ -1896,6 +1896,7 @@ def web_tickets(
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
+    ticket_types_by_id = {tt.id: tt.name for tt in ticket_types}
 
     # 3) фильтры
     project_id_int: int | None = None
@@ -2048,6 +2049,7 @@ def web_tickets(
             "ticket_types": ticket_types,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,
+            "ticket_types_by_id": ticket_types_by_id,
             "now": now,
             "now_plus_24h": now_plus_24h,
             "status_filter": status_filter or "",
@@ -2786,6 +2788,15 @@ def web_ticket_detail(
     )
     projects_by_id = {project_row[0]: project_row[1]} if project_row else {}
 
+    ticket_type_row = None
+    if t.ticket_type_id is not None:
+        ticket_type_row = (
+            db.query(TicketType.id, TicketType.name)
+            .filter(TicketType.company_id == user.company_id, TicketType.id == t.ticket_type_id)
+            .first()
+        )
+    ticket_types_by_id = {ticket_type_row[0]: ticket_type_row[1]} if ticket_type_row else {}
+
     relevant_user_ids: set[int] = {t.created_by}
     if t.executor_id is not None:
         relevant_user_ids.add(t.executor_id)
@@ -2825,6 +2836,7 @@ def web_ticket_detail(
             "user": user,
             "t": t,
             "projects_by_id": projects_by_id,
+            "ticket_types_by_id": ticket_types_by_id,
             "users_by_id": users_by_id,
             "comments": comments,
             "attachments": attachments,

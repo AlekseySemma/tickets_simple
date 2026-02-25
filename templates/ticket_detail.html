@@ -184,6 +184,7 @@
             <div class="ticket-head">
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
               <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+              <div class="ticket-head-project">Тип заявки: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</b></div>
               <h5 class="ticket-head-title">{{ t.title }}</h5>
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
