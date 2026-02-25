@@ -1377,7 +1377,7 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
         ensure_company_user(user)
         if t.company_id != user.company_id:
             raise HTTPException(403, "Forbidden")
-    if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=payload.text)
@@ -2055,13 +2055,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
         raise HTTPException(403, "Forbidden")
 
     # права: куратор всегда, исполнитель — если заявка его (создал или назначена)
-    if is_manager(user):
-        allowed = True
-    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
-        allowed = True
-    else:
-        allowed = False
-    if not allowed:
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     form = await request.form()
@@ -2131,13 +2125,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
         raise HTTPException(403, "Forbidden")
 
     # права (как у комментариев/статусов)
-    if is_manager(user):
-        allowed = True
-    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
-        allowed = True
-    else:
-        allowed = False
-    if not allowed:
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     safe_name = make_safe_upload_name(file.filename, ticket_id=ticket_id)
@@ -2237,13 +2225,7 @@ async def web_ticket_edit_save(
         raise HTTPException(403, "Forbidden")
 
     # права: куратор — всегда, исполнитель — только свои (создал/назначен)
-    if is_manager(user):
-        allowed = True
-    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
-        allowed = True
-    else:
-        allowed = False
-    if not allowed:
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     can_edit_full = is_manager(user)
@@ -2458,13 +2440,7 @@ def web_ticket_detail(
         raise HTTPException(403, "Forbidden")
 
     # права
-    if is_manager(user):
-        allowed = True
-    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
-        allowed = True
-    else:
-        allowed = False
-    if not allowed:
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
