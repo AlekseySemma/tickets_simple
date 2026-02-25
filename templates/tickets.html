@@ -287,6 +287,11 @@
       Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
     </div>
     {% endif %}
+    {% if org_v2_enabled %}
+    <div class="alert alert-info">
+      Org structure beta mode flag is enabled. Ticket creation currently uses the legacy flow.
+    </div>
+    {% endif %}
     {% if user.role in ["ADMIN", "CURATOR", "EXECUTOR"] %}
     <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">

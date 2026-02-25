@@ -67,6 +67,7 @@ RL_REGISTER_LIMIT = int(os.getenv("RL_REGISTER_LIMIT", "8"))
 RL_REGISTER_WINDOW_SEC = int(os.getenv("RL_REGISTER_WINDOW_SEC", "3600"))
 RL_PUSH_TEST_LIMIT = int(os.getenv("RL_PUSH_TEST_LIMIT", "10"))
 RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
+ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 
 # =========================
 # База данных (SQLite)
@@ -1841,6 +1842,7 @@ def web_tickets(
             "has_next": page < total_pages,
             "prev_page": page - 1,
             "next_page": page + 1,
+            "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
 
         },
     )

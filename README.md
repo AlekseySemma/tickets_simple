@@ -59,3 +59,11 @@ git pull
 docker compose up -d --build
 docker compose logs --tail=120 app
 ```
+
+## Org Structure Feature Flag
+
+Set in `.env` to control visibility of upcoming org-structure mode in UI:
+
+```env
+ORG_STRUCTURE_V2_ENABLED=0
+```
