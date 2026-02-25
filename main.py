@@ -453,6 +453,17 @@ def can_access_ticket(user: User, ticket: Ticket) -> bool:
     return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
 
 
+def get_api_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        if ticket.company_id != user.company_id:
+            raise HTTPException(403, "Forbidden")
+    return ticket
+
+
 def resolve_attachment_disk_path(raw_path: str | None) -> Path | None:
     raw = (raw_path or "").strip()
     if not raw:
@@ -1327,13 +1338,7 @@ def list_tickets(db: Session = Depends(get_db), user: User = Depends(get_current
 
 @app.patch("/tickets/{ticket_id}", response_model=TicketOut)
 def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if not is_platform_admin(user):
-        ensure_company_user(user)
-        if t.company_id != user.company_id:
-            raise HTTPException(403, "Forbidden")
+    t = get_api_ticket_or_404(db, user, ticket_id)
 
     incoming = patch.model_dump(exclude_unset=True)
 
@@ -1380,13 +1385,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
 
 @app.post("/tickets/{ticket_id}/comments", response_model=CommentOut)
 def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if not is_platform_admin(user):
-        ensure_company_user(user)
-        if t.company_id != user.company_id:
-            raise HTTPException(403, "Forbidden")
+    t = get_api_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
@@ -1398,14 +1397,8 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
 
 @app.post("/tickets/{ticket_id}/attachments", response_model=AttachmentOut)
 def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    if not is_platform_admin(user):
-        ensure_company_user(user)
-        if t.company_id != user.company_id:
-            raise HTTPException(403, "Forbidden")
-    if user.role == Role.executor and t.executor_id != user.id and t.created_by != user.id:
+    t = get_api_ticket_or_404(db, user, ticket_id)
+    if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     UPLOAD_DIR.mkdir(exist_ok=True)
