@@ -149,6 +149,80 @@ class Project(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
 
+
+class UnitType(Base):
+    __tablename__ = "unit_types"
+    __table_args__ = (
+        UniqueConstraint("company_id", "name", name="uq_unit_types_company_name"),
+        UniqueConstraint("company_id", "code", name="uq_unit_types_company_code"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    code: Mapped[Optional[str]] = mapped_column(String(80), default=None)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OrgUnit(Base):
+    __tablename__ = "org_units"
+    __table_args__ = (UniqueConstraint("company_id", "parent_id", "name", name="uq_org_units_company_parent_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    unit_type_id: Mapped[int] = mapped_column(ForeignKey("unit_types.id"), index=True)
+    parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UnitAssignment(Base):
+    __tablename__ = "unit_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "unit_id",
+            "user_id",
+            "role_code",
+            name="uq_unit_assignments_company_unit_user_role",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role_code: Mapped[str] = mapped_column(String(64), index=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TicketType(Base):
+    __tablename__ = "ticket_types"
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_ticket_types_company_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TicketTemplate(Base):
+    __tablename__ = "ticket_templates"
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_ticket_templates_company_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    ticket_type_id: Mapped[int] = mapped_column(ForeignKey("ticket_types.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    title_template: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    description_template: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    default_deadline_rule: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    default_executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
+    scope_unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -160,6 +234,9 @@ class Ticket(Base):
 
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
+    ticket_type_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ticket_types.id"), index=True, default=None)
+    target_unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
+    batch_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, default=None)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
