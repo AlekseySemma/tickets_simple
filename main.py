@@ -2166,8 +2166,193 @@ def web_settings(request: Request, user: User = Depends(get_current_user)):
         {
             "request": request,
             "user": user,
+            "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
         },
     )
+
+
+def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
+    normalized = (type_name or "").strip() or "Узел"
+    existing = (
+        db.query(UnitType)
+        .filter(
+            UnitType.company_id == company_id,
+            func.lower(UnitType.name) == normalized.lower(),
+        )
+        .first()
+    )
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+        return existing
+
+    base_code = normalized.lower().replace(" ", "_")[:40] or "unit"
+    code = base_code
+    suffix = 2
+    while (
+        db.query(UnitType.id)
+        .filter(UnitType.company_id == company_id, UnitType.code == code)
+        .first()
+        is not None
+    ):
+        code = f"{base_code}_{suffix}"
+        suffix += 1
+
+    item = UnitType(
+        company_id=company_id,
+        name=normalized,
+        code=code,
+        is_active=True,
+    )
+    db.add(item)
+    db.flush()
+    return item
+
+
+@app.get("/web/org-structure")
+def web_org_structure(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    rows = (
+        db.query(
+            OrgUnit.id,
+            OrgUnit.name,
+            OrgUnit.parent_id,
+            OrgUnit.unit_type_id,
+            OrgUnit.is_active,
+            UnitType.name,
+        )
+        .join(UnitType, UnitType.id == OrgUnit.unit_type_id)
+        .filter(OrgUnit.company_id == user.company_id)
+        .order_by(OrgUnit.id.asc())
+        .all()
+    )
+    items = [
+        {
+            "id": r[0],
+            "name": r[1],
+            "parent_id": r[2],
+            "unit_type_id": r[3],
+            "is_active": bool(r[4]),
+            "unit_type_name": r[5],
+        }
+        for r in rows
+    ]
+    by_parent: dict[int | None, list[dict]] = {}
+    for item in items:
+        by_parent.setdefault(item["parent_id"], []).append(item)
+    for siblings in by_parent.values():
+        siblings.sort(key=lambda x: (x["name"].lower(), x["id"]))
+
+    ordered_units: list[dict] = []
+    stack: list[tuple[dict, int]] = []
+    for root in reversed(by_parent.get(None, [])):
+        stack.append((root, 0))
+    while stack:
+        node, level = stack.pop()
+        ordered_units.append(
+            {
+                "id": node["id"],
+                "name": node["name"],
+                "parent_id": node["parent_id"],
+                "unit_type_name": node["unit_type_name"],
+                "is_active": node["is_active"],
+                "level": level,
+            }
+        )
+        children = by_parent.get(node["id"], [])
+        for child in reversed(children):
+            stack.append((child, level + 1))
+
+    type_names = (
+        db.query(UnitType.name)
+        .filter(UnitType.company_id == user.company_id, UnitType.is_active.is_(True))
+        .order_by(UnitType.name.asc())
+        .all()
+    )
+    unit_type_names = [r[0] for r in type_names]
+    if not unit_type_names:
+        unit_type_names = ["Узел"]
+
+    return templates.TemplateResponse(
+        "org_structure.html",
+        {
+            "request": request,
+            "user": user,
+            "units": ordered_units,
+            "parents": ordered_units,
+            "unit_type_names": unit_type_names,
+            "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
+        },
+    )
+
+
+@app.post("/web/org-structure/create")
+async def web_org_structure_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    parent_raw = (form.get("parent_id") or "").strip()
+    type_name = (form.get("unit_type_name") or "").strip() or "Узел"
+    if not name:
+        return RedirectResponse(url="/web/org-structure?error=empty_name", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        parent_id = int(parent_raw) if parent_raw else None
+    except ValueError:
+        return RedirectResponse(url="/web/org-structure?error=bad_parent", status_code=HTTP_303_SEE_OTHER)
+
+    if parent_id is not None:
+        parent = db.get(OrgUnit, parent_id)
+        if not parent or parent.company_id != user.company_id:
+            return RedirectResponse(url="/web/org-structure?error=parent_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        unit_type = get_or_create_unit_type(db, user.company_id, type_name)
+        item = OrgUnit(
+            company_id=user.company_id,
+            name=name,
+            unit_type_id=unit_type.id,
+            parent_id=parent_id,
+            is_active=True,
+        )
+        db.add(item)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=create_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/org-structure/{unit_id}/toggle")
+def web_org_structure_toggle(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    item = db.get(OrgUnit, unit_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Org unit not found")
+    item.is_active = not bool(item.is_active)
+    db.commit()
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/admin/companies")
