@@ -657,6 +657,54 @@ def resolve_scope_leaf_units(db: Session, company_id: int, scope_unit_id: int) -
     return leaf_ids
 
 
+def get_or_create_project_for_org_unit(db: Session, company_id: int, unit_id: int) -> int:
+    rows = (
+        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.name)
+        .filter(OrgUnit.company_id == company_id)
+        .all()
+    )
+    by_id = {int(row[0]): (row[1], str(row[2] or "").strip()) for row in rows}
+    if unit_id not in by_id:
+        raise HTTPException(400, "Target unit not found")
+
+    parts: list[str] = []
+    current: int | None = unit_id
+    visited: set[int] = set()
+    while current is not None and current in by_id and current not in visited:
+        visited.add(current)
+        parent_id, name = by_id[current]
+        if name:
+            parts.append(name)
+        current = int(parent_id) if parent_id is not None else None
+
+    base_name = " / ".join(reversed(parts)).strip() or f"Org unit #{unit_id}"
+    candidate_names = [base_name]
+    if len(base_name) > 240:
+        candidate_names = [f"{base_name[:220]} #{unit_id}", f"Org unit #{unit_id}"]
+    else:
+        candidate_names.append(f"{base_name} #{unit_id}")
+
+    for project_name in candidate_names:
+        existing = (
+            db.query(Project.id)
+            .filter(Project.company_id == company_id, Project.name == project_name)
+            .first()
+        )
+        if existing:
+            return int(existing[0])
+
+        item = Project(
+            company_id=company_id,
+            name=project_name,
+            description="Auto-created from org structure",
+        )
+        db.add(item)
+        db.flush()
+        return int(item.id)
+
+    raise HTTPException(400, "Cannot resolve project for target unit")
+
+
 def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
     ext = Path(filename or "").suffix.lower()[:10]
     if not ext or ext not in ALLOWED_UPLOAD_EXTENSIONS:
@@ -2612,12 +2660,14 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         return RedirectResponse(url="/web?open_create=1&create_error=title_too_long", status_code=HTTP_303_SEE_OTHER)
 
     project_id_raw = (form.get("project_id") or "").strip()
-    if not title or not project_id_raw:
+    if not title:
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
-    try:
-        project_id = int(project_id_raw)
-    except ValueError:
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+    project_id: int | None = None
+    if project_id_raw:
+        try:
+            project_id = int(project_id_raw)
+        except ValueError:
+            return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     executor_id_raw = (form.get("executor_id") or "").strip()
     try:
@@ -2634,6 +2684,10 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     try:
         target_unit_id = int(target_unit_id_raw) if target_unit_id_raw else None
     except ValueError:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+    if ORG_STRUCTURE_V2_ENABLED and target_unit_id is None:
+        return RedirectResponse(url="/web?open_create=1&create_error=target_unit_required", status_code=HTTP_303_SEE_OTHER)
+    if not ORG_STRUCTURE_V2_ENABLED and project_id is None:
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него
@@ -2652,6 +2706,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
             batch_id = uuid.uuid4().hex
             for leaf_unit_id in leaf_unit_ids:
+                resolved_project_id = get_or_create_project_for_org_unit(db, user.company_id, leaf_unit_id)
                 t = Ticket(
                     title=title,
                     description=description,
@@ -2661,7 +2716,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                     ticket_type_id=ticket_type_id,
                     target_unit_id=leaf_unit_id,
                     batch_id=batch_id,
-                    project_id=project_id,
+                    project_id=resolved_project_id,
                     created_by=user.id,
                 )
                 db.add(t)

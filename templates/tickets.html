@@ -290,9 +290,9 @@
       Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
     </div>
     {% endif %}
-    {% if org_v2_enabled %}
-    <div class="alert alert-info">
-      Org structure beta mode flag is enabled. Ticket creation currently uses the legacy flow.
+    {% if create_error == "target_unit_required" %}
+    <div class="alert alert-danger">
+      Выберите узел оргструктуры для создания заявки.
     </div>
     {% endif %}
     {% if user.role in ["ADMIN", "CURATOR", "EXECUTOR"] %}
@@ -313,6 +313,7 @@
                 Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
               </div>
             </div>
+            {% if not org_v2_enabled %}
             <div class="col-12 col-md-6">
               <select name="project_id" class="form-select" required>
                 <option value="" selected disabled>Проект</option>
@@ -321,6 +322,7 @@
                 {% endfor %}
               </select>
             </div>
+            {% endif %}
             <div class="col-12 col-md-6">
               <select name="ticket_type_id" class="form-select">
                 <option value="" selected>Тип заявки (необязательно)</option>
@@ -333,14 +335,14 @@
             </div>
             {% if org_v2_enabled %}
             <div class="col-12 col-md-6">
-              <select name="target_unit_id" class="form-select">
-                <option value="" selected>Узел оргструктуры для массового создания (необязательно)</option>
+              <select name="target_unit_id" class="form-select" required>
+                <option value="" selected disabled>Узел оргструктуры (обязательно)</option>
                 {% for u in org_units %}
                   <option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>
                 {% endfor %}
               </select>
               <div class="muted small mt-1">
-                Если выбран узел, заявки будут созданы на все конечные дочерние узлы.
+                Заявки будут созданы на все конечные дочерние узлы выбранного узла.
               </div>
             </div>
             {% endif %}
