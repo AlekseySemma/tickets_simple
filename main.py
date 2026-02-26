@@ -2003,12 +2003,30 @@ def web_tickets(
         .order_by(TicketType.id.desc())
         .all()
     )
-    org_units = (
-        db.query(OrgUnit.id, OrgUnit.name)
+    org_unit_rows = (
+        db.query(OrgUnit.id, OrgUnit.name, OrgUnit.parent_id)
         .filter(OrgUnit.company_id == user.company_id, OrgUnit.is_active.is_(True))
-        .order_by(OrgUnit.name.asc(), OrgUnit.id.asc())
+        .order_by(OrgUnit.id.asc())
         .all()
     )
+    by_parent: dict[int | None, list[tuple[int, str]]] = {}
+    for unit_id, unit_name, parent_id in org_unit_rows:
+        by_parent.setdefault(parent_id, []).append((int(unit_id), str(unit_name or "").strip()))
+    for siblings in by_parent.values():
+        siblings.sort(key=lambda x: (x[1].lower(), x[0]))
+
+    org_units: list[dict[str, int | str]] = []
+    stack: list[tuple[int, str, int]] = []
+    for root_id, root_name in reversed(by_parent.get(None, [])):
+        stack.append((root_id, root_name, 0))
+    while stack:
+        current_id, current_name, level = stack.pop()
+        prefix = ("- " * level).strip()
+        display_name = f"{prefix} {current_name}".strip() if prefix else current_name
+        org_units.append({"id": current_id, "name": display_name})
+        children = by_parent.get(current_id, [])
+        for child_id, child_name in reversed(children):
+            stack.append((child_id, child_name, level + 1))
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
