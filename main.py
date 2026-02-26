@@ -2024,12 +2024,21 @@ def web_tickets(
     while stack:
         current_id, current_name, depth, ancestor_has_next, is_last = stack.pop()
         if depth > 0:
-            trunk = "".join("│  " if has_next else "   " for has_next in ancestor_has_next)
-            branch = "└─ " if is_last else "├─ "
-            display_name = f"{trunk}{branch}{current_name}"
+            tree_trunk = "".join("│  " if has_next else "   " for has_next in ancestor_has_next)
+            tree_branch = "└─ " if is_last else "├─ "
+            tree_name = f"{tree_trunk}{tree_branch}{current_name}"
+            short_name = f"{'- ' * depth}{current_name}"
         else:
-            display_name = current_name
-        org_units.append({"id": current_id, "name": display_name})
+            tree_name = current_name
+            short_name = current_name
+        org_units.append(
+            {
+                "id": current_id,
+                "name": tree_name,
+                "tree_name": tree_name,
+                "short_name": short_name,
+            }
+        )
         children = by_parent.get(current_id, [])
         if depth == 0:
             child_ancestor_has_next: list[bool] = []
