@@ -37,6 +37,12 @@
         {% if err == "assign_unit_not_found" %}Узел для закрепления не найден.{% endif %}
         {% if err == "assign_executor_not_found" %}Исполнитель для закрепления не найден.{% endif %}
         {% if err == "assign_failed" %}Не удалось сохранить закрепление исполнителя.{% endif %}
+        {% if err == "edit_not_found" %}Узел для редактирования не найден.{% endif %}
+        {% if err == "edit_empty_name" %}Введите название узла при редактировании.{% endif %}
+        {% if err == "edit_bad_parent" %}Некорректный родитель в редактировании.{% endif %}
+        {% if err == "edit_parent_not_found" %}Родитель для редактирования не найден.{% endif %}
+        {% if err == "edit_cycle" %}Нельзя сделать родителем дочерний узел (цикл в дереве).{% endif %}
+        {% if err == "edit_failed" %}Не удалось сохранить изменения узла.{% endif %}
       </div>
     {% endif %}
     {% if import_report.ok == "1" %}
@@ -77,6 +83,44 @@
         </form>
       </div>
     </div>
+
+    {% if edit_unit %}
+      <div class="card shadow-sm mb-3 border-primary">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Редактирование узла #{{ edit_unit.id }}</h5>
+            <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure">Отменить</a>
+          </div>
+          <form method="post" action="/web/org-structure/{{ edit_unit.id }}/update" class="row g-2">
+            <div class="col-12 col-md-4">
+              <input class="form-control" name="name" value="{{ edit_unit.name }}" required />
+            </div>
+            <div class="col-12 col-md-4">
+              <select class="form-select" name="parent_id">
+                <option value="" {% if not edit_unit.parent_id %}selected{% endif %}>Без родителя (корневой)</option>
+                {% for p in parents %}
+                  {% if p.id not in edit_forbidden_parent_ids %}
+                    <option value="{{ p.id }}" {% if edit_unit.parent_id == p.id %}selected{% endif %}>{{ "- " * p.level }}{{ p.name }} (#{{ p.id }})</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <input class="form-control" list="unitTypeNames" name="unit_type_name" value="{{ edit_unit.unit_type_name }}" />
+            </div>
+            <div class="col-12 col-md-1 d-flex align-items-center">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="edit_is_active" {% if edit_unit.is_active %}checked{% endif %} />
+                <label class="form-check-label" for="edit_is_active">Активен</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-primary" type="submit">Сохранить</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
@@ -206,13 +250,16 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <form method="post" action="/web/org-structure/{{ u.id }}/toggle">
-                        {% if u.is_active %}
-                          <button class="btn btn-sm btn-outline-secondary" type="submit">Выключить</button>
-                        {% else %}
-                          <button class="btn btn-sm btn-outline-success" type="submit">Включить</button>
-                        {% endif %}
-                      </form>
+                      <div class="d-flex gap-2 justify-content-end">
+                        <a class="btn btn-sm btn-outline-primary" href="/web/org-structure?edit_unit_id={{ u.id }}">Редактировать</a>
+                        <form method="post" action="/web/org-structure/{{ u.id }}/toggle">
+                          {% if u.is_active %}
+                            <button class="btn btn-sm btn-outline-secondary" type="submit">Выключить</button>
+                          {% else %}
+                            <button class="btn btn-sm btn-outline-success" type="submit">Включить</button>
+                          {% endif %}
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}

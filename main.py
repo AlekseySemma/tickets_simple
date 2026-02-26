@@ -2326,11 +2326,28 @@ def parse_bool_text(raw: str | None, default: bool = True) -> bool:
     return default
 
 
+def build_unit_parent_map(db: Session, company_id: int) -> dict[int, int | None]:
+    rows = db.query(OrgUnit.id, OrgUnit.parent_id).filter(OrgUnit.company_id == company_id).all()
+    return {int(r[0]): (int(r[1]) if r[1] is not None else None) for r in rows}
+
+
+def would_create_unit_cycle(parent_map: dict[int, int | None], unit_id: int, new_parent_id: int | None) -> bool:
+    current = new_parent_id
+    visited: set[int] = set()
+    while current is not None and current not in visited:
+        if current == unit_id:
+            return True
+        visited.add(current)
+        current = parent_map.get(current)
+    return False
+
+
 @app.get("/web/org-structure")
 def web_org_structure(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
+    edit_unit_id: str | None = None,
 ):
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
@@ -2434,6 +2451,38 @@ def web_org_structure(
         }
         for r in assignment_rows
     ]
+    edit_unit = None
+    edit_forbidden_parent_ids: set[int] = set()
+    if edit_unit_id and edit_unit_id.strip():
+        try:
+            edit_id_int = int(edit_unit_id)
+        except ValueError:
+            edit_id_int = None
+        if edit_id_int is not None:
+            found = next((u for u in ordered_units if int(u["id"]) == edit_id_int), None)
+            if found:
+                edit_unit = {
+                    "id": int(found["id"]),
+                    "name": str(found["name"]),
+                    "parent_id": found["parent_id"],
+                    "unit_type_name": str(found["unit_type_name"]),
+                    "is_active": bool(found["is_active"]),
+                }
+                edit_forbidden_parent_ids.add(edit_unit["id"])
+                stack_ids = [edit_unit["id"]]
+                children_by_parent: dict[int, list[int]] = {}
+                for unit in ordered_units:
+                    parent_id = unit["parent_id"]
+                    if parent_id is None:
+                        continue
+                    children_by_parent.setdefault(int(parent_id), []).append(int(unit["id"]))
+                while stack_ids:
+                    current_id = stack_ids.pop()
+                    for child_id in children_by_parent.get(current_id, []):
+                        if child_id in edit_forbidden_parent_ids:
+                            continue
+                        edit_forbidden_parent_ids.add(child_id)
+                        stack_ids.append(child_id)
 
     import_report = {
         "ok": (request.query_params.get("import_ok") or "").strip(),
@@ -2453,6 +2502,8 @@ def web_org_structure(
             "unit_type_names": unit_type_names,
             "executors": executors,
             "assignments": assignments,
+            "edit_unit": edit_unit,
+            "edit_forbidden_parent_ids": edit_forbidden_parent_ids,
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
             "import_report": import_report,
         },
@@ -2620,6 +2671,72 @@ def web_org_structure_assignment_delete(
 
     db.delete(assignment)
     db.commit()
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/org-structure/{unit_id}/update")
+async def web_org_structure_update(
+    unit_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    item = db.get(OrgUnit, unit_id)
+    if not item or item.company_id != user.company_id:
+        return RedirectResponse(url="/web/org-structure?error=edit_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    parent_raw = (form.get("parent_id") or "").strip()
+    type_name = (form.get("unit_type_name") or "").strip() or "Узел"
+    is_active = (form.get("is_active") or "").strip() in {"1", "on", "true", "yes"}
+
+    if not name:
+        return RedirectResponse(
+            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_empty_name",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    try:
+        parent_id = int(parent_raw) if parent_raw else None
+    except ValueError:
+        return RedirectResponse(
+            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_bad_parent",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    if parent_id is not None:
+        parent = db.get(OrgUnit, parent_id)
+        if not parent or parent.company_id != user.company_id:
+            return RedirectResponse(
+                url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_parent_not_found",
+                status_code=HTTP_303_SEE_OTHER,
+            )
+
+    parent_map = build_unit_parent_map(db, user.company_id)
+    if would_create_unit_cycle(parent_map, unit_id=unit_id, new_parent_id=parent_id):
+        return RedirectResponse(
+            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_cycle",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        unit_type = get_or_create_unit_type(db, user.company_id, type_name)
+        item.name = name
+        item.parent_id = parent_id
+        item.unit_type_id = unit_type.id
+        item.is_active = is_active
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
     return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 
