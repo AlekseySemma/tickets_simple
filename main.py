@@ -381,6 +381,7 @@ class TicketCreate(BaseModel):
     deadline: Optional[datetime] = None
     executor_id: Optional[int] = None
     ticket_type_id: Optional[int] = None
+    target_unit_id: Optional[int] = None
     project_id: int
 
 class TicketUpdate(BaseModel):
@@ -389,6 +390,7 @@ class TicketUpdate(BaseModel):
     deadline: Optional[datetime] = None
     executor_id: Optional[int] = None
     ticket_type_id: Optional[int] = None
+    target_unit_id: Optional[int] = None
     status: Optional[TicketStatus] = None
     project_id: Optional[int] = None
 
@@ -401,6 +403,8 @@ class TicketOut(BaseModel):
     project_id: int
     executor_id: Optional[int]
     ticket_type_id: Optional[int]
+    target_unit_id: Optional[int]
+    batch_id: Optional[str]
     created_by: int
     created_at: datetime
     class Config:
@@ -588,6 +592,7 @@ def validate_ticket_links(
     project_id: int | None,
     executor_id: int | None,
     ticket_type_id: int | None = None,
+    target_unit_id: int | None = None,
 ) -> None:
     if project_id is not None:
         project = db.get(Project, project_id)
@@ -607,6 +612,47 @@ def validate_ticket_links(
             raise HTTPException(400, "Ticket type not found")
         if not ticket_type.is_active:
             raise HTTPException(400, "Ticket type is inactive")
+
+    if target_unit_id is not None:
+        target_unit = db.get(OrgUnit, target_unit_id)
+        if not target_unit or (company_id is not None and target_unit.company_id != company_id):
+            raise HTTPException(400, "Target unit not found")
+        if not target_unit.is_active:
+            raise HTTPException(400, "Target unit is inactive")
+
+
+def resolve_scope_leaf_units(db: Session, company_id: int, scope_unit_id: int) -> list[int]:
+    rows = (
+        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.is_active)
+        .filter(OrgUnit.company_id == company_id)
+        .all()
+    )
+    active_ids = {int(row[0]) for row in rows if bool(row[2])}
+    if scope_unit_id not in active_ids:
+        return []
+
+    children_by_parent: dict[int, list[int]] = {}
+    for unit_id, parent_id, is_active in rows:
+        if not bool(is_active):
+            continue
+        if parent_id is None:
+            continue
+        children_by_parent.setdefault(int(parent_id), []).append(int(unit_id))
+
+    stack = [scope_unit_id]
+    visited: set[int] = set()
+    leaf_ids: list[int] = []
+    while stack:
+        current = stack.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        children = children_by_parent.get(current, [])
+        if not children:
+            leaf_ids.append(current)
+            continue
+        stack.extend(children)
+    return leaf_ids
 
 
 def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
@@ -1513,7 +1559,14 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     if is_ticket_title_too_long(title):
         raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
 
-    validate_ticket_links(db, user.company_id, payload.project_id, payload.executor_id, payload.ticket_type_id)
+    validate_ticket_links(
+        db,
+        user.company_id,
+        payload.project_id,
+        payload.executor_id,
+        payload.ticket_type_id,
+        payload.target_unit_id,
+    )
     t = Ticket(
         title=title,
         description=payload.description,
@@ -1521,6 +1574,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         company_id=user.company_id,
         executor_id=payload.executor_id,
         ticket_type_id=payload.ticket_type_id,
+        target_unit_id=payload.target_unit_id,
         project_id=payload.project_id,
         created_by=user.id
     )
@@ -1573,12 +1627,14 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         incoming.get("project_id"),
         incoming.get("executor_id"),
         incoming.get("ticket_type_id"),
+        incoming.get("target_unit_id"),
     )
 
     old_deadline = t.deadline
     old_executor_id = t.executor_id
     old_project_id = t.project_id
     old_ticket_type_id = t.ticket_type_id
+    old_target_unit_id = t.target_unit_id
     old_status = t.status
 
     for k, v in incoming.items():
@@ -1597,6 +1653,9 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
 
     if t.ticket_type_id != old_ticket_type_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение типа заявки")
+        has_specific_log = True
+    if t.target_unit_id != old_target_unit_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение целевого узла")
         has_specific_log = True
 
     if not has_specific_log:
@@ -1894,6 +1953,12 @@ def web_tickets(
         .order_by(TicketType.id.desc())
         .all()
     )
+    org_units = (
+        db.query(OrgUnit.id, OrgUnit.name)
+        .filter(OrgUnit.company_id == user.company_id, OrgUnit.is_active.is_(True))
+        .order_by(OrgUnit.name.asc(), OrgUnit.id.asc())
+        .all()
+    )
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
@@ -2058,6 +2123,7 @@ def web_tickets(
             "projects": projects,
             "executors": executors,
             "ticket_types": ticket_types,
+            "org_units": org_units,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,
             "ticket_types_by_id": ticket_types_by_id,
@@ -2227,6 +2293,11 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         ticket_type_id = int(ticket_type_id_raw) if ticket_type_id_raw else None
     except ValueError:
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+    target_unit_id_raw = (form.get("target_unit_id") or "").strip()
+    try:
+        target_unit_id = int(target_unit_id_raw) if target_unit_id_raw else None
+    except ValueError:
+        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
     # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него
     if user.role == Role.executor and executor_id is None:
@@ -2236,27 +2307,52 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
 
     try:
-        validate_ticket_links(db, user.company_id, project_id, executor_id, ticket_type_id)
-
-        # ВАЖНО: именно deadline=deadline
-        t = Ticket(
-            title=title,
-            description=description,
-            deadline=deadline,
-            company_id=user.company_id,
-            executor_id=executor_id,
-            ticket_type_id=ticket_type_id,
-            project_id=project_id,
-            created_by=user.id,
-        )
-        db.add(t)
-        db.flush()
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+        validate_ticket_links(db, user.company_id, project_id, executor_id, ticket_type_id, target_unit_id)
+        created_tickets: list[Ticket] = []
+        if target_unit_id is not None:
+            leaf_unit_ids = resolve_scope_leaf_units(db, user.company_id, target_unit_id)
+            if not leaf_unit_ids:
+                return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+            batch_id = uuid.uuid4().hex
+            for leaf_unit_id in leaf_unit_ids:
+                t = Ticket(
+                    title=title,
+                    description=description,
+                    deadline=deadline,
+                    company_id=user.company_id,
+                    executor_id=executor_id,
+                    ticket_type_id=ticket_type_id,
+                    target_unit_id=leaf_unit_id,
+                    batch_id=batch_id,
+                    project_id=project_id,
+                    created_by=user.id,
+                )
+                db.add(t)
+                db.flush()
+                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+                created_tickets.append(t)
+        else:
+            # ВАЖНО: именно deadline=deadline
+            t = Ticket(
+                title=title,
+                description=description,
+                deadline=deadline,
+                company_id=user.company_id,
+                executor_id=executor_id,
+                ticket_type_id=ticket_type_id,
+                project_id=project_id,
+                created_by=user.id,
+            )
+            db.add(t)
+            db.flush()
+            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+            created_tickets.append(t)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
-    notify_executor_new_ticket(db, t, user)
+    for created_ticket in created_tickets:
+        notify_executor_new_ticket(db, created_ticket, user)
     try:
         db.commit()
     except SQLAlchemyError:

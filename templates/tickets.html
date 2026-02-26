@@ -331,6 +331,19 @@
                 {% endfor %}
               </select>
             </div>
+            {% if org_v2_enabled %}
+            <div class="col-12 col-md-6">
+              <select name="target_unit_id" class="form-select">
+                <option value="" selected>Узел оргструктуры для массового создания (необязательно)</option>
+                {% for u in org_units %}
+                  <option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>
+                {% endfor %}
+              </select>
+              <div class="muted small mt-1">
+                Если выбран узел, заявки будут созданы на все конечные дочерние узлы.
+              </div>
+            </div>
+            {% endif %}
             <div class="col-12">
               <textarea name="description" class="form-control" placeholder="Описание"></textarea>
             </div>
