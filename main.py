@@ -2807,9 +2807,11 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
     if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    # удаляем связанные записи (комментарии/вложения)
+    # удаляем связанные записи до удаления заявки (FK в Postgres)
     db.query(Comment).filter(Comment.ticket_id == ticket_id).delete(synchronize_session=False)
     db.query(Attachment).filter(Attachment.ticket_id == ticket_id).delete(synchronize_session=False)
+    db.query(TicketLog).filter(TicketLog.ticket_id == ticket_id).delete(synchronize_session=False)
+    db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id == ticket_id).delete(synchronize_session=False)
 
     db.delete(t)
     db.commit()
