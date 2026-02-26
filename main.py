@@ -705,6 +705,23 @@ def get_or_create_project_for_org_unit(db: Session, company_id: int, unit_id: in
     raise HTTPException(400, "Cannot resolve project for target unit")
 
 
+def get_preferred_executor_for_unit(db: Session, company_id: int, unit_id: int) -> int | None:
+    row = (
+        db.query(UnitAssignment.user_id)
+        .join(User, User.id == UnitAssignment.user_id)
+        .filter(
+            UnitAssignment.company_id == company_id,
+            UnitAssignment.unit_id == unit_id,
+            UnitAssignment.role_code == "EXECUTOR",
+            User.company_id == company_id,
+            User.role == Role.executor,
+        )
+        .order_by(UnitAssignment.is_primary.desc(), UnitAssignment.id.asc())
+        .first()
+    )
+    return int(row[0]) if row else None
+
+
 def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
     ext = Path(filename or "").suffix.lower()[:10]
     if not ext or ext not in ALLOWED_UPLOAD_EXTENSIONS:
@@ -2379,6 +2396,44 @@ def web_org_structure(
     unit_type_names = [r[0] for r in type_names]
     if not unit_type_names:
         unit_type_names = ["Узел"]
+    executors = (
+        db.query(User.id, User.name, User.email)
+        .filter(User.company_id == user.company_id, User.role == Role.executor)
+        .order_by(User.name.asc(), User.id.asc())
+        .all()
+    )
+    unit_labels_by_id = {
+        int(u["id"]): f"{'- ' * int(u['level'])}{u['name']}" for u in ordered_units
+    }
+    assignment_rows = (
+        db.query(
+            UnitAssignment.id,
+            UnitAssignment.unit_id,
+            UnitAssignment.user_id,
+            UnitAssignment.is_primary,
+            User.name,
+            User.email,
+        )
+        .join(User, User.id == UnitAssignment.user_id)
+        .filter(
+            UnitAssignment.company_id == user.company_id,
+            UnitAssignment.role_code == "EXECUTOR",
+        )
+        .order_by(UnitAssignment.unit_id.asc(), UnitAssignment.is_primary.desc(), UnitAssignment.id.asc())
+        .all()
+    )
+    assignments = [
+        {
+            "id": int(r[0]),
+            "unit_id": int(r[1]),
+            "user_id": int(r[2]),
+            "is_primary": bool(r[3]),
+            "user_name": str(r[4] or ""),
+            "user_email": str(r[5] or ""),
+            "unit_label": unit_labels_by_id.get(int(r[1]), f"Unit #{int(r[1])}"),
+        }
+        for r in assignment_rows
+    ]
 
     import_report = {
         "ok": (request.query_params.get("import_ok") or "").strip(),
@@ -2396,6 +2451,8 @@ def web_org_structure(
             "units": ordered_units,
             "parents": ordered_units,
             "unit_type_names": unit_type_names,
+            "executors": executors,
+            "assignments": assignments,
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
             "import_report": import_report,
         },
@@ -2443,6 +2500,126 @@ async def web_org_structure_create(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(url="/web/org-structure?error=create_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/org-structure/assign")
+async def web_org_structure_assign_executor(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    form = await request.form()
+    unit_raw = (form.get("unit_id") or "").strip()
+    executor_raw = (form.get("executor_id") or "").strip()
+    is_primary = (form.get("is_primary") or "").strip() in {"1", "on", "true", "yes"}
+    try:
+        unit_id = int(unit_raw)
+        executor_id = int(executor_raw)
+    except ValueError:
+        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+
+    unit = db.get(OrgUnit, unit_id)
+    executor = db.get(User, executor_id)
+    if not unit or unit.company_id != user.company_id:
+        return RedirectResponse(url="/web/org-structure?error=assign_unit_not_found", status_code=HTTP_303_SEE_OTHER)
+    if not executor or executor.company_id != user.company_id or executor.role != Role.executor:
+        return RedirectResponse(url="/web/org-structure?error=assign_executor_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        existing = (
+            db.query(UnitAssignment)
+            .filter(
+                UnitAssignment.company_id == user.company_id,
+                UnitAssignment.unit_id == unit_id,
+                UnitAssignment.user_id == executor_id,
+                UnitAssignment.role_code == "EXECUTOR",
+            )
+            .first()
+        )
+        if existing:
+            existing.is_primary = existing.is_primary or is_primary
+            assignment_id = existing.id
+        else:
+            item = UnitAssignment(
+                company_id=user.company_id,
+                unit_id=unit_id,
+                user_id=executor_id,
+                role_code="EXECUTOR",
+                is_primary=is_primary,
+            )
+            db.add(item)
+            db.flush()
+            assignment_id = item.id
+
+        if is_primary:
+            (
+                db.query(UnitAssignment)
+                .filter(
+                    UnitAssignment.company_id == user.company_id,
+                    UnitAssignment.unit_id == unit_id,
+                    UnitAssignment.role_code == "EXECUTOR",
+                    UnitAssignment.id != assignment_id,
+                )
+                .update({UnitAssignment.is_primary: False}, synchronize_session=False)
+            )
+
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=assign_failed", status_code=HTTP_303_SEE_OTHER)
+
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/org-structure/assign/{assignment_id}/primary")
+def web_org_structure_assignment_primary(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    assignment = db.get(UnitAssignment, assignment_id)
+    if not assignment or assignment.company_id != user.company_id or assignment.role_code != "EXECUTOR":
+        raise HTTPException(404, "Assignment not found")
+
+    (
+        db.query(UnitAssignment)
+        .filter(
+            UnitAssignment.company_id == user.company_id,
+            UnitAssignment.unit_id == assignment.unit_id,
+            UnitAssignment.role_code == "EXECUTOR",
+        )
+        .update({UnitAssignment.is_primary: False}, synchronize_session=False)
+    )
+    assignment.is_primary = True
+    db.commit()
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/org-structure/assign/{assignment_id}/delete")
+def web_org_structure_assignment_delete(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    assignment = db.get(UnitAssignment, assignment_id)
+    if not assignment or assignment.company_id != user.company_id or assignment.role_code != "EXECUTOR":
+        raise HTTPException(404, "Assignment not found")
+
+    db.delete(assignment)
+    db.commit()
     return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 
@@ -2746,12 +2923,13 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             batch_id = uuid.uuid4().hex
             for leaf_unit_id in leaf_unit_ids:
                 resolved_project_id = get_or_create_project_for_org_unit(db, user.company_id, leaf_unit_id)
+                resolved_executor_id = executor_id if executor_id is not None else get_preferred_executor_for_unit(db, user.company_id, leaf_unit_id)
                 t = Ticket(
                     title=title,
                     description=description,
                     deadline=deadline,
                     company_id=user.company_id,
-                    executor_id=executor_id,
+                    executor_id=resolved_executor_id,
                     ticket_type_id=ticket_type_id,
                     target_unit_id=leaf_unit_id,
                     batch_id=batch_id,

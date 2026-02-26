@@ -33,6 +33,10 @@
         {% if err == "import_headers" %}Не удалось прочитать заголовки CSV.{% endif %}
         {% if err == "import_need_path" %}В CSV обязательна колонка path.{% endif %}
         {% if err == "import_failed" %}Импорт завершился с ошибкой, изменения откатились.{% endif %}
+        {% if err == "assign_bad_input" %}Некорректные данные закрепления исполнителя.{% endif %}
+        {% if err == "assign_unit_not_found" %}Узел для закрепления не найден.{% endif %}
+        {% if err == "assign_executor_not_found" %}Исполнитель для закрепления не найден.{% endif %}
+        {% if err == "assign_failed" %}Не удалось сохранить закрепление исполнителя.{% endif %}
       </div>
     {% endif %}
     {% if import_report.ok == "1" %}
@@ -93,6 +97,83 @@
           Пример: <code>path=Филиал Москва/Район Центр/Техник Иванов</code>,
           <code>types=Филиал/Район/Техник</code>, <code>is_active=true</code>.
         </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
+        <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
+          <div class="col-12 col-md-5">
+            <select class="form-select" name="unit_id" required>
+              <option value="" selected disabled>Узел</option>
+              {% for u in units %}
+                {% if u.is_active %}
+                  <option value="{{ u.id }}">{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <select class="form-select" name="executor_id" required>
+              <option value="" selected disabled>Исполнитель</option>
+              {% for e in executors %}
+                <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2 d-flex align-items-center justify-content-between">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="assign_primary" />
+              <label class="form-check-label" for="assign_primary">Основной</label>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Назначить</button>
+          </div>
+        </form>
+
+        {% if assignments %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Узел</th>
+                  <th>Исполнитель</th>
+                  <th>Статус</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for a in assignments %}
+                  <tr>
+                    <td>{{ a.unit_label }}</td>
+                    <td>{{ a.user_name }} ({{ a.user_email }})</td>
+                    <td>
+                      {% if a.is_primary %}
+                        <span class="badge text-bg-primary">Основной</span>
+                      {% else %}
+                        <span class="badge text-bg-light">Дополнительный</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <div class="d-flex gap-2 justify-content-end">
+                        {% if not a.is_primary %}
+                          <form method="post" action="/web/org-structure/assign/{{ a.id }}/primary">
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Сделать основным</button>
+                          </form>
+                        {% endif %}
+                        <form method="post" action="/web/org-structure/assign/{{ a.id }}/delete">
+                          <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted">Закреплений пока нет.</div>
+        {% endif %}
       </div>
     </div>
 
