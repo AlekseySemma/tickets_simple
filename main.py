@@ -2474,6 +2474,21 @@ async def web_org_structure_import_csv(
     )
 
 
+@app.get("/web/org-structure/template.csv")
+def web_org_structure_template_csv(
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    template_path = Path(__file__).resolve().parent / "org_structure_import_example.csv"
+    if not template_path.exists():
+        raise HTTPException(404, "Template not found")
+    return FileResponse(
+        template_path,
+        media_type="text/csv; charset=utf-8",
+        filename="org_structure_import_example.csv",
+    )
+
+
 @app.post("/web/org-structure/{unit_id}/toggle")
 def web_org_structure_toggle(
     unit_id: int,
