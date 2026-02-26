@@ -2016,17 +2016,29 @@ def web_tickets(
         siblings.sort(key=lambda x: (x[1].lower(), x[0]))
 
     org_units: list[dict[str, int | str]] = []
-    stack: list[tuple[int, str, int]] = []
-    for root_id, root_name in reversed(by_parent.get(None, [])):
-        stack.append((root_id, root_name, 0))
+    stack: list[tuple[int, str, int, list[bool], bool]] = []
+    roots = by_parent.get(None, [])
+    for idx in range(len(roots) - 1, -1, -1):
+        root_id, root_name = roots[idx]
+        stack.append((root_id, root_name, 0, [], idx == len(roots) - 1))
     while stack:
-        current_id, current_name, level = stack.pop()
-        prefix = ("- " * level).strip()
-        display_name = f"{prefix} {current_name}".strip() if prefix else current_name
+        current_id, current_name, depth, ancestor_has_next, is_last = stack.pop()
+        if depth > 0:
+            trunk = "".join("│  " if has_next else "   " for has_next in ancestor_has_next)
+            branch = "└─ " if is_last else "├─ "
+            display_name = f"{trunk}{branch}{current_name}"
+        else:
+            display_name = current_name
         org_units.append({"id": current_id, "name": display_name})
         children = by_parent.get(current_id, [])
-        for child_id, child_name in reversed(children):
-            stack.append((child_id, child_name, level + 1))
+        if depth == 0:
+            child_ancestor_has_next: list[bool] = []
+        else:
+            child_ancestor_has_next = ancestor_has_next + [not is_last]
+        for idx in range(len(children) - 1, -1, -1):
+            child_id, child_name = children[idx]
+            child_is_last = (idx == len(children) - 1)
+            stack.append((child_id, child_name, depth + 1, child_ancestor_has_next, child_is_last))
 
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
