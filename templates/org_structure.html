@@ -27,6 +27,18 @@
         {% if err == "bad_parent" %}Некорректный родительский узел.{% endif %}
         {% if err == "parent_not_found" %}Родительский узел не найден.{% endif %}
         {% if err == "create_failed" %}Не удалось создать узел (возможно, дубликат в этой ветке).{% endif %}
+        {% if err == "import_empty" %}Файл импорта пустой.{% endif %}
+        {% if err == "import_read_failed" %}Не удалось прочитать файл.{% endif %}
+        {% if err == "import_encoding" %}Неподдерживаемая кодировка CSV. Используйте UTF-8.{% endif %}
+        {% if err == "import_headers" %}Не удалось прочитать заголовки CSV.{% endif %}
+        {% if err == "import_need_path" %}В CSV обязательна колонка path.{% endif %}
+        {% if err == "import_failed" %}Импорт завершился с ошибкой, изменения откатились.{% endif %}
+      </div>
+    {% endif %}
+    {% if import_report.ok == "1" %}
+      <div class="alert alert-success py-2">
+        Импорт завершен: строк {{ import_report.rows }}, создано узлов {{ import_report.created }},
+        обновлено {{ import_report.updated }}, ошибок {{ import_report.errors }}.
       </div>
     {% endif %}
 
@@ -59,6 +71,25 @@
             <button class="btn btn-primary" type="submit">+</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Импорт из CSV</h5>
+        <form method="post" action="/web/org-structure/import-csv" enctype="multipart/form-data" class="row g-2">
+          <div class="col-12 col-md-8">
+            <input class="form-control" type="file" name="file" accept=".csv,text/csv" required />
+          </div>
+          <div class="col-12 col-md-4 d-grid">
+            <button class="btn btn-outline-primary" type="submit">Импортировать</button>
+          </div>
+        </form>
+        <div class="small text-muted mt-2">
+          Формат: обязательная колонка <code>path</code>, опционально <code>types</code> и <code>is_active</code>.
+          Пример: <code>path=Филиал Москва/Район Центр/Техник Иванов</code>,
+          <code>types=Филиал/Район/Техник</code>, <code>is_active=true</code>.
+        </div>
       </div>
     </div>
 

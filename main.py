@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
+import csv
 from enum import Enum
+import io
 import json
 import os
 from pathlib import Path
@@ -2209,6 +2211,17 @@ def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> Uni
     return item
 
 
+def parse_bool_text(raw: str | None, default: bool = True) -> bool:
+    value = (raw or "").strip().lower()
+    if not value:
+        return default
+    if value in {"1", "true", "yes", "y", "on", "да"}:
+        return True
+    if value in {"0", "false", "no", "n", "off", "нет"}:
+        return False
+    return default
+
+
 @app.get("/web/org-structure")
 def web_org_structure(
     request: Request,
@@ -2280,6 +2293,14 @@ def web_org_structure(
     if not unit_type_names:
         unit_type_names = ["Узел"]
 
+    import_report = {
+        "ok": (request.query_params.get("import_ok") or "").strip(),
+        "rows": (request.query_params.get("import_rows") or "").strip(),
+        "created": (request.query_params.get("import_created") or "").strip(),
+        "updated": (request.query_params.get("import_updated") or "").strip(),
+        "errors": (request.query_params.get("import_errors") or "").strip(),
+    }
+
     return templates.TemplateResponse(
         "org_structure.html",
         {
@@ -2289,6 +2310,7 @@ def web_org_structure(
             "parents": ordered_units,
             "unit_type_names": unit_type_names,
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
+            "import_report": import_report,
         },
     )
 
@@ -2335,6 +2357,121 @@ async def web_org_structure_create(
         db.rollback()
         return RedirectResponse(url="/web/org-structure?error=create_failed", status_code=HTTP_303_SEE_OTHER)
     return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/org-structure/import-csv")
+async def web_org_structure_import_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        raw_bytes = await file.read()
+    except Exception:
+        return RedirectResponse(url="/web/org-structure?error=import_read_failed", status_code=HTTP_303_SEE_OTHER)
+    if not raw_bytes:
+        return RedirectResponse(url="/web/org-structure?error=import_empty", status_code=HTTP_303_SEE_OTHER)
+
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp1251"):
+        try:
+            text = raw_bytes.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        return RedirectResponse(url="/web/org-structure?error=import_encoding", status_code=HTTP_303_SEE_OTHER)
+
+    csv_stream = io.StringIO(text)
+    sample = text[:2048]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(csv_stream, dialect=dialect)
+    if not reader.fieldnames:
+        return RedirectResponse(url="/web/org-structure?error=import_headers", status_code=HTTP_303_SEE_OTHER)
+    headers = {str(h or "").strip().lower() for h in reader.fieldnames}
+    if "path" not in headers:
+        return RedirectResponse(url="/web/org-structure?error=import_need_path", status_code=HTTP_303_SEE_OTHER)
+
+    existing_units = (
+        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.name, OrgUnit.is_active)
+        .filter(OrgUnit.company_id == user.company_id)
+        .all()
+    )
+    unit_map: dict[tuple[int | None, str], dict] = {}
+    for unit_id, parent_id, name, is_active in existing_units:
+        key = (parent_id, (name or "").strip().lower())
+        unit_map[key] = {"id": int(unit_id), "is_active": bool(is_active)}
+
+    rows_total = 0
+    created_count = 0
+    updated_count = 0
+    errors_count = 0
+
+    try:
+        for raw_row in reader:
+            rows_total += 1
+            row = {str(k or "").strip().lower(): (v or "").strip() for k, v in raw_row.items()}
+            raw_path = row.get("path", "")
+            if not raw_path:
+                errors_count += 1
+                continue
+
+            names = [p.strip() for p in raw_path.split("/") if p.strip()]
+            if not names:
+                errors_count += 1
+                continue
+            types = [p.strip() for p in (row.get("types", "")).split("/") if p.strip()]
+            active_final = parse_bool_text(row.get("is_active"), True)
+
+            parent_id: int | None = None
+            for idx, node_name in enumerate(names):
+                key = (parent_id, node_name.lower())
+                unit_info = unit_map.get(key)
+                if unit_info:
+                    parent_id = int(unit_info["id"])
+                    continue
+
+                type_name = types[idx] if idx < len(types) else "Узел"
+                unit_type = get_or_create_unit_type(db, user.company_id, type_name)
+                new_item = OrgUnit(
+                    company_id=user.company_id,
+                    name=node_name,
+                    unit_type_id=unit_type.id,
+                    parent_id=parent_id,
+                    is_active=True,
+                )
+                db.add(new_item)
+                db.flush()
+                unit_map[key] = {"id": int(new_item.id), "is_active": True}
+                parent_id = int(new_item.id)
+                created_count += 1
+
+            if parent_id is not None:
+                final_item = db.get(OrgUnit, parent_id)
+                if final_item and bool(final_item.is_active) != active_final:
+                    final_item.is_active = active_final
+                    updated_count += 1
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=import_failed", status_code=HTTP_303_SEE_OTHER)
+
+    return RedirectResponse(
+        url=(
+            "/web/org-structure"
+            f"?import_ok=1&import_rows={rows_total}&import_created={created_count}"
+            f"&import_updated={updated_count}&import_errors={errors_count}"
+        ),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/org-structure/{unit_id}/toggle")
