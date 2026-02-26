@@ -286,6 +286,20 @@ class DeadlineReminderLog(Base):
     reminder_key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    url: Mapped[Optional[str]] = mapped_column(String(500), default=None)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+
+
 class SecurityEvent(Base):
     __tablename__ = "security_events"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -918,7 +932,23 @@ def send_push_to_user_report(db: Session, user_id: int, title: str, body: str, u
     return results
 
 
+def create_inapp_notification(db: Session, user_id: int, title: str, body: str, url: str) -> None:
+    user = db.get(User, user_id)
+    if not user:
+        return
+    n = Notification(
+        company_id=user.company_id,
+        user_id=user_id,
+        title=(title or "").strip()[:255] or "Уведомление",
+        body=(body or "").strip()[:2000] or None,
+        url=(url or "").strip()[:500] or "/web",
+        is_read=False,
+    )
+    db.add(n)
+
+
 def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
+    create_inapp_notification(db=db, user_id=user_id, title=title, body=body, url=url)
     _ = send_push_to_user_report(db=db, user_id=user_id, title=title, body=body, url=url)
 
 
@@ -1163,6 +1193,7 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
     db.query(Ticket).filter(Ticket.company_id == company_id).delete(synchronize_session=False)
     db.query(Project).filter(Project.company_id == company_id).delete(synchronize_session=False)
     db.query(RegistrationInvite).filter(RegistrationInvite.company_id == company_id).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.company_id == company_id).delete(synchronize_session=False)
     if user_ids:
         db.query(PushSubscription).filter(PushSubscription.user_id.in_(user_ids)).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id.in_(user_ids)).delete(synchronize_session=False)
@@ -2277,6 +2308,90 @@ def web_settings(request: Request, user: User = Depends(get_current_user)):
     )
 
 
+@app.get("/web/notifications")
+def web_notifications(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ensure_company_user(user)
+    items = (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id)
+        .order_by(Notification.is_read.asc(), Notification.id.desc())
+        .limit(200)
+        .all()
+    )
+    unread_count = (
+        db.query(func.count(Notification.id))
+        .filter(Notification.user_id == user.id, Notification.is_read.is_(False))
+        .scalar()
+        or 0
+    )
+    return templates.TemplateResponse(
+        "notifications.html",
+        {
+            "request": request,
+            "user": user,
+            "notifications": items,
+            "unread_count": int(unread_count),
+        },
+    )
+
+
+@app.get("/web/notifications/unread-count")
+def web_notifications_unread_count(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ensure_company_user(user)
+    unread_count = (
+        db.query(func.count(Notification.id))
+        .filter(Notification.user_id == user.id, Notification.is_read.is_(False))
+        .scalar()
+        or 0
+    )
+    return {"unread": int(unread_count)}
+
+
+@app.post("/web/notifications/read-all")
+def web_notifications_read_all(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ensure_company_user(user)
+    (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id, Notification.is_read.is_(False))
+        .update(
+            {
+                Notification.is_read: True,
+                Notification.read_at: datetime.utcnow(),
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    return RedirectResponse(url="/web/notifications", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.get("/web/notifications/{notification_id}/open")
+def web_notifications_open(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ensure_company_user(user)
+    item = db.get(Notification, notification_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(404, "Notification not found")
+    if not item.is_read:
+        item.is_read = True
+        item.read_at = datetime.utcnow()
+        db.commit()
+    return RedirectResponse(url=safe_notification_target(item.url), status_code=HTTP_303_SEE_OTHER)
+
+
 def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
     normalized = (type_name or "").strip() or "Узел"
     existing = (
@@ -2324,6 +2439,18 @@ def parse_bool_text(raw: str | None, default: bool = True) -> bool:
     if value in {"0", "false", "no", "n", "off", "нет"}:
         return False
     return default
+
+
+def safe_notification_target(raw_url: str | None) -> str:
+    target = (raw_url or "").strip()
+    if not target:
+        return "/web/notifications"
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc:
+        return "/web/notifications"
+    if not target.startswith("/"):
+        return "/web/notifications"
+    return target
 
 
 def build_unit_parent_map(db: Session, company_id: int) -> dict[int, int | None]:

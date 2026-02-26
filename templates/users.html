@@ -13,6 +13,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h3 class="mb-0">Пользователи</h3>
       <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
         <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
@@ -107,5 +108,6 @@
     {% endif %}
   </div>
   <script src="/static/sw-register.js"></script>
+  <script src="/static/notifications-widget.js"></script>
 </body>
 </html>

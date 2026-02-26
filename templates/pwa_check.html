@@ -20,6 +20,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h3 class="mb-0">PWA Diagnostic</h3>
       <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Notifications<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
         <a class="btn btn-outline-secondary" href="/web/settings">Settings</a>
         <a class="btn btn-outline-secondary" href="/web">Tickets</a>
       </div>
@@ -239,5 +240,6 @@
       document.addEventListener("DOMContentLoaded", runChecks);
     })();
   </script>
+  <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
