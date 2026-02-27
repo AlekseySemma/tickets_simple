@@ -47,6 +47,7 @@
         {% elif user.role in ["ADMIN", "CURATOR"] %}
           <div class="d-flex flex-wrap gap-2">
             <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
+            <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны заявок</a>
             {% if org_v2_enabled %}
               <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
             {% endif %}

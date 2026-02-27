@@ -1,0 +1,129 @@
+﻿<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Шаблоны заявок</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0d6efd">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 1100px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h3 class="mb-0">Шаблоны заявок</h3>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+      </div>
+    </div>
+
+    {% if request.query_params.get("run_ok") == "1" %}
+      <div class="alert alert-success">
+        Создание из шаблона завершено: создано {{ request.query_params.get("run_created") or 0 }}, пропущено {{ request.query_params.get("run_skipped") or 0 }}, период {{ request.query_params.get("run_period") or "" }}.
+      </div>
+    {% endif %}
+    {% if request.query_params.get("run_error") == "inactive" %}
+      <div class="alert alert-warning">Шаблон неактивен, запуск невозможен.</div>
+    {% endif %}
+    {% if request.query_params.get("run_error") == "bad_period" %}
+      <div class="alert alert-warning">Некорректный период. Используйте формат YYYY-MM.</div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Добавить шаблон</h5>
+        <form method="post" action="/web/ticket-templates/create" class="row g-2">
+          <div class="col-12 col-md-4"><input class="form-control" name="name" placeholder="Название" required /></div>
+          <div class="col-12 col-md-4">
+            <select class="form-select" name="ticket_type_id" required>
+              <option value="" selected disabled>Тип заявки</option>
+              {% for tt in ticket_types %}<option value="{{ tt.id }}">{{ tt.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-4"><input class="form-control" name="title_template" placeholder="Шаблон названия" /></div>
+          <div class="col-12 col-md-6"><input class="form-control" name="description_template" placeholder="Шаблон описания" /></div>
+          <div class="col-12 col-md-2"><input class="form-control" name="default_deadline_rule" placeholder="Срок, напр. +24h" /></div>
+          <div class="col-12 col-md-2">
+            <select class="form-select" name="scope_unit_id">
+              <option value="">Scope-узел</option>
+              {% for u in org_units %}<option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <select class="form-select" name="default_executor_id">
+              <option value="">Исполнитель</option>
+              {% for e in executors %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2 d-flex align-items-center">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_active" value="1" id="tmpl_active_new" checked>
+              <label class="form-check-label" for="tmpl_active_new">Активен</label>
+            </div>
+          </div>
+          <div class="col-12"><button class="btn btn-primary">Создать</button></div>
+        </form>
+      </div>
+    </div>
+
+    {% for t in items %}
+      <div class="card shadow-sm mb-2">
+        <div class="card-body">
+          <form method="post" action="/web/ticket-templates/{{ t.id }}/update" class="row g-2">
+            <div class="col-12 col-md-3"><input class="form-control" name="name" value="{{ t.name }}" required /></div>
+            <div class="col-12 col-md-3">
+              <select class="form-select" name="ticket_type_id" required>
+                {% for tt in ticket_types %}<option value="{{ tt.id }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>{{ tt.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-3"><input class="form-control" name="title_template" value="{{ t.title_template or '' }}" /></div>
+            <div class="col-12 col-md-3"><input class="form-control" name="description_template" value="{{ t.description_template or '' }}" /></div>
+            <div class="col-12 col-md-2"><input class="form-control" name="default_deadline_rule" value="{{ t.default_deadline_rule or '' }}" /></div>
+            <div class="col-12 col-md-3">
+              <select class="form-select" name="scope_unit_id">
+                <option value="">Scope-узел</option>
+                {% for u in org_units %}<option value="{{ u.id }}" {% if t.scope_unit_id == u.id %}selected{% endif %}>{{ u.name }} (#{{ u.id }})</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <select class="form-select" name="default_executor_id">
+                <option value="">Исполнитель</option>
+                {% for e in executors %}<option value="{{ e.id }}" {% if t.default_executor_id == e.id %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 d-flex align-items-center">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="tmpl_active_{{ t.id }}" {% if t.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="tmpl_active_{{ t.id }}">Активен</label>
+              </div>
+            </div>
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button>
+            </div>
+          </form>
+
+          <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run">
+            <div class="col-12 col-md-3">
+              <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
+            </div>
+            <div class="col-12 col-md-3">
+              <button class="btn btn-sm btn-success" type="submit">Запустить шаблон</button>
+            </div>
+          </form>
+
+          <form class="mt-2" method="post" action="/web/ticket-templates/{{ t.id }}/delete" onsubmit="return confirm('Удалить шаблон {{ t.name }}?');">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+
+    {% if items|length == 0 %}
+      <div class="alert alert-info">Шаблонов пока нет.</div>
+    {% endif %}
+  </div>
+  <script src="/static/sw-register.js"></script>
+  <script src="/static/notifications-widget.js"></script>
+</body>
+</html>

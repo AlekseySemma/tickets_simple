@@ -70,6 +70,8 @@ RL_REGISTER_WINDOW_SEC = int(os.getenv("RL_REGISTER_WINDOW_SEC", "3600"))
 RL_PUSH_TEST_LIMIT = int(os.getenv("RL_PUSH_TEST_LIMIT", "10"))
 RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
 ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
+TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
+TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
 
 # =========================
 # База данных (SQLite)
@@ -238,6 +240,8 @@ class Ticket(Base):
     executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
     ticket_type_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ticket_types.id"), index=True, default=None)
     target_unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
+    ticket_template_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ticket_templates.id"), index=True, default=None)
+    period_key: Mapped[Optional[str]] = mapped_column(String(16), index=True, default=None)
     batch_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, default=None)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
@@ -320,7 +324,8 @@ def ensure_migrations_ready() -> None:
         raise RuntimeError("Database schema is not initialized. Run 'alembic upgrade head'.") from exc
 
 
-ensure_migrations_ready()
+if (os.getenv("SKIP_MIGRATION_CHECK", "0").strip().lower() not in {"1", "true", "yes", "on"}):
+    ensure_migrations_ready()
 
 # =========================
 # Схемы API
@@ -372,6 +377,25 @@ class ProjectOut(BaseModel):
     class Config:
         from_attributes = True
 
+class UnitTypeCreate(BaseModel):
+    name: str
+    code: Optional[str] = None
+    is_active: bool = True
+
+class UnitTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class UnitTypeOut(BaseModel):
+    id: int
+    name: str
+    code: Optional[str]
+    is_active: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
 class TicketTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -391,6 +415,44 @@ class TicketTypeOut(BaseModel):
     class Config:
         from_attributes = True
 
+class TicketTemplateCreate(BaseModel):
+    ticket_type_id: int
+    name: str
+    title_template: Optional[str] = None
+    description_template: Optional[str] = None
+    default_deadline_rule: Optional[str] = None
+    default_executor_id: Optional[int] = None
+    scope_unit_id: Optional[int] = None
+    is_active: bool = True
+
+class TicketTemplateUpdate(BaseModel):
+    ticket_type_id: Optional[int] = None
+    name: Optional[str] = None
+    title_template: Optional[str] = None
+    description_template: Optional[str] = None
+    default_deadline_rule: Optional[str] = None
+    default_executor_id: Optional[int] = None
+    scope_unit_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class TicketTemplateOut(BaseModel):
+    id: int
+    ticket_type_id: int
+    name: str
+    title_template: Optional[str]
+    description_template: Optional[str]
+    default_deadline_rule: Optional[str]
+    default_executor_id: Optional[int]
+    scope_unit_id: Optional[int]
+    is_active: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+class TicketTemplateRunIn(BaseModel):
+    period_key: Optional[str] = None
+
 class TicketCreate(BaseModel):
     title: str
     description: Optional[str] = None
@@ -398,6 +460,8 @@ class TicketCreate(BaseModel):
     executor_id: Optional[int] = None
     ticket_type_id: Optional[int] = None
     target_unit_id: Optional[int] = None
+    ticket_template_id: Optional[int] = None
+    period_key: Optional[str] = None
     project_id: int
 
 class TicketUpdate(BaseModel):
@@ -407,6 +471,8 @@ class TicketUpdate(BaseModel):
     executor_id: Optional[int] = None
     ticket_type_id: Optional[int] = None
     target_unit_id: Optional[int] = None
+    ticket_template_id: Optional[int] = None
+    period_key: Optional[str] = None
     status: Optional[TicketStatus] = None
     project_id: Optional[int] = None
 
@@ -420,6 +486,8 @@ class TicketOut(BaseModel):
     executor_id: Optional[int]
     ticket_type_id: Optional[int]
     target_unit_id: Optional[int]
+    ticket_template_id: Optional[int]
+    period_key: Optional[str]
     batch_id: Optional[str]
     created_by: int
     created_at: datetime
@@ -609,6 +677,7 @@ def validate_ticket_links(
     executor_id: int | None,
     ticket_type_id: int | None = None,
     target_unit_id: int | None = None,
+    ticket_template_id: int | None = None,
 ) -> None:
     if project_id is not None:
         project = db.get(Project, project_id)
@@ -635,6 +704,11 @@ def validate_ticket_links(
             raise HTTPException(400, "Target unit not found")
         if not target_unit.is_active:
             raise HTTPException(400, "Target unit is inactive")
+
+    if ticket_template_id is not None:
+        template = db.get(TicketTemplate, ticket_template_id)
+        if not template or (company_id is not None and template.company_id != company_id):
+            raise HTTPException(400, "Ticket template not found")
 
 
 def resolve_scope_leaf_units(db: Session, company_id: int, scope_unit_id: int) -> list[int]:
@@ -669,6 +743,59 @@ def resolve_scope_leaf_units(db: Session, company_id: int, scope_unit_id: int) -
             continue
         stack.extend(children)
     return leaf_ids
+
+
+def resolve_scope_descendant_units(db: Session, company_id: int, scope_unit_id: int) -> list[int]:
+    rows = (
+        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.is_active)
+        .filter(OrgUnit.company_id == company_id)
+        .all()
+    )
+    active_ids = {int(row[0]) for row in rows if bool(row[2])}
+    if scope_unit_id not in active_ids:
+        return []
+
+    children_by_parent: dict[int, list[int]] = {}
+    for unit_id, parent_id, is_active in rows:
+        if not bool(is_active):
+            continue
+        if parent_id is None:
+            continue
+        children_by_parent.setdefault(int(parent_id), []).append(int(unit_id))
+
+    stack = [scope_unit_id]
+    visited: set[int] = set()
+    result: list[int] = []
+    while stack:
+        current = stack.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        result.append(current)
+        for child in children_by_parent.get(current, []):
+            stack.append(child)
+    return result
+
+
+def validate_template_links(
+    db: Session,
+    company_id: int,
+    ticket_type_id: int | None,
+    default_executor_id: int | None,
+    scope_unit_id: int | None,
+) -> None:
+    if ticket_type_id is not None:
+        tt = db.get(TicketType, ticket_type_id)
+        if not tt or tt.company_id != company_id:
+            raise HTTPException(400, "Ticket type not found")
+    if default_executor_id is not None:
+        u = db.get(User, default_executor_id)
+        if not u or u.company_id != company_id or u.role != Role.executor:
+            raise HTTPException(400, "Executor not found")
+    if scope_unit_id is not None:
+        unit = db.get(OrgUnit, scope_unit_id)
+        if not unit or unit.company_id != company_id:
+            raise HTTPException(400, "Scope unit not found")
 
 
 def get_or_create_project_for_org_unit(db: Session, company_id: int, unit_id: int) -> int:
@@ -734,6 +861,170 @@ def get_preferred_executor_for_unit(db: Session, company_id: int, unit_id: int) 
         .first()
     )
     return int(row[0]) if row else None
+
+
+def month_period_key(dt: datetime | None = None) -> str:
+    base = dt or local_now()
+    return base.strftime("%Y-%m")
+
+
+def normalize_period_key(raw_value: str | None) -> str | None:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return None
+    if len(raw) != 7 or raw[4] != "-":
+        return None
+    yyyy = raw[:4]
+    mm = raw[5:]
+    if not (yyyy.isdigit() and mm.isdigit()):
+        return None
+    month_value = int(mm)
+    if month_value < 1 or month_value > 12:
+        return None
+    return f"{yyyy}-{mm}"
+
+
+def resolve_deadline_by_rule(rule: str | None, now_dt: datetime | None = None) -> datetime | None:
+    raw = (rule or "").strip().lower()
+    if not raw:
+        return None
+    base = now_dt or local_now()
+    if raw.startswith("+") and raw.endswith("h"):
+        try:
+            return base + timedelta(hours=max(1, int(raw[1:-1])))
+        except ValueError:
+            return None
+    if raw.startswith("+") and raw.endswith("d"):
+        try:
+            return base + timedelta(days=max(1, int(raw[1:-1])))
+        except ValueError:
+            return None
+    return None
+
+
+def render_template_value(raw_value: str | None, period_key: str, unit_name: str) -> str | None:
+    text = (raw_value or "").strip()
+    if not text:
+        return None
+    return (
+        text.replace("{period}", period_key)
+        .replace("{unit_name}", unit_name)
+        .replace("{month}", period_key)
+    )
+
+
+def ticket_exists_for_template_period(
+    db: Session,
+    company_id: int,
+    template_id: int,
+    target_unit_id: int,
+    period_key: str,
+) -> bool:
+    row = (
+        db.query(Ticket.id)
+        .filter(
+            Ticket.company_id == company_id,
+            Ticket.ticket_template_id == template_id,
+            Ticket.target_unit_id == target_unit_id,
+            Ticket.period_key == period_key,
+        )
+        .first()
+    )
+    return row is not None
+
+
+def create_tickets_from_template(
+    db: Session,
+    *,
+    template: TicketTemplate,
+    actor_id: int,
+    period_key: str | None = None,
+) -> tuple[int, int, str]:
+    effective_period = (period_key or "").strip() or month_period_key()
+    if template.scope_unit_id is None:
+        return 0, 0, effective_period
+
+    leaf_unit_ids = resolve_scope_leaf_units(db, template.company_id, template.scope_unit_id)
+    if not leaf_unit_ids:
+        return 0, 0, effective_period
+
+    unit_rows = (
+        db.query(OrgUnit.id, OrgUnit.name)
+        .filter(OrgUnit.id.in_(leaf_unit_ids))
+        .all()
+    )
+    unit_names = {int(unit_id): str(name or "").strip() for unit_id, name in unit_rows}
+
+    batch_id = uuid.uuid4().hex
+    created_count = 0
+    skipped_count = 0
+    for leaf_unit_id in leaf_unit_ids:
+        if ticket_exists_for_template_period(
+            db=db,
+            company_id=template.company_id,
+            template_id=template.id,
+            target_unit_id=leaf_unit_id,
+            period_key=effective_period,
+        ):
+            skipped_count += 1
+            continue
+
+        unit_name = unit_names.get(leaf_unit_id, f"Unit #{leaf_unit_id}")
+        title = render_template_value(template.title_template, effective_period, unit_name) or f"{template.name} {effective_period}"
+        description = render_template_value(template.description_template, effective_period, unit_name)
+        project_id = get_or_create_project_for_org_unit(db, template.company_id, leaf_unit_id)
+        resolved_executor_id = (
+            template.default_executor_id
+            if template.default_executor_id is not None
+            else get_preferred_executor_for_unit(db, template.company_id, leaf_unit_id)
+        )
+
+        try:
+            with db.begin_nested():
+                ticket = Ticket(
+                    title=title,
+                    description=description,
+                    deadline=resolve_deadline_by_rule(template.default_deadline_rule),
+                    status=TicketStatus.new,
+                    company_id=template.company_id,
+                    project_id=project_id,
+                    executor_id=resolved_executor_id,
+                    ticket_type_id=template.ticket_type_id,
+                    target_unit_id=leaf_unit_id,
+                    ticket_template_id=template.id,
+                    period_key=effective_period,
+                    batch_id=batch_id,
+                    created_by=actor_id,
+                )
+                db.add(ticket)
+                db.flush()
+                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="создание по шаблону")
+            created_count += 1
+        except SQLAlchemyError:
+            skipped_count += 1
+
+    return created_count, skipped_count, effective_period
+
+
+def resolve_company_actor_id(db: Session, company_id: int) -> int | None:
+    manager_row = (
+        db.query(User.id)
+        .filter(
+            User.company_id == company_id,
+            User.role.in_([Role.admin, Role.curator]),
+        )
+        .order_by(User.id.asc())
+        .first()
+    )
+    if manager_row:
+        return int(manager_row[0])
+    any_row = (
+        db.query(User.id)
+        .filter(User.company_id == company_id)
+        .order_by(User.id.asc())
+        .first()
+    )
+    return int(any_row[0]) if any_row else None
 
 
 def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
@@ -1106,6 +1397,42 @@ def run_deadline_reminders_forever() -> None:
         time.sleep(max(5, PUSH_REMINDER_POLL_SECONDS))
 
 
+def run_template_autogen_once() -> None:
+    with SessionLocal() as db:
+        templates_to_run = (
+            db.query(TicketTemplate)
+            .filter(TicketTemplate.is_active.is_(True), TicketTemplate.scope_unit_id.is_not(None))
+            .order_by(TicketTemplate.id.asc())
+            .all()
+        )
+        if not templates_to_run:
+            return
+
+        for item in templates_to_run:
+            actor_id = resolve_company_actor_id(db, item.company_id)
+            if actor_id is None:
+                continue
+            created_count, _, _ = create_tickets_from_template(
+                db=db,
+                template=item,
+                actor_id=actor_id,
+                period_key=month_period_key(),
+            )
+            if created_count > 0:
+                db.commit()
+            else:
+                db.rollback()
+
+
+def run_template_autogen_forever() -> None:
+    while True:
+        try:
+            run_template_autogen_once()
+        except Exception:
+            pass
+        time.sleep(TEMPLATE_AUTOGEN_POLL_SECONDS)
+
+
 def hash_password(p: str) -> str:
     return pwd_context.hash(p)
 
@@ -1289,6 +1616,8 @@ def app_startup() -> None:
             db.close()
     if push_is_configured():
         threading.Thread(target=run_deadline_reminders_forever, daemon=True).start()
+    if TEMPLATE_AUTOGEN_ENABLED:
+        threading.Thread(target=run_template_autogen_forever, daemon=True).start()
 
 
 
@@ -1544,6 +1873,125 @@ def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_
     return db.query(Project).filter(Project.company_id == _u.company_id).order_by(Project.id.desc()).all()
 
 # =========================
+# UNIT TYPES API
+# =========================
+@app.post("/unit-types", response_model=UnitTypeOut)
+def create_unit_type(
+    payload: UnitTypeCreate,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    name = (payload.name or "").strip()
+    code = (payload.code or "").strip() or None
+    if not name:
+        raise HTTPException(422, "Name is required")
+    if (
+        db.query(UnitType.id)
+        .filter(UnitType.company_id == _manager.company_id, func.lower(UnitType.name) == name.lower())
+        .first()
+    ):
+        raise HTTPException(400, "Unit type already exists")
+    if code and (
+        db.query(UnitType.id)
+        .filter(UnitType.company_id == _manager.company_id, func.lower(UnitType.code) == code.lower())
+        .first()
+    ):
+        raise HTTPException(400, "Unit type code already exists")
+    item = UnitType(
+        company_id=_manager.company_id,
+        name=name,
+        code=code,
+        is_active=bool(payload.is_active),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.get("/unit-types", response_model=list[UnitTypeOut])
+def list_unit_types(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if is_platform_admin(user):
+        return db.query(UnitType).order_by(UnitType.id.desc()).all()
+    ensure_company_user(user)
+    return (
+        db.query(UnitType)
+        .filter(UnitType.company_id == user.company_id)
+        .order_by(UnitType.id.desc())
+        .all()
+    )
+
+
+@app.patch("/unit-types/{unit_type_id}", response_model=UnitTypeOut)
+def update_unit_type(
+    unit_type_id: int,
+    patch: UnitTypeUpdate,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    item = db.get(UnitType, unit_type_id)
+    if not item or item.company_id != _manager.company_id:
+        raise HTTPException(404, "Unit type not found")
+    incoming = patch.model_dump(exclude_unset=True)
+    if "name" in incoming:
+        next_name = (incoming.get("name") or "").strip()
+        if not next_name:
+            raise HTTPException(422, "Name is required")
+        exists = (
+            db.query(UnitType.id)
+            .filter(
+                UnitType.company_id == _manager.company_id,
+                func.lower(UnitType.name) == next_name.lower(),
+                UnitType.id != item.id,
+            )
+            .first()
+        )
+        if exists:
+            raise HTTPException(400, "Unit type already exists")
+        item.name = next_name
+    if "code" in incoming:
+        next_code = (incoming.get("code") or "").strip() or None
+        if next_code:
+            exists = (
+                db.query(UnitType.id)
+                .filter(
+                    UnitType.company_id == _manager.company_id,
+                    func.lower(UnitType.code) == next_code.lower(),
+                    UnitType.id != item.id,
+                )
+                .first()
+            )
+            if exists:
+                raise HTTPException(400, "Unit type code already exists")
+        item.code = next_code
+    if "is_active" in incoming:
+        item.is_active = bool(incoming.get("is_active"))
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.delete("/unit-types/{unit_type_id}")
+def delete_unit_type(
+    unit_type_id: int,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    item = db.get(UnitType, unit_type_id)
+    if not item or item.company_id != _manager.company_id:
+        raise HTTPException(404, "Unit type not found")
+    in_use = db.query(OrgUnit.id).filter(OrgUnit.unit_type_id == item.id).first() is not None
+    if in_use:
+        raise HTTPException(400, "Unit type is in use")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
+# =========================
 # TICKET TYPES API
 # =========================
 @app.post("/ticket-types", response_model=TicketTypeOut)
@@ -1643,6 +2091,169 @@ def delete_ticket_type(
     db.commit()
     return {"ok": True}
 
+
+# =========================
+# TICKET TEMPLATES API
+# =========================
+@app.post("/ticket-templates", response_model=TicketTemplateOut)
+def create_ticket_template(
+    payload: TicketTemplateCreate,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(422, "Name is required")
+    validate_template_links(
+        db,
+        _manager.company_id,
+        payload.ticket_type_id,
+        payload.default_executor_id,
+        payload.scope_unit_id,
+    )
+    exists = (
+        db.query(TicketTemplate.id)
+        .filter(TicketTemplate.company_id == _manager.company_id, TicketTemplate.name == name)
+        .first()
+    )
+    if exists:
+        raise HTTPException(400, "Ticket template already exists")
+    item = TicketTemplate(
+        company_id=_manager.company_id,
+        ticket_type_id=payload.ticket_type_id,
+        name=name,
+        title_template=(payload.title_template or "").strip() or None,
+        description_template=(payload.description_template or "").strip() or None,
+        default_deadline_rule=(payload.default_deadline_rule or "").strip() or None,
+        default_executor_id=payload.default_executor_id,
+        scope_unit_id=payload.scope_unit_id,
+        is_active=bool(payload.is_active),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.get("/ticket-templates", response_model=list[TicketTemplateOut])
+def list_ticket_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if is_platform_admin(user):
+        return db.query(TicketTemplate).order_by(TicketTemplate.id.desc()).all()
+    ensure_company_user(user)
+    return (
+        db.query(TicketTemplate)
+        .filter(TicketTemplate.company_id == user.company_id)
+        .order_by(TicketTemplate.id.desc())
+        .all()
+    )
+
+
+@app.patch("/ticket-templates/{template_id}", response_model=TicketTemplateOut)
+def update_ticket_template(
+    template_id: int,
+    patch: TicketTemplateUpdate,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != _manager.company_id:
+        raise HTTPException(404, "Ticket template not found")
+    incoming = patch.model_dump(exclude_unset=True)
+    if "name" in incoming:
+        next_name = (incoming.get("name") or "").strip()
+        if not next_name:
+            raise HTTPException(422, "Name is required")
+        exists = (
+            db.query(TicketTemplate.id)
+            .filter(
+                TicketTemplate.company_id == _manager.company_id,
+                TicketTemplate.name == next_name,
+                TicketTemplate.id != item.id,
+            )
+            .first()
+        )
+        if exists:
+            raise HTTPException(400, "Ticket template already exists")
+        item.name = next_name
+
+    next_ticket_type_id = incoming.get("ticket_type_id", item.ticket_type_id)
+    next_default_executor_id = incoming.get("default_executor_id", item.default_executor_id)
+    next_scope_unit_id = incoming.get("scope_unit_id", item.scope_unit_id)
+    validate_template_links(
+        db,
+        _manager.company_id,
+        next_ticket_type_id,
+        next_default_executor_id,
+        next_scope_unit_id,
+    )
+
+    if "ticket_type_id" in incoming:
+        item.ticket_type_id = incoming.get("ticket_type_id")
+    if "title_template" in incoming:
+        item.title_template = (incoming.get("title_template") or "").strip() or None
+    if "description_template" in incoming:
+        item.description_template = (incoming.get("description_template") or "").strip() or None
+    if "default_deadline_rule" in incoming:
+        item.default_deadline_rule = (incoming.get("default_deadline_rule") or "").strip() or None
+    if "default_executor_id" in incoming:
+        item.default_executor_id = incoming.get("default_executor_id")
+    if "scope_unit_id" in incoming:
+        item.scope_unit_id = incoming.get("scope_unit_id")
+    if "is_active" in incoming:
+        item.is_active = bool(incoming.get("is_active"))
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.delete("/ticket-templates/{template_id}")
+def delete_ticket_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(_manager)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != _manager.company_id:
+        raise HTTPException(404, "Ticket template not found")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/ticket-templates/{template_id}/run")
+def run_ticket_template(
+    template_id: int,
+    payload: TicketTemplateRunIn,
+    db: Session = Depends(get_db),
+    manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(manager)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != manager.company_id:
+        raise HTTPException(404, "Ticket template not found")
+    if not item.is_active:
+        raise HTTPException(400, "Ticket template is inactive")
+    normalized_period = normalize_period_key(payload.period_key)
+    if payload.period_key and normalized_period is None:
+        raise HTTPException(422, "Invalid period_key format, expected YYYY-MM")
+
+    created_count, skipped_count, effective_period = create_tickets_from_template(
+        db=db,
+        template=item,
+        actor_id=manager.id,
+        period_key=normalized_period,
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "created_count": created_count,
+        "skipped_count": skipped_count,
+        "period_key": effective_period,
+    }
+
 # =========================
 # TICKETS API
 # =========================
@@ -1664,6 +2275,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         payload.executor_id,
         payload.ticket_type_id,
         payload.target_unit_id,
+        payload.ticket_template_id,
     )
     t = Ticket(
         title=title,
@@ -1673,6 +2285,8 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         executor_id=payload.executor_id,
         ticket_type_id=payload.ticket_type_id,
         target_unit_id=payload.target_unit_id,
+        ticket_template_id=payload.ticket_template_id,
+        period_key=(payload.period_key or "").strip() or None,
         project_id=payload.project_id,
         created_by=user.id
     )
@@ -1726,6 +2340,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         incoming.get("executor_id"),
         incoming.get("ticket_type_id"),
         incoming.get("target_unit_id"),
+        incoming.get("ticket_template_id"),
     )
 
     old_deadline = t.deadline
@@ -1733,6 +2348,8 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     old_project_id = t.project_id
     old_ticket_type_id = t.ticket_type_id
     old_target_unit_id = t.target_unit_id
+    old_template_id = t.ticket_template_id
+    old_period_key = t.period_key
     old_status = t.status
 
     for k, v in incoming.items():
@@ -1754,6 +2371,12 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         has_specific_log = True
     if t.target_unit_id != old_target_unit_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение целевого узла")
+        has_specific_log = True
+    if t.ticket_template_id != old_template_id:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение шаблона заявки")
+        has_specific_log = True
+    if t.period_key != old_period_key:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение периода шаблона")
         has_specific_log = True
 
     if not has_specific_log:
@@ -2010,6 +2633,8 @@ def web_tickets(
     project_id: str | None = None,
     ticket_type_id: str | None = None,
     executor_id: str | None = None,   # <-- ДОБАВИЛИ
+    target_unit_id: str | None = None,
+    unit_executor_id: str | None = None,
     q: str | None = None,
     only_overdue: str | None = None,
     sort: str | None = None,
@@ -2116,6 +2741,20 @@ def web_tickets(
         except ValueError:
             ticket_type_id_int = None
 
+    target_unit_id_int: int | None = None
+    if target_unit_id is not None and str(target_unit_id).strip() != "":
+        try:
+            target_unit_id_int = int(target_unit_id)
+        except ValueError:
+            target_unit_id_int = None
+
+    unit_executor_id_int: int | None = None
+    if unit_executor_id is not None and str(unit_executor_id).strip() != "":
+        try:
+            unit_executor_id_int = int(unit_executor_id)
+        except ValueError:
+            unit_executor_id_int = None
+
     executor_id_int: int | None = None
     executor_none = False
     if executor_id is not None and str(executor_id).strip() != "":
@@ -2139,6 +2778,29 @@ def web_tickets(
         filtered_query = filtered_query.filter(Ticket.project_id == project_id_int)
     if ticket_type_id_int is not None:
         filtered_query = filtered_query.filter(Ticket.ticket_type_id == ticket_type_id_int)
+    if target_unit_id_int is not None:
+        subtree_unit_ids = resolve_scope_descendant_units(db, user.company_id, target_unit_id_int)
+        if subtree_unit_ids:
+            filtered_query = filtered_query.filter(Ticket.target_unit_id.in_(subtree_unit_ids))
+        else:
+            filtered_query = filtered_query.filter(Ticket.id == -1)
+    if unit_executor_id_int is not None:
+        assigned_unit_ids = [
+            int(row[0])
+            for row in (
+                db.query(UnitAssignment.unit_id)
+                .filter(
+                    UnitAssignment.company_id == user.company_id,
+                    UnitAssignment.user_id == unit_executor_id_int,
+                    UnitAssignment.role_code == "EXECUTOR",
+                )
+                .all()
+            )
+        ]
+        if assigned_unit_ids:
+            filtered_query = filtered_query.filter(Ticket.target_unit_id.in_(assigned_unit_ids))
+        else:
+            filtered_query = filtered_query.filter(Ticket.id == -1)
 
     # Фильтр по исполнителю — только куратор
     if is_manager(user):
@@ -2233,6 +2895,8 @@ def web_tickets(
         (status_filter or "").strip()
         or project_id_int is not None
         or ticket_type_id_int is not None
+        or target_unit_id_int is not None
+        or unit_executor_id_int is not None
         or (executor_id or "").strip()
         or (q or "").strip()
         or overdue_enabled
@@ -2269,6 +2933,8 @@ def web_tickets(
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
+            "target_unit_id_filter": target_unit_id_int if target_unit_id_int is not None else "",
+            "unit_executor_id_filter": unit_executor_id_int if unit_executor_id_int is not None else "",
             "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
             "q": q or "",
             "only_overdue": "1" if overdue_enabled else "",
@@ -3719,6 +4385,194 @@ async def web_ticket_types_delete(
     db.delete(item)
     db.commit()
     return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+
+
+# ====== WEB: Ticket Templates ======
+@app.get("/web/ticket-templates")
+def web_ticket_templates(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    items = (
+        db.query(TicketTemplate)
+        .filter(TicketTemplate.company_id == user.company_id)
+        .order_by(TicketTemplate.id.desc())
+        .all()
+    )
+    ticket_types = (
+        db.query(TicketType.id, TicketType.name, TicketType.is_active)
+        .filter(TicketType.company_id == user.company_id)
+        .order_by(TicketType.name.asc())
+        .all()
+    )
+    org_units = (
+        db.query(OrgUnit.id, OrgUnit.name, OrgUnit.parent_id, OrgUnit.is_active)
+        .filter(OrgUnit.company_id == user.company_id)
+        .order_by(OrgUnit.id.asc())
+        .all()
+    )
+    executors = (
+        db.query(User.id, User.name, User.email)
+        .filter(User.company_id == user.company_id, User.role == Role.executor)
+        .order_by(User.name.asc(), User.id.asc())
+        .all()
+    )
+    return templates.TemplateResponse(
+        "ticket_templates.html",
+        {
+            "request": request,
+            "items": items,
+            "ticket_types": ticket_types,
+            "org_units": org_units,
+            "executors": executors,
+        },
+    )
+
+
+@app.post("/web/ticket-templates/create")
+async def web_ticket_templates_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    try:
+        ticket_type_id = int((form.get("ticket_type_id") or "").strip())
+    except ValueError:
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    scope_raw = (form.get("scope_unit_id") or "").strip()
+    executor_raw = (form.get("default_executor_id") or "").strip()
+    scope_unit_id = int(scope_raw) if scope_raw.isdigit() else None
+    default_executor_id = int(executor_raw) if executor_raw.isdigit() else None
+    is_active = (form.get("is_active") or "1").strip() == "1"
+    validate_template_links(db, user.company_id, ticket_type_id, default_executor_id, scope_unit_id)
+    exists = (
+        db.query(TicketTemplate.id)
+        .filter(TicketTemplate.company_id == user.company_id, TicketTemplate.name == name)
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    item = TicketTemplate(
+        company_id=user.company_id,
+        ticket_type_id=ticket_type_id,
+        name=name,
+        title_template=(form.get("title_template") or "").strip() or None,
+        description_template=(form.get("description_template") or "").strip() or None,
+        default_deadline_rule=(form.get("default_deadline_rule") or "").strip() or None,
+        default_executor_id=default_executor_id,
+        scope_unit_id=scope_unit_id,
+        is_active=is_active,
+    )
+    db.add(item)
+    db.commit()
+    return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/ticket-templates/{template_id}/update")
+async def web_ticket_templates_update(
+    template_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Ticket template not found")
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    try:
+        ticket_type_id = int((form.get("ticket_type_id") or "").strip())
+    except ValueError:
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    scope_raw = (form.get("scope_unit_id") or "").strip()
+    executor_raw = (form.get("default_executor_id") or "").strip()
+    scope_unit_id = int(scope_raw) if scope_raw.isdigit() else None
+    default_executor_id = int(executor_raw) if executor_raw.isdigit() else None
+    is_active = (form.get("is_active") or "").strip() == "1"
+    validate_template_links(db, user.company_id, ticket_type_id, default_executor_id, scope_unit_id)
+    exists = (
+        db.query(TicketTemplate.id)
+        .filter(
+            TicketTemplate.company_id == user.company_id,
+            TicketTemplate.name == name,
+            TicketTemplate.id != item.id,
+        )
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    item.ticket_type_id = ticket_type_id
+    item.name = name
+    item.title_template = (form.get("title_template") or "").strip() or None
+    item.description_template = (form.get("description_template") or "").strip() or None
+    item.default_deadline_rule = (form.get("default_deadline_rule") or "").strip() or None
+    item.default_executor_id = default_executor_id
+    item.scope_unit_id = scope_unit_id
+    item.is_active = is_active
+    db.commit()
+    return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/ticket-templates/{template_id}/delete")
+async def web_ticket_templates_delete(
+    template_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Ticket template not found")
+    db.delete(item)
+    db.commit()
+    return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/ticket-templates/{template_id}/run")
+async def web_ticket_templates_run(
+    template_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Ticket template not found")
+    if not item.is_active:
+        return RedirectResponse(url="/web/ticket-templates?run_error=inactive", status_code=HTTP_303_SEE_OTHER)
+
+    form = await request.form()
+    raw_period_key = (form.get("period_key") or "").strip() or None
+    period_key = normalize_period_key(raw_period_key)
+    if raw_period_key and period_key is None:
+        return RedirectResponse(url="/web/ticket-templates?run_error=bad_period", status_code=HTTP_303_SEE_OTHER)
+    created_count, skipped_count, effective_period = create_tickets_from_template(
+        db=db,
+        template=item,
+        actor_id=user.id,
+        period_key=period_key,
+    )
+    db.commit()
+    return RedirectResponse(
+        url=(
+            "/web/ticket-templates"
+            f"?run_ok=1&run_created={created_count}&run_skipped={skipped_count}&run_period={quote(effective_period)}"
+        ),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 # ====== WEB: Users (Executors) ======
 @app.get("/web/users")

@@ -279,6 +279,7 @@
       <div class="page-actions">
   {% if user.role in ["ADMIN", "CURATOR"] %}
   <a class="btn btn-outline-secondary" href="/web/ticket-types">Ticket types</a>
+  <a class="btn btn-outline-secondary" href="/web/ticket-templates">Templates</a>
   {% endif %}
   <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
   <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
@@ -449,6 +450,15 @@
                 {% endfor %}
               </select>
             </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Узел/поддерево</label>
+              <select name="target_unit_id" class="form-select">
+                <option value="" {% if not target_unit_id_filter %}selected{% endif %}>Все</option>
+                {% for u in org_units %}
+                  <option value="{{ u.id }}" {% if target_unit_id_filter == u.id %}selected{% endif %}>{{ u.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="col-12 col-md-2 d-flex gap-2">
               <button class="btn btn-primary w-100">Применить</button>
             </div>
@@ -461,6 +471,15 @@
                   <option value="__none__" {% if executor_id_filter == "__none__" %}selected{% endif %}>— Не назначено —</option>
                   {% for e in executors %}
                     <option value="{{ e.id }}" {% if executor_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label mb-1">Ответственный по узлу</label>
+                <select name="unit_executor_id" class="form-select">
+                  <option value="" {% if not unit_executor_id_filter %}selected{% endif %}>Все</option>
+                  {% for e in executors %}
+                    <option value="{{ e.id }}" {% if unit_executor_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -501,6 +520,8 @@
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
         <input type="hidden" name="project_id" value="{{ project_id_filter }}">
         <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+        <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
+        <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
         <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
         <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
         <input type="hidden" name="sort" value="{{ sort }}">
@@ -519,6 +540,8 @@
      data-only-overdue="{{ only_overdue }}"
      data-project-id="{{ project_id_filter }}"
      data-ticket-type-id="{{ ticket_type_id_filter }}"
+     data-target-unit-id="{{ target_unit_id_filter }}"
+     data-unit-executor-id="{{ unit_executor_id_filter }}"
      data-executor-id="{{ executor_id_filter }}"
      data-q="{{ q }}"
      data-sort="{{ sort }}"
@@ -734,6 +757,8 @@
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
             <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+            <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
+            <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
             <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
             <input type="hidden" name="sort" value="{{ sort }}">
@@ -746,6 +771,8 @@
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
             <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+            <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
+            <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
             <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
             <input type="hidden" name="sort" value="{{ sort }}">
@@ -1059,6 +1086,8 @@ document.addEventListener("DOMContentLoaded", function () {
       only_overdue: dash.dataset.onlyOverdue || "",
       project_id: dash.dataset.projectId || "",
       ticket_type_id: dash.dataset.ticketTypeId || "",
+      target_unit_id: dash.dataset.targetUnitId || "",
+      unit_executor_id: dash.dataset.unitExecutorId || "",
       executor_id: dash.dataset.executorId || "",
       q: dash.dataset.q || "",
       sort: dash.dataset.sort || "id_desc",
@@ -1071,6 +1100,8 @@ document.addEventListener("DOMContentLoaded", function () {
     p.set("status_filter", next.status_filter || "");
     p.set("project_id", next.project_id || "");
     p.set("ticket_type_id", next.ticket_type_id || "");
+    p.set("target_unit_id", next.target_unit_id || "");
+    p.set("unit_executor_id", next.unit_executor_id || "");
     p.set("executor_id", next.executor_id || "");
     p.set("q", next.q || "");
     p.set("only_overdue", next.only_overdue || "");
