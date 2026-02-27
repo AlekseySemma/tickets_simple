@@ -7,6 +7,93 @@
   <meta name="theme-color" content="#1f9d8f">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="/static/service-theme.css" rel="stylesheet">
+  <style>
+    .types-hero {
+      border: 1px solid #cfe2da;
+      border-radius: 18px;
+      padding: 14px 16px;
+      background:
+        radial-gradient(420px 170px at 100% 0, rgba(31, 157, 143, 0.18), transparent 62%),
+        linear-gradient(180deg, #f9fefb, #f2f9f5);
+      box-shadow: 0 10px 22px rgba(22, 64, 67, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .types-kicker {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #145e55;
+      border: 1px solid rgba(31, 157, 143, 0.34);
+      background: rgba(31, 157, 143, 0.14);
+      margin-bottom: 6px;
+    }
+    .types-title {
+      margin: 0;
+      color: #184a4c;
+      font-weight: 700;
+      font-size: 1.03rem;
+    }
+    .types-kpi {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .types-kpi-card {
+      border: 1px solid #bfd8cf;
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    .types-kpi-card span {
+      display: block;
+      color: #4e7076;
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+    .types-kpi-card strong {
+      color: #1c5256;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .types-card {
+      border-radius: 16px;
+    }
+    .type-item {
+      border-radius: 14px;
+      border: 1px solid #d6e8e0;
+      background: linear-gradient(180deg, #ffffff, #fbfffd);
+      box-shadow: 0 8px 16px rgba(22, 64, 67, 0.06);
+    }
+    .type-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed #cde1d8;
+    }
+    .type-id {
+      color: #4f7075;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    @media (max-width: 991.98px) {
+      .types-kpi {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1200px;">
@@ -18,8 +105,29 @@
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
+    {% set active_types = ticket_types|selectattr("is_active")|list|length %}
+    <div class="types-hero mb-3">
+      <div>
+        <span class="types-kicker">Каталог обращений</span>
+        <p class="types-title">Типы заявок задают единый язык классификации и облегчают фильтрацию в операционном потоке.</p>
+      </div>
+      <div class="types-kpi">
+        <div class="types-kpi-card">
+          <span>Всего типов</span>
+          <strong>{{ ticket_types|length }}</strong>
+        </div>
+        <div class="types-kpi-card">
+          <span>Активные</span>
+          <strong>{{ active_types }}</strong>
+        </div>
+        <div class="types-kpi-card">
+          <span>Неактивные</span>
+          <strong>{{ ticket_types|length - active_types }}</strong>
+        </div>
+      </div>
+    </div>
 
-    <div class="card shadow-sm mb-3">
+    <div class="card shadow-sm mb-3 types-card">
       <div class="card-body">
         <h5 class="mb-3">Добавить тип заявки</h5>
         <form method="post" action="/web/ticket-types/create" class="row g-2">
@@ -43,8 +151,16 @@
     </div>
 
     {% for tt in ticket_types %}
-      <div class="card shadow-sm mb-2">
+      <div class="card shadow-sm mb-2 type-item">
         <div class="card-body">
+          <div class="type-item-head">
+            <div class="type-id">Тип #{{ tt.id }}</div>
+            {% if tt.is_active %}
+              <span class="badge text-bg-success">Активен</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Неактивен</span>
+            {% endif %}
+          </div>
           <form method="post" action="/web/ticket-types/{{ tt.id }}/update" class="row g-2">
             <div class="col-12 col-md-4">
               <label class="form-label">Название</label>

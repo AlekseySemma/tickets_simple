@@ -8,6 +8,78 @@
   <meta name="theme-color" content="#1f9d8f">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="/static/service-theme.css" rel="stylesheet">
+  <style>
+    .projects-hero {
+      border: 1px solid #cfe2da;
+      border-radius: 18px;
+      padding: 14px 16px;
+      background:
+        radial-gradient(420px 170px at 100% 0, rgba(31, 157, 143, 0.18), transparent 62%),
+        linear-gradient(180deg, #f9fefb, #f2f9f5);
+      box-shadow: 0 10px 22px rgba(22, 64, 67, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .projects-kicker {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #145e55;
+      border: 1px solid rgba(31, 157, 143, 0.34);
+      background: rgba(31, 157, 143, 0.14);
+      margin-bottom: 6px;
+    }
+    .projects-title {
+      margin: 0;
+      color: #184a4c;
+      font-weight: 700;
+      font-size: 1.03rem;
+    }
+    .projects-kpi {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .projects-kpi-card {
+      border: 1px solid #bfd8cf;
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    .projects-kpi-card span {
+      display: block;
+      color: #4e7076;
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+    .projects-kpi-card strong {
+      color: #1c5256;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .projects-card {
+      border-radius: 16px;
+    }
+    .project-item {
+      border: 1px solid #d6e8e0;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff, #fbfffd);
+      box-shadow: 0 8px 16px rgba(22, 64, 67, 0.06);
+    }
+    @media (max-width: 991.98px) {
+      .projects-kpi {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1200px;">
@@ -19,8 +91,29 @@
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
+    {% set projects_with_description = projects|selectattr("description")|list|length %}
+    <div class="projects-hero mb-3">
+      <div>
+        <span class="projects-kicker">Портфель работ</span>
+        <p class="projects-title">Проекты формируют рабочие контуры: используйте их для маршрутизации заявок и отчетности.</p>
+      </div>
+      <div class="projects-kpi">
+        <div class="projects-kpi-card">
+          <span>Всего проектов</span>
+          <strong>{{ projects|length }}</strong>
+        </div>
+        <div class="projects-kpi-card">
+          <span>С описанием</span>
+          <strong>{{ projects_with_description }}</strong>
+        </div>
+        <div class="projects-kpi-card">
+          <span>Без описания</span>
+          <strong>{{ projects|length - projects_with_description }}</strong>
+        </div>
+      </div>
+    </div>
 
-    <div class="card shadow-sm mb-3">
+    <div class="card shadow-sm mb-3 projects-card">
       <div class="card-body">
         <h5 class="mb-3">Добавить проект</h5>
         <form method="post" action="/web/projects/create" class="row g-2">
@@ -38,7 +131,7 @@
     </div>
 
     {% for p in projects %}
-      <div class="card shadow-sm mb-2">
+      <div class="card shadow-sm mb-2 project-item">
         <div class="card-body">
           <b>#{{ p.id }} — {{ p.name }}</b>
           <div class="text-muted">{{ p.description or "" }}</div>
