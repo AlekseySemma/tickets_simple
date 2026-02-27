@@ -85,9 +85,9 @@
               <div class="list-group-item {% if not n.is_read %}notification-unread{% endif %}">
                 <div class="d-flex w-100 justify-content-between">
                   <div>
-                    <h6 class="mb-1">{{ n.title }}</h6>
+                    <h6 class="mb-1">{{ fix_mojibake_text(n.title) }}</h6>
                     {% if n.body %}
-                      <p class="mb-1">{{ n.body }}</p>
+                      <p class="mb-1">{{ fix_mojibake_text(n.body) }}</p>
                     {% endif %}
                     {% if not n.is_read %}
                       <small class="text-primary">Непрочитано</small>

@@ -1251,8 +1251,26 @@ def parse_deadline_inputs(deadline_date_raw: str | None, deadline_time4_raw: str
         return None
 
 
+def fix_mojibake_text(value: str | None) -> str:
+    text = (value or "")
+    if not text:
+        return ""
+    # Heuristic: common mojibake markers for UTF-8/CP1251 mismatch.
+    if "Р" not in text and "С" not in text:
+        return text
+    try:
+        repaired = text.encode("cp1251").decode("utf-8")
+    except Exception:
+        return text
+
+    def _cyr_count(s: str) -> int:
+        return sum(1 for ch in s if "\u0400" <= ch <= "\u04FF")
+
+    return repaired if _cyr_count(repaired) >= _cyr_count(text) else text
+
+
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
-    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=action))
+    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=fix_mojibake_text(action)))
 
 
 def push_is_configured() -> bool:
@@ -1303,8 +1321,8 @@ def create_inapp_notification(db: Session, user_id: int, title: str, body: str, 
     n = Notification(
         company_id=user.company_id,
         user_id=user_id,
-        title=(title or "").strip()[:255] or "РЈРІРµРґРѕРјР»РµРЅРёРµ",
-        body=(body or "").strip()[:2000] or None,
+        title=fix_mojibake_text((title or "").strip())[:255] or "Уведомление",
+        body=(fix_mojibake_text((body or "").strip())[:2000] or None),
         url=(url or "").strip()[:500] or "/web",
         is_read=False,
     )
@@ -1665,6 +1683,7 @@ templates.env.globals["format_dt"] = format_dt
 templates.env.globals["to_local_dt"] = to_local_dt
 templates.env.globals["format_deadline"] = format_deadline
 templates.env.globals["template_deadline_date_value"] = template_deadline_date_value
+templates.env.globals["fix_mojibake_text"] = fix_mojibake_text
 
 
 @app.on_event("startup")

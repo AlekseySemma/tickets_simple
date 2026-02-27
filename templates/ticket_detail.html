@@ -356,11 +356,11 @@
 
             <div id="log-list">
               {% for log in ticket_logs %}
-                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ (log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ ((log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
+                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ fix_mojibake_text(log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ (fix_mojibake_text(log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
                   <div class="small muted">
                     <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
                   </div>
-                  <div>{{ log.action }}</div>
+                  <div>{{ fix_mojibake_text(log.action) }}</div>
                 </div>
               {% endfor %}
             </div>
