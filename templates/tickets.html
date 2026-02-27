@@ -337,17 +337,11 @@
             </div>
             {% if org_v2_enabled %}
             <div class="col-12 col-md-6">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <label class="form-label mb-0">Узел оргструктуры</label>
-                <div class="btn-group btn-group-sm" role="group" aria-label="Вид списка узлов">
-                  <button type="button" class="btn btn-outline-secondary org-units-mode-btn" data-mode="tree">Дерево</button>
-                  <button type="button" class="btn btn-outline-secondary org-units-mode-btn" data-mode="short">Короткий</button>
-                </div>
-              </div>
+              <label class="form-label mb-1">&#1059;&#1079;&#1077;&#1083; &#1086;&#1088;&#1075;&#1089;&#1090;&#1088;&#1091;&#1082;&#1090;&#1091;&#1088;&#1099;</label>
               <select name="target_unit_id" class="form-select" required>
                 <option value="" selected disabled>Узел оргструктуры (обязательно)</option>
                 {% for u in org_units %}
-                  <option value="{{ u.id }}" data-tree-name="{{ u.tree_name }}" data-short-name="{{ u.short_name }}">{{ u.name }} (#{{ u.id }})</option>
+                  <option value="{{ u.id }}">{{ u.short_name }} (#{{ u.id }})</option>
                 {% endfor %}
               </select>
               <div class="muted small mt-1">
@@ -455,7 +449,7 @@
               <select name="target_unit_id" class="form-select">
                 <option value="" {% if not target_unit_id_filter %}selected{% endif %}>Все</option>
                 {% for u in org_units %}
-                  <option value="{{ u.id }}" {% if target_unit_id_filter == u.id %}selected{% endif %}>{{ u.name }}</option>
+                  <option value="{{ u.id }}" {% if target_unit_id_filter == u.id %}selected{% endif %}>{{ u.short_name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -869,47 +863,6 @@
 
     render();
   })();
-</script>
-
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-  const select = document.querySelector('select[name="target_unit_id"]');
-  const buttons = document.querySelectorAll(".org-units-mode-btn");
-  if (!select || !buttons.length) return;
-
-  const STORAGE_KEY = "org_units_label_mode";
-  const VALID_MODES = new Set(["tree", "short"]);
-
-  function applyMode(mode) {
-    const currentMode = VALID_MODES.has(mode) ? mode : "tree";
-    select.querySelectorAll("option[data-tree-name]").forEach((opt) => {
-      const id = (opt.value || "").trim();
-      const treeName = opt.dataset.treeName || "";
-      const shortName = opt.dataset.shortName || "";
-      const label = currentMode === "short" ? shortName : treeName;
-      opt.textContent = `${label} (#${id})`;
-    });
-    buttons.forEach((btn) => {
-      const isActive = btn.dataset.mode === currentMode;
-      btn.classList.toggle("btn-primary", isActive);
-      btn.classList.toggle("btn-outline-secondary", !isActive);
-      btn.setAttribute("aria-pressed", isActive ? "true" : "false");
-    });
-  }
-
-  const savedMode = (localStorage.getItem(STORAGE_KEY) || "").toLowerCase();
-  const initialMode = VALID_MODES.has(savedMode) ? savedMode : "tree";
-  applyMode(initialMode);
-
-  buttons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const mode = (btn.dataset.mode || "").toLowerCase();
-      if (!VALID_MODES.has(mode)) return;
-      localStorage.setItem(STORAGE_KEY, mode);
-      applyMode(mode);
-    });
-  });
-});
 </script>
 
 <script src="/static/notifications-widget.js"></script>
