@@ -1145,7 +1145,7 @@ def local_now() -> datetime:
 def format_dt(dt: datetime | None) -> str:
     local_dt = to_local_dt(dt)
     if local_dt is None:
-        return "вЂ”"
+        return "\u2014"
 
     now_local = to_local_dt(datetime.utcnow())
     if not now_local:
@@ -1155,15 +1155,25 @@ def format_dt(dt: datetime | None) -> str:
     now_date = now_local.date()
 
     if date_part == now_date:
-        return local_dt.strftime("РЎРµРіРѕРґРЅСЏ, %H:%M")
+        return local_dt.strftime("\u0421\u0435\u0433\u043e\u0434\u043d\u044f, %H:%M")
     if date_part == (now_date - timedelta(days=1)):
-        return local_dt.strftime("Р’С‡РµСЂР°, %H:%M")
+        return local_dt.strftime("\u0412\u0447\u0435\u0440\u0430, %H:%M")
     if date_part == (now_date + timedelta(days=1)):
-        return local_dt.strftime("Р—Р°РІС‚СЂР°, %H:%M")
+        return local_dt.strftime("\u0417\u0430\u0432\u0442\u0440\u0430, %H:%M")
 
     month_names = {
-        1: "СЏРЅРІ", 2: "С„РµРІ", 3: "РјР°СЂ", 4: "Р°РїСЂ", 5: "РјР°СЏ", 6: "РёСЋРЅ",
-        7: "РёСЋР»", 8: "Р°РІРі", 9: "СЃРµРЅ", 10: "РѕРєС‚", 11: "РЅРѕСЏ", 12: "РґРµРє",
+        1: "\u044f\u043d\u0432",
+        2: "\u0444\u0435\u0432",
+        3: "\u043c\u0430\u0440",
+        4: "\u0430\u043f\u0440",
+        5: "\u043c\u0430\u044f",
+        6: "\u0438\u044e\u043d",
+        7: "\u0438\u044e\u043b",
+        8: "\u0430\u0432\u0433",
+        9: "\u0441\u0435\u043d",
+        10: "\u043e\u043a\u0442",
+        11: "\u043d\u043e\u044f",
+        12: "\u0434\u0435\u043a",
     }
 
     if local_dt.year == now_local.year:
@@ -1177,22 +1187,32 @@ def format_dt(dt: datetime | None) -> str:
 
 def format_deadline(dt: datetime | None) -> str:
     if dt is None:
-        return "вЂ”"
+        return "\u2014"
 
     now_local = local_now()
     date_part = dt.date()
     now_date = now_local.date()
 
     if date_part == now_date:
-        return dt.strftime("РЎРµРіРѕРґРЅСЏ, %H:%M")
+        return dt.strftime("\u0421\u0435\u0433\u043e\u0434\u043d\u044f, %H:%M")
     if date_part == (now_date - timedelta(days=1)):
-        return dt.strftime("Р’С‡РµСЂР°, %H:%M")
+        return dt.strftime("\u0412\u0447\u0435\u0440\u0430, %H:%M")
     if date_part == (now_date + timedelta(days=1)):
-        return dt.strftime("Р—Р°РІС‚СЂР°, %H:%M")
+        return dt.strftime("\u0417\u0430\u0432\u0442\u0440\u0430, %H:%M")
 
     month_names = {
-        1: "СЏРЅРІ", 2: "С„РµРІ", 3: "РјР°СЂ", 4: "Р°РїСЂ", 5: "РјР°СЏ", 6: "РёСЋРЅ",
-        7: "РёСЋР»", 8: "Р°РІРі", 9: "СЃРµРЅ", 10: "РѕРєС‚", 11: "РЅРѕСЏ", 12: "РґРµРє",
+        1: "\u044f\u043d\u0432",
+        2: "\u0444\u0435\u0432",
+        3: "\u043c\u0430\u0440",
+        4: "\u0430\u043f\u0440",
+        5: "\u043c\u0430\u044f",
+        6: "\u0438\u044e\u043d",
+        7: "\u0438\u044e\u043b",
+        8: "\u0430\u0432\u0433",
+        9: "\u0441\u0435\u043d",
+        10: "\u043e\u043a\u0442",
+        11: "\u043d\u043e\u044f",
+        12: "\u0434\u0435\u043a",
     }
 
     if dt.year == now_local.year:
@@ -2938,10 +2958,10 @@ def web_tickets(
         tickets_query = tickets_query.order_by(Ticket.id.desc())
 
     status_labels = {
-        "NEW": "РќРѕРІР°СЏ",
-        "IN_PROGRESS": "Р’ СЂР°Р±РѕС‚Рµ",
-        "DONE": "Р’С‹РїРѕР»РЅРµРЅР°",
-        "CANCELED": "РћС‚РјРµРЅРµРЅР°",
+        "NEW": "\u041d\u043e\u0432\u0430\u044f",
+        "IN_PROGRESS": "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
+        "DONE": "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
+        "CANCELED": "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
     }
 
     # Р”Р°С€Р±РѕСЂРґ РїРѕ С‚РµРєСѓС‰РµРјСѓ СЃРїРёСЃРєСѓ tickets (РїРѕСЃР»Рµ С„РёР»СЊС‚СЂРѕРІ)
@@ -4782,10 +4802,10 @@ def web_ticket_detail(
     )
 
     status_labels = {
-        "NEW": "РќРѕРІР°СЏ",
-        "IN_PROGRESS": "Р’ СЂР°Р±РѕС‚Рµ",
-        "DONE": "Р’С‹РїРѕР»РЅРµРЅР°",
-        "CANCELED": "РћС‚РјРµРЅРµРЅР°",
+        "NEW": "\u041d\u043e\u0432\u0430\u044f",
+        "IN_PROGRESS": "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
+        "DONE": "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
+        "CANCELED": "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
     }
 
     return templates.TemplateResponse(
