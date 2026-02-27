@@ -1014,6 +1014,14 @@ def create_tickets_from_template(
                 db.add(ticket)
                 db.flush()
                 add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="создание по шаблону")
+                if ticket.executor_id and ticket.executor_id != actor_id:
+                    send_push_to_user(
+                        db=db,
+                        user_id=ticket.executor_id,
+                        title=f"Новая заявка #{ticket.id}",
+                        body=ticket.title or "Вам назначена новая заявка",
+                        url=f"/web/tickets/{ticket.id}",
+                    )
             created_count += 1
         except SQLAlchemyError:
             skipped_count += 1
