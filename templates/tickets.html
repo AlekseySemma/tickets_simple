@@ -510,6 +510,20 @@
               </div>
             </div>
             {% endif %}
+            <div class="col-12 col-md-6">
+              <label class="form-label mb-1">Исполнитель</label>
+              {% if user.role in ["ADMIN", "CURATOR"] %}
+                <select name="executor_id" class="form-select">
+                  <option value="" selected>Исполнитель (необязательно)</option>
+                  {% for e in executors %}
+                    <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <input type="hidden" name="executor_id" value="" />
+                <div class="form-control bg-light">Исполнитель: вы сами</div>
+              {% endif %}
+            </div>
             <div class="col-12">
               <textarea name="description" class="form-control" placeholder="Описание"></textarea>
             </div>
@@ -535,19 +549,6 @@
               <div class="col-12 muted small">
                 Если не заполнять — срок не будет установлен.
               </div>
-            </div>
-            <div class="col-12 col-md-6">
-              {% if user.role in ["ADMIN", "CURATOR"] %}
-                <select name="executor_id" class="form-select">
-                  <option value="" selected>Исполнитель (необязательно)</option>
-                  {% for e in executors %}
-                    <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
-                  {% endfor %}
-                </select>
-              {% else %}
-                <input type="hidden" name="executor_id" value="" />
-                <div class="form-control bg-light">Исполнитель: вы сами</div>
-              {% endif %}
             </div>
             <div class="col-12">
               <button class="btn btn-primary">Создать</button>
