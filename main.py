@@ -2790,9 +2790,7 @@ def web_tickets(
     while stack:
         current_id, current_name, depth, ancestor_has_next, is_last = stack.pop()
         if depth > 0:
-            tree_trunk = "".join("в”‚  " if has_next else "   " for has_next in ancestor_has_next)
-            tree_branch = "в””в”Ђ " if is_last else "в”њв”Ђ "
-            tree_name = f"{tree_trunk}{tree_branch}{current_name}"
+            tree_name = f"{'- ' * depth}{current_name}"
             short_name = f"{'- ' * depth}{current_name}"
         else:
             tree_name = current_name
