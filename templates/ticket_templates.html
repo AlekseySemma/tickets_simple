@@ -29,6 +29,14 @@
     {% if request.query_params.get("run_error") == "bad_period" %}
       <div class="alert alert-warning">Некорректный период. Используйте формат YYYY-MM.</div>
     {% endif %}
+    {% if request.query_params.get("keys_cleared") == "1" %}
+      <div class="alert alert-info">
+        Ключи очищены: {{ request.query_params.get("keys_deleted") or 0 }}, период {{ request.query_params.get("keys_period") or "" }}.
+      </div>
+    {% endif %}
+    {% if request.query_params.get("keys_error") == "bad_period" %}
+      <div class="alert alert-warning">Некорректный период для очистки ключей. Используйте формат YYYY-MM.</div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
@@ -125,6 +133,14 @@
             </div>
             <div class="col-12 col-md-3">
               <button class="btn btn-sm btn-success" type="submit">Запустить шаблон</button>
+            </div>
+          </form>
+          <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/clear-keys" onsubmit="return confirm('Очистить ключи генерации по периоду для этого шаблона?');">
+            <div class="col-12 col-md-3">
+              <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
+            </div>
+            <div class="col-12 col-md-3">
+              <button class="btn btn-sm btn-outline-warning" type="submit">Очистить ключи периода</button>
             </div>
           </form>
 

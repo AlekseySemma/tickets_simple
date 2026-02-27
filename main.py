@@ -2414,6 +2414,32 @@ def run_ticket_template(
         "period_key": effective_period,
     }
 
+
+@app.post("/ticket-templates/{template_id}/clear-keys")
+def clear_ticket_template_keys(
+    template_id: int,
+    payload: TicketTemplateRunIn,
+    db: Session = Depends(get_db),
+    manager: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(manager)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != manager.company_id:
+        raise HTTPException(404, "Ticket template not found")
+
+    normalized_period = normalize_period_key(payload.period_key) or month_period_key()
+    deleted_count = (
+        db.query(TicketGenerationKey)
+        .filter(
+            TicketGenerationKey.company_id == manager.company_id,
+            TicketGenerationKey.ticket_template_id == item.id,
+            TicketGenerationKey.period_key == normalized_period,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"ok": True, "period_key": normalized_period, "deleted_count": int(deleted_count or 0)}
+
 # =========================
 # TICKETS API
 # =========================
@@ -4728,6 +4754,45 @@ async def web_ticket_templates_run(
         url=(
             "/web/ticket-templates"
             f"?run_ok=1&run_created={created_count}&run_skipped={skipped_count}&run_period={quote(effective_period)}"
+        ),
+        status_code=HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post("/web/ticket-templates/{template_id}/clear-keys")
+async def web_ticket_templates_clear_keys(
+    template_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(TicketTemplate, template_id)
+    if not item or item.company_id != user.company_id:
+        raise HTTPException(404, "Ticket template not found")
+
+    form = await request.form()
+    raw_period_key = (form.get("period_key") or "").strip()
+    normalized_period_candidate = normalize_period_key(raw_period_key)
+    if raw_period_key and normalized_period_candidate is None:
+        return RedirectResponse(url="/web/ticket-templates?keys_error=bad_period", status_code=HTTP_303_SEE_OTHER)
+    normalized_period = normalized_period_candidate or month_period_key()
+    deleted_count = (
+        db.query(TicketGenerationKey)
+        .filter(
+            TicketGenerationKey.company_id == user.company_id,
+            TicketGenerationKey.ticket_template_id == item.id,
+            TicketGenerationKey.period_key == normalized_period,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return RedirectResponse(
+        url=(
+            "/web/ticket-templates"
+            f"?keys_cleared=1&keys_period={quote(normalized_period)}&keys_deleted={int(deleted_count or 0)}"
         ),
         status_code=HTTP_303_SEE_OTHER,
     )
