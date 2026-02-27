@@ -4116,6 +4116,66 @@ def web_org_structure_toggle(
     return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 
+@app.post("/web/org-structure/{unit_id}/delete")
+def web_org_structure_delete(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    if not ORG_STRUCTURE_V2_ENABLED:
+        return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+
+    item = db.get(OrgUnit, unit_id)
+    if not item or item.company_id != user.company_id:
+        return RedirectResponse(url="/web/org-structure?error=delete_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    has_children = (
+        db.query(OrgUnit.id)
+        .filter(OrgUnit.company_id == user.company_id, OrgUnit.parent_id == unit_id)
+        .first()
+        is not None
+    )
+    if has_children:
+        return RedirectResponse(url="/web/org-structure?error=delete_has_children", status_code=HTTP_303_SEE_OTHER)
+
+    has_assignments = (
+        db.query(UnitAssignment.id)
+        .filter(UnitAssignment.company_id == user.company_id, UnitAssignment.unit_id == unit_id)
+        .first()
+        is not None
+    )
+    if has_assignments:
+        return RedirectResponse(url="/web/org-structure?error=delete_has_assignments", status_code=HTTP_303_SEE_OTHER)
+
+    has_templates = (
+        db.query(TicketTemplate.id)
+        .filter(TicketTemplate.company_id == user.company_id, TicketTemplate.scope_unit_id == unit_id)
+        .first()
+        is not None
+    )
+    if has_templates:
+        return RedirectResponse(url="/web/org-structure?error=delete_has_templates", status_code=HTTP_303_SEE_OTHER)
+
+    has_tickets = (
+        db.query(Ticket.id)
+        .filter(Ticket.company_id == user.company_id, Ticket.target_unit_id == unit_id)
+        .first()
+        is not None
+    )
+    if has_tickets:
+        return RedirectResponse(url="/web/org-structure?error=delete_has_tickets", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        db.delete(item)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=delete_failed", status_code=HTTP_303_SEE_OTHER)
+
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
 @app.get("/web/admin/companies")
 def web_admin_companies(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_platform_admin(user):

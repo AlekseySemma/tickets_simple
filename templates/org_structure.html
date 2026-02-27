@@ -44,6 +44,12 @@
         {% if err == "edit_parent_not_found" %}Родитель для редактирования не найден.{% endif %}
         {% if err == "edit_cycle" %}Нельзя сделать родителем дочерний узел (цикл в дереве).{% endif %}
         {% if err == "edit_failed" %}Не удалось сохранить изменения узла.{% endif %}
+        {% if err == "delete_not_found" %}Узел для удаления не найден.{% endif %}
+        {% if err == "delete_has_children" %}Нельзя удалить узел: сначала удалите или перенесите дочерние узлы.{% endif %}
+        {% if err == "delete_has_assignments" %}Нельзя удалить узел: есть закрепленные исполнители.{% endif %}
+        {% if err == "delete_has_templates" %}Нельзя удалить узел: он используется в шаблонах заявок.{% endif %}
+        {% if err == "delete_has_tickets" %}Нельзя удалить узел: по нему есть заявки.{% endif %}
+        {% if err == "delete_failed" %}Не удалось удалить узел.{% endif %}
       </div>
     {% endif %}
     {% if import_report.ok == "1" %}
@@ -260,6 +266,9 @@
                           {% else %}
                             <button class="btn btn-sm btn-outline-success" type="submit">Включить</button>
                           {% endif %}
+                        </form>
+                        <form method="post" action="/web/org-structure/{{ u.id }}/delete" onsubmit="return confirm('Удалить узел #{{ u.id }} «{{ u.name }}»?');">
+                          <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
                         </form>
                       </div>
                     </td>
