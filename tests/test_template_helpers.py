@@ -2,10 +2,22 @@
 import unittest
 from datetime import datetime
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 os.environ.setdefault("JWT_SECRET", "x" * 40)
 os.environ.setdefault("SKIP_MIGRATION_CHECK", "1")
+os.environ.setdefault("DATABASE_URL", "sqlite://")
 
 import main  # noqa: E402
+
+main.engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+main.SessionLocal = sessionmaker(bind=main.engine, autocommit=False, autoflush=False)
 
 
 class TemplateHelpersTest(unittest.TestCase):

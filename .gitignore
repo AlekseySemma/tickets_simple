@@ -7,3 +7,5 @@ uploads/
 *.pyo
 *.pyd
 .pytest_cache/
+test_stage6.db
+test_stage6.db-journal
