@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -11,101 +11,148 @@
 <body class="bg-light">
   <div class="container py-4" style="max-width: 1280px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h3 class="mb-0">Пользователи</h3>
+      <div>
+        <h3 class="mb-0">Пользователи</h3>
+        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ user.role }})</div>
+      </div>
       <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
         <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
 
-    <div class="row g-3 mb-3">
-      <div class="col-12 col-lg-6">
-        <div class="card shadow-sm h-100">
-          <div class="card-body">
-            <h5 class="mb-3">Добавить пользователя вручную</h5>
-            <form method="post" action="/web/users/create" class="row g-2">
-              <div class="col-12 col-md-6">
-                <input name="name" class="form-control" placeholder="Имя" required />
-              </div>
-              <div class="col-12 col-md-6">
-                <input name="email" type="email" class="form-control" placeholder="Email" required />
-              </div>
-              <div class="col-12 col-md-6">
-                <input name="password" type="password" class="form-control" placeholder="Пароль" required />
-              </div>
-              <div class="col-12 col-md-6">
-                <select name="role" class="form-select" required>
-                  <option value="EXECUTOR">Исполнитель (EXECUTOR)</option>
-                  <option value="CURATOR">Куратор (CURATOR)</option>
-                </select>
-              </div>
-              <div class="col-12">
-                <button class="btn btn-primary">Создать</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
+    {% if ok == "created" %}
+      <div class="alert alert-success">Пользователь создан.</div>
+    {% elif ok == "updated" %}
+      <div class="alert alert-success">Данные пользователя обновлены.</div>
+    {% elif ok == "deleted" %}
+      <div class="alert alert-success">Пользователь удален.</div>
+    {% endif %}
 
-      <div class="col-12 col-lg-6">
-        <div class="card shadow-sm h-100">
-          <div class="card-body">
-            <h5 class="mb-3">Ссылка для саморегистрации</h5>
-            <form method="post" action="/web/users/invites/create" class="row g-2">
-              <div class="col-12 col-md-6">
-                <select name="role" class="form-select" required>
-                  <option value="EXECUTOR">Исполнитель (EXECUTOR)</option>
-                  <option value="CURATOR">Куратор (CURATOR)</option>
-                </select>
-              </div>
-              <div class="col-12 col-md-6">
-                <input name="expires_days" type="number" min="1" max="30" value="7" class="form-control" />
-              </div>
-              <div class="col-12">
-                <button class="btn btn-outline-primary">Сгенерировать ссылку</button>
-              </div>
-            </form>
-            <div class="text-muted small mt-2">Ссылка одноразовая и действует ограниченное время.</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    {% if err == "bad_input" %}
+      <div class="alert alert-danger">Заполните обязательные поля.</div>
+    {% elif err == "bad_role" %}
+      <div class="alert alert-danger">Недопустимая роль для создания пользователя.</div>
+    {% elif err == "email_exists" %}
+      <div class="alert alert-danger">Пользователь с таким email уже существует.</div>
+    {% elif err == "user_not_found" %}
+      <div class="alert alert-danger">Пользователь не найден или недоступен для управления.</div>
+    {% elif err == "save_failed" %}
+      <div class="alert alert-danger">Не удалось сохранить изменения.</div>
+    {% elif err == "delete_blocked" %}
+      <div class="alert alert-danger">Нельзя удалить пользователя: он уже участвует в заявках или шаблонах.</div>
+    {% elif err == "delete_failed" %}
+      <div class="alert alert-danger">Не удалось удалить пользователя.</div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="mb-3">Активные/последние ссылки</h5>
-        {% if invite_links and invite_links|length > 0 %}
-          {% for inv in invite_links %}
-            <div class="border rounded p-2 mb-2">
-              <div class="small text-muted mb-1">
-                #{{ inv.id }} · {{ inv.role }} ·
-                {% if inv.is_used %}использована{% else %}не использована{% endif %}
-                {% if inv.expires_at %} · до {{ format_dt(inv.expires_at) }}{% endif %}
-              </div>
-              <div class="input-group input-group-sm">
-                <input class="form-control" readonly value="{{ inv.url }}" />
-              </div>
+        <h5 class="mb-3">Добавить пользователя</h5>
+        <form method="post" action="/web/users/create" class="row g-2">
+          <div class="col-12 col-md-4">
+            <input name="name" class="form-control" placeholder="Имя" required />
+          </div>
+          <div class="col-12 col-md-4">
+            <input name="email" type="email" class="form-control" placeholder="Email" required />
+          </div>
+          <div class="col-12 col-md-4">
+            <input name="password" type="password" class="form-control" placeholder="Пароль" required />
+          </div>
+          {% if user.role == "ADMIN" %}
+            <div class="col-12 col-md-4">
+              <select name="role" class="form-select" required>
+                <option value="EXECUTOR">Исполнитель</option>
+                <option value="CURATOR">Куратор</option>
+              </select>
             </div>
-          {% endfor %}
-        {% else %}
-          <div class="alert alert-info mb-0">Ссылок пока нет.</div>
-        {% endif %}
+          {% else %}
+            <input type="hidden" name="role" value="EXECUTOR" />
+            <div class="col-12">
+              <div class="form-control bg-light">Будет создан пользователь с ролью: Исполнитель</div>
+            </div>
+          {% endif %}
+          <div class="col-12">
+            <button class="btn btn-primary">Создать пользователя</button>
+          </div>
+        </form>
       </div>
     </div>
 
-    {% for u in users %}
-      <div class="card shadow-sm mb-2">
+    {% if user.role == "ADMIN" %}
+      <div class="card shadow-sm mb-3">
         <div class="card-body">
-          <b>#{{ u.id }} - {{ u.name }}</b>
-          <div class="text-muted">{{ u.email }} · {{ u.role }}</div>
+          <h5 class="mb-3">Кураторы</h5>
+          {% for u in curators %}
+            <div class="card shadow-sm mb-2">
+              <div class="card-body">
+                <div class="small text-muted mb-2">#{{ u.id }} · {{ u.role }}</div>
+                <form method="post" action="/web/users/{{ u.id }}/update" class="row g-2 align-items-end">
+                  <div class="col-12 col-md-4">
+                    <label class="form-label mb-1">Имя</label>
+                    <input name="name" class="form-control" value="{{ u.name }}" required />
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <label class="form-label mb-1">Email</label>
+                    <input name="email" type="email" class="form-control" value="{{ u.email }}" required />
+                  </div>
+                  <div class="col-12 col-md-2">
+                    <label class="form-label mb-1">Новый пароль</label>
+                    <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
+                  </div>
+                  <div class="col-12 col-md-2 d-grid">
+                    <button class="btn btn-outline-primary">Сохранить</button>
+                  </div>
+                </form>
+                <form method="post" action="/web/users/{{ u.id }}/delete" class="mt-2" onsubmit="return confirm('Удалить пользователя #{{ u.id }} ({{ u.name }})?');">
+                  <button class="btn btn-outline-danger btn-sm">Удалить пользователя</button>
+                </form>
+              </div>
+            </div>
+          {% endfor %}
+          {% if curators|length == 0 %}
+            <div class="alert alert-info mb-0">Кураторов пока нет.</div>
+          {% endif %}
         </div>
       </div>
-    {% endfor %}
-
-    {% if users|length == 0 %}
-      <div class="alert alert-info">Пользователей пока нет.</div>
     {% endif %}
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Исполнители</h5>
+        {% for u in executors %}
+          <div class="card shadow-sm mb-2">
+            <div class="card-body">
+              <div class="small text-muted mb-2">#{{ u.id }} · {{ u.role }}</div>
+              <form method="post" action="/web/users/{{ u.id }}/update" class="row g-2 align-items-end">
+                <div class="col-12 col-md-4">
+                  <label class="form-label mb-1">Имя</label>
+                  <input name="name" class="form-control" value="{{ u.name }}" required />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label mb-1">Email</label>
+                  <input name="email" type="email" class="form-control" value="{{ u.email }}" required />
+                </div>
+                <div class="col-12 col-md-2">
+                  <label class="form-label mb-1">Новый пароль</label>
+                  <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
+                </div>
+                <div class="col-12 col-md-2 d-grid">
+                  <button class="btn btn-outline-primary">Сохранить</button>
+                </div>
+              </form>
+              <form method="post" action="/web/users/{{ u.id }}/delete" class="mt-2" onsubmit="return confirm('Удалить пользователя #{{ u.id }} ({{ u.name }})?');">
+                <button class="btn btn-outline-danger btn-sm">Удалить пользователя</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+        {% if executors|length == 0 %}
+          <div class="alert alert-info mb-0">Исполнителей пока нет.</div>
+        {% endif %}
+      </div>
+    </div>
   </div>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>

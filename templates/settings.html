@@ -49,12 +49,9 @@
             <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
             <a class="btn btn-outline-secondary" href="/web/ticket-types">Типы заявок</a>
             <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны заявок</a>
-            <a class="btn btn-outline-secondary" href="/web/executors">Исполнители</a>
+            <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
             {% if org_v2_enabled %}
               <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
-            {% endif %}
-            {% if user.role == "ADMIN" %}
-              <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
             {% endif %}
           </div>
         {% else %}

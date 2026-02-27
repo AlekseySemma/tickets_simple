@@ -5044,9 +5044,28 @@ async def web_ticket_templates_clear_keys(
         status_code=HTTP_303_SEE_OTHER,
     )
 
-# ====== WEB: Executors ======
+# ====== WEB: Users ======
+def manageable_roles_for_web_user_management(actor: User) -> tuple[Role, ...]:
+    if actor.role == Role.admin:
+        return (Role.curator, Role.executor)
+    if actor.role == Role.curator:
+        return (Role.executor,)
+    return tuple()
+
+
+def can_manage_company_user(actor: User, target: User) -> bool:
+    if actor.company_id != target.company_id:
+        return False
+    return target.role in manageable_roles_for_web_user_management(actor)
+
+
 @app.get("/web/executors")
-def web_executors(
+def web_executors():
+    return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.get("/web/users")
+def web_users(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -5056,143 +5075,31 @@ def web_executors(
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
-    executors = (
-        db.query(User.id, User.name, User.email)
-        .filter(User.company_id == user.company_id, User.role == Role.executor)
+    allowed_roles = manageable_roles_for_web_user_management(user)
+    if not allowed_roles:
+        raise HTTPException(403, "Forbidden")
+
+    users = (
+        db.query(User.id, User.name, User.email, User.role)
+        .filter(
+            User.company_id == user.company_id,
+            User.role.in_(allowed_roles),
+        )
         .order_by(User.id.desc())
         .all()
     )
+    curators = [u for u in users if u.role == Role.curator]
+    executors = [u for u in users if u.role == Role.executor]
     return templates.TemplateResponse(
-        "executors.html",
+        "users.html",
         {
             "request": request,
             "user": user,
+            "curators": curators,
             "executors": executors,
             "ok": (ok or "").strip(),
             "err": (err or "").strip(),
         },
-    )
-
-
-@app.post("/web/executors/create")
-async def web_executors_create(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    email = (form.get("email") or "").strip()
-    password = (form.get("password") or "").strip()
-    if not (name and email and password):
-        return RedirectResponse(url="/web/executors?err=bad_input", status_code=HTTP_303_SEE_OTHER)
-    if db.query(User.id).filter(User.email == email).first():
-        return RedirectResponse(url="/web/executors?err=email_exists", status_code=HTTP_303_SEE_OTHER)
-
-    u = User(
-        email=email,
-        name=name,
-        password_hash=hash_password(password),
-        role=Role.executor,
-        company_id=user.company_id,
-    )
-    try:
-        db.add(u)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/executors?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/executors?ok=created", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/executors/{executor_id}/update")
-async def web_executors_update(
-    executor_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    email = (form.get("email") or "").strip()
-    password = (form.get("password") or "").strip()
-    if not (name and email):
-        return RedirectResponse(url="/web/executors?err=bad_input", status_code=HTTP_303_SEE_OTHER)
-
-    item = db.get(User, executor_id)
-    if not item or item.company_id != user.company_id or item.role != Role.executor:
-        return RedirectResponse(url="/web/executors?err=executor_not_found", status_code=HTTP_303_SEE_OTHER)
-
-    email_owner = (
-        db.query(User.id)
-        .filter(User.email == email, User.id != item.id)
-        .first()
-    )
-    if email_owner:
-        return RedirectResponse(url="/web/executors?err=email_exists", status_code=HTTP_303_SEE_OTHER)
-
-    item.name = name
-    item.email = email
-    if password:
-        item.password_hash = hash_password(password)
-    try:
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/executors?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/executors?ok=updated", status_code=HTTP_303_SEE_OTHER)
-
-
-# ====== WEB: Users ======
-@app.get("/web/users")
-def web_users(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_admin(user):
-        raise HTTPException(403, "Only admin")
-    ensure_company_user(user)
-    users = (
-        db.query(User.id, User.name, User.email, User.role)
-        .filter(User.company_id == user.company_id)
-        .order_by(User.id.desc())
-        .all()
-    )
-    invites = (
-        db.query(
-            RegistrationInvite.id,
-            RegistrationInvite.role,
-            RegistrationInvite.token,
-            RegistrationInvite.created_at,
-            RegistrationInvite.expires_at,
-            RegistrationInvite.used_by,
-        )
-        .filter(RegistrationInvite.company_id == user.company_id)
-        .order_by(RegistrationInvite.id.desc())
-        .limit(30)
-        .all()
-    )
-    base_url = str(request.base_url).rstrip("/")
-    invite_links = []
-    for inv in invites:
-        invite_links.append(
-            {
-                "id": inv.id,
-                "role": inv.role.value,
-                "url": f"{base_url}/web/register?token={inv.token}",
-                "created_at": inv.created_at,
-                "expires_at": inv.expires_at,
-                "is_used": inv.used_by is not None,
-            }
-        )
-    return templates.TemplateResponse(
-        "users.html",
-        {"request": request, "users": users, "invite_links": invite_links},
     )
 
 
@@ -5227,24 +5134,147 @@ async def web_users_invite_create(request: Request, db: Session = Depends(get_db
 
 @app.post("/web/users/create")
 async def web_users_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_admin(user):
-        raise HTTPException(403, "Only admin")
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
     form = await request.form()
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
     role_raw = (form.get("role") or "").strip().upper()
-    if not (name and email and password and role_raw):
-        return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
-    if db.query(User).filter(User.email == email).first():
-        return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
-    if role_raw not in ("CURATOR", "EXECUTOR"):
-        return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+    allowed_roles = manageable_roles_for_web_user_management(user)
+    if not allowed_roles:
+        raise HTTPException(403, "Forbidden")
 
-    u = User(email=email, name=name, password_hash=hash_password(password), role=Role(role_raw), company_id=user.company_id)
-    db.add(u); db.commit()
-    return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+    if not (name and email and password):
+        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
+    if db.query(User.id).filter(User.email == email).first():
+        return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
+
+    if user.role == Role.curator:
+        role_value = Role.executor
+    else:
+        if role_raw not in ("CURATOR", "EXECUTOR"):
+            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
+        role_value = Role(role_raw)
+        if role_value not in allowed_roles:
+            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
+
+    u = User(email=email, name=name, password_hash=hash_password(password), role=role_value, company_id=user.company_id)
+    try:
+        db.add(u)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/users?ok=created", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/users/{managed_user_id}/update")
+async def web_users_update(
+    managed_user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    password = (form.get("password") or "").strip()
+    if not (name and email):
+        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
+
+    item = db.get(User, managed_user_id)
+    if not item or not can_manage_company_user(user, item):
+        return RedirectResponse(url="/web/users?err=user_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    email_owner = db.query(User.id).filter(User.email == email, User.id != item.id).first()
+    if email_owner:
+        return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
+
+    item.name = name
+    item.email = email
+    if password:
+        item.password_hash = hash_password(password)
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/users?ok=updated", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/users/{managed_user_id}/delete")
+async def web_users_delete(
+    managed_user_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    item = db.get(User, managed_user_id)
+    if not item or not can_manage_company_user(user, item):
+        return RedirectResponse(url="/web/users?err=user_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    # Do not delete users that already have business history in the ticket system.
+    has_ticket_refs = db.query(Ticket.id).filter(
+        Ticket.company_id == user.company_id,
+        or_(Ticket.created_by == item.id, Ticket.executor_id == item.id),
+    ).first()
+    has_comment_refs = (
+        db.query(Comment.id)
+        .join(Ticket, Ticket.id == Comment.ticket_id)
+        .filter(Ticket.company_id == user.company_id, Comment.author_id == item.id)
+        .first()
+    )
+    has_attachment_refs = (
+        db.query(Attachment.id)
+        .join(Ticket, Ticket.id == Attachment.ticket_id)
+        .filter(Ticket.company_id == user.company_id, Attachment.uploader_id == item.id)
+        .first()
+    )
+    has_log_refs = (
+        db.query(TicketLog.id)
+        .join(Ticket, Ticket.id == TicketLog.ticket_id)
+        .filter(Ticket.company_id == user.company_id, TicketLog.actor_id == item.id)
+        .first()
+    )
+    has_template_refs = db.query(TicketTemplate.id).filter(
+        TicketTemplate.company_id == user.company_id,
+        TicketTemplate.default_executor_id == item.id,
+    ).first()
+    if has_ticket_refs or has_comment_refs or has_attachment_refs or has_log_refs or has_template_refs:
+        return RedirectResponse(url="/web/users?err=delete_blocked", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        db.query(UnitAssignment).filter(
+            UnitAssignment.company_id == user.company_id,
+            UnitAssignment.user_id == item.id,
+        ).delete(synchronize_session=False)
+        db.query(PushSubscription).filter(PushSubscription.user_id == item.id).delete(synchronize_session=False)
+        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id == item.id).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.user_id == item.id).delete(synchronize_session=False)
+        db.query(RegistrationInvite).filter(
+            RegistrationInvite.company_id == user.company_id,
+            RegistrationInvite.used_by == item.id,
+        ).update(
+            {RegistrationInvite.used_by: None, RegistrationInvite.used_at: None},
+            synchronize_session=False,
+        )
+        db.query(RegistrationInvite).filter(
+            RegistrationInvite.company_id == user.company_id,
+            RegistrationInvite.created_by == item.id,
+        ).delete(synchronize_session=False)
+        db.delete(item)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/users?err=delete_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/users?ok=deleted", status_code=HTTP_303_SEE_OTHER)
 
 @app.get("/web/tickets/{ticket_id}")
 def web_ticket_detail(
