@@ -5044,7 +5044,114 @@ async def web_ticket_templates_clear_keys(
         status_code=HTTP_303_SEE_OTHER,
     )
 
-# ====== WEB: Users (Executors) ======
+# ====== WEB: Executors ======
+@app.get("/web/executors")
+def web_executors(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ok: str | None = None,
+    err: str | None = None,
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    executors = (
+        db.query(User.id, User.name, User.email)
+        .filter(User.company_id == user.company_id, User.role == Role.executor)
+        .order_by(User.id.desc())
+        .all()
+    )
+    return templates.TemplateResponse(
+        "executors.html",
+        {
+            "request": request,
+            "user": user,
+            "executors": executors,
+            "ok": (ok or "").strip(),
+            "err": (err or "").strip(),
+        },
+    )
+
+
+@app.post("/web/executors/create")
+async def web_executors_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    password = (form.get("password") or "").strip()
+    if not (name and email and password):
+        return RedirectResponse(url="/web/executors?err=bad_input", status_code=HTTP_303_SEE_OTHER)
+    if db.query(User.id).filter(User.email == email).first():
+        return RedirectResponse(url="/web/executors?err=email_exists", status_code=HTTP_303_SEE_OTHER)
+
+    u = User(
+        email=email,
+        name=name,
+        password_hash=hash_password(password),
+        role=Role.executor,
+        company_id=user.company_id,
+    )
+    try:
+        db.add(u)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/executors?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/executors?ok=created", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/executors/{executor_id}/update")
+async def web_executors_update(
+    executor_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    password = (form.get("password") or "").strip()
+    if not (name and email):
+        return RedirectResponse(url="/web/executors?err=bad_input", status_code=HTTP_303_SEE_OTHER)
+
+    item = db.get(User, executor_id)
+    if not item or item.company_id != user.company_id or item.role != Role.executor:
+        return RedirectResponse(url="/web/executors?err=executor_not_found", status_code=HTTP_303_SEE_OTHER)
+
+    email_owner = (
+        db.query(User.id)
+        .filter(User.email == email, User.id != item.id)
+        .first()
+    )
+    if email_owner:
+        return RedirectResponse(url="/web/executors?err=email_exists", status_code=HTTP_303_SEE_OTHER)
+
+    item.name = name
+    item.email = email
+    if password:
+        item.password_hash = hash_password(password)
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/executors?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/executors?ok=updated", status_code=HTTP_303_SEE_OTHER)
+
+
+# ====== WEB: Users ======
 @app.get("/web/users")
 def web_users(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_admin(user):
