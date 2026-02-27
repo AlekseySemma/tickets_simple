@@ -2378,9 +2378,21 @@ def delete_ticket_template(
     item = db.get(TicketTemplate, template_id)
     if not item or item.company_id != _manager.company_id:
         raise HTTPException(404, "Ticket template not found")
-    db.delete(item)
-    db.commit()
-    return {"ok": True}
+    try:
+        db.query(Ticket).filter(
+            Ticket.company_id == _manager.company_id,
+            Ticket.ticket_template_id == item.id,
+        ).update({"ticket_template_id": None}, synchronize_session=False)
+        db.query(TicketGenerationKey).filter(
+            TicketGenerationKey.company_id == _manager.company_id,
+            TicketGenerationKey.ticket_template_id == item.id,
+        ).delete(synchronize_session=False)
+        db.delete(item)
+        db.commit()
+        return {"ok": True}
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(400, "Cannot delete ticket template")
 
 
 @app.post("/ticket-templates/{template_id}/run")
@@ -4717,9 +4729,21 @@ async def web_ticket_templates_delete(
     item = db.get(TicketTemplate, template_id)
     if not item or item.company_id != user.company_id:
         raise HTTPException(404, "Ticket template not found")
-    db.delete(item)
-    db.commit()
-    return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    try:
+        db.query(Ticket).filter(
+            Ticket.company_id == user.company_id,
+            Ticket.ticket_template_id == item.id,
+        ).update({"ticket_template_id": None}, synchronize_session=False)
+        db.query(TicketGenerationKey).filter(
+            TicketGenerationKey.company_id == user.company_id,
+            TicketGenerationKey.ticket_template_id == item.id,
+        ).delete(synchronize_session=False)
+        db.delete(item)
+        db.commit()
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/ticket-templates?delete_error=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/ticket-templates/{template_id}/run")
