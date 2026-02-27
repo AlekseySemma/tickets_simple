@@ -74,6 +74,7 @@ RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
 ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
+TEXT_REPAIR_ON_START = (os.getenv("TEXT_REPAIR_ON_START", "1").strip().lower() in {"1", "true", "yes", "on"})
 
 # =========================
 # Р‘Р°Р·Р° РґР°РЅРЅС‹С… (SQLite)
@@ -1322,13 +1323,11 @@ def fix_mojibake_text(value: str | None) -> str:
     if not text:
         return ""
 
-    marker_pattern = re.compile(r"(?:[\u00D0\u00D1\u0420\u0421].){2,}")
-    if not marker_pattern.search(text):
-        return text
-
     def _score(s: str) -> int:
         cyr = sum(1 for ch in s if "\u0400" <= ch <= "\u04FF")
-        bad = len(re.findall(r"[\u00D0\u00D1\u0420\u0421](?=[^\s])", s)) + s.count("\uFFFD")
+        bad = len(re.findall(r"[\u00D0\u00D1\u0420\u0421\u0440\u0441](?=[^\s])", s))
+        bad += len(re.findall(r"[\u201A\u201E\u2026\u2020\u2021\u2030\u2122]", s))
+        bad += s.count("\uFFFD")
         return cyr * 2 - bad
 
     best = text
@@ -1358,6 +1357,32 @@ def fix_mojibake_text(value: str | None) -> str:
         current = best
 
     return best
+
+
+def repair_mojibake_data(db: Session) -> int:
+    fixed = 0
+
+    notifications = db.query(Notification).all()
+    for n in notifications:
+        new_title = fix_mojibake_text(n.title or "")
+        new_body = fix_mojibake_text(n.body or "") if n.body else None
+        if new_title != (n.title or ""):
+            n.title = new_title
+            fixed += 1
+        if new_body != n.body:
+            n.body = new_body
+            fixed += 1
+
+    logs = db.query(TicketLog).all()
+    for row in logs:
+        new_action = fix_mojibake_text(row.action or "")
+        if new_action != (row.action or ""):
+            row.action = new_action
+            fixed += 1
+
+    if fixed:
+        db.commit()
+    return fixed
 
 
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
@@ -1421,8 +1446,11 @@ def create_inapp_notification(db: Session, user_id: int, title: str, body: str, 
 
 
 def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
-    create_inapp_notification(db=db, user_id=user_id, title=title, body=body, url=url)
-    _ = send_push_to_user_report(db=db, user_id=user_id, title=title, body=body, url=url)
+    safe_title = fix_mojibake_text((title or "").strip()) or "Уведомление"
+    safe_body = fix_mojibake_text((body or "").strip())
+    safe_url = (url or "").strip() or "/web"
+    create_inapp_notification(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
+    _ = send_push_to_user_report(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
 
 
 def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None:
@@ -1433,8 +1461,8 @@ def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"РќРѕРІР°СЏ Р·Р°СЏРІРєР° #{ticket.id}",
-        body=ticket.title or "Р’Р°Рј РЅР°Р·РЅР°С‡РёР»Рё РЅРѕРІСѓСЋ Р·Р°СЏРІРєСѓ",
+        title=f"Новая заявка #{ticket.id}",
+        body=ticket.title or "Вам назначена новая заявка",
         url=f"/web/tickets/{ticket.id}",
     )
 
@@ -1447,8 +1475,8 @@ def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Opt
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"Р’Р°Рј РЅР°Р·РЅР°С‡РµРЅР° Р·Р°СЏРІРєР° #{ticket.id}",
-        body=ticket.title or "Р—Р°СЏРІРєР° РЅР°Р·РЅР°С‡РµРЅР° РЅР° РІР°СЃ",
+        title=f"Вам назначена заявка #{ticket.id}",
+        body=ticket.title or "Заявка назначена на вас",
         url=f"/web/tickets/{ticket.id}",
     )
 
@@ -1465,7 +1493,7 @@ def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"РР·РјРµРЅРµРЅ СЃС‚Р°С‚СѓСЃ Р·Р°СЏРІРєРё #{ticket.id}",
+            title=f"Изменен статус заявки #{ticket.id}",
             body=f"{actor.name}: {status_label_ru(old_status)} -> {status_label_ru(ticket.status)}",
             url=f"/web/tickets/{ticket.id}",
         )
@@ -1480,8 +1508,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
         send_push_to_user(
             db=db,
             user_id=ticket.executor_id,
-            title=f"РќРѕРІС‹Р№ РєРѕРјРјРµРЅС‚Р°СЂРёР№ РІ Р·Р°СЏРІРєРµ #{ticket.id}",
-            body=short_text or f"{author.name} РѕСЃС‚Р°РІРёР» РєРѕРјРјРµРЅС‚Р°СЂРёР№",
+            title=f"Новый комментарий в заявке #{ticket.id}",
+            body=short_text or f"{author.name} оставил комментарий",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1494,8 +1522,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"РќРѕРІС‹Р№ РєРѕРјРјРµРЅС‚Р°СЂРёР№ РІ Р·Р°СЏРІРєРµ #{ticket.id}",
-            body=short_text or f"{author.name} РѕСЃС‚Р°РІРёР» РєРѕРјРјРµРЅС‚Р°СЂРёР№",
+            title=f"Новый комментарий в заявке #{ticket.id}",
+            body=short_text or f"{author.name} оставил комментарий",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1503,8 +1531,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
 def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, original_name: str | None) -> None:
     if uploader.role != Role.executor:
         return
-    file_name = (original_name or "").lower()
-    if "Р°РєС‚" not in file_name and "act" not in file_name:
+    file_name = fix_mojibake_text((original_name or "").lower())
+    if "акт" not in file_name and "act" not in file_name:
         return
     curator_ids = [
         u.id
@@ -1515,8 +1543,8 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"РСЃРїРѕР»РЅРёС‚РµР»СЊ РїСЂРёРєСЂРµРїРёР» Р°РєС‚ #{ticket.id}",
-            body=original_name or "Р”РѕР±Р°РІР»РµРЅ С„Р°Р№Р» Р°РєС‚Р°",
+            title=f"Исполнитель прикрепил акт #{ticket.id}",
+            body=original_name or "Добавлен файл акта",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1569,8 +1597,8 @@ def run_deadline_reminders_forever() -> None:
                     send_push_to_user(
                         db=db,
                         user_id=t.executor_id,
-                        title=f"РЎСЂРѕРє Р·Р°СЏРІРєРё #{t.id} СЃРєРѕСЂРѕ РёСЃС‚РµС‡РµС‚",
-                        body=f"Р”Рѕ РґРµРґР»Р°Р№РЅР° РѕСЃС‚Р°Р»РѕСЃСЊ {PUSH_REMINDER_MINUTES} РјРёРЅСѓС‚",
+                        title=f"Срок заявки #{t.id} скоро истечет",
+                        body=f"До дедлайна осталось {PUSH_REMINDER_MINUTES} минут",
                         url=f"/web/tickets/{t.id}",
                     )
                 db.commit()
@@ -1781,6 +1809,13 @@ templates.env.globals["fix_mojibake_text"] = fix_mojibake_text
 
 @app.on_event("startup")
 def app_startup() -> None:
+    if TEXT_REPAIR_ON_START:
+        db = SessionLocal()
+        try:
+            repair_mojibake_data(db)
+        finally:
+            db.close()
+
     platform_email = (os.getenv("PLATFORM_ADMIN_EMAIL", "") or "").strip()
     platform_password = (os.getenv("PLATFORM_ADMIN_PASSWORD", "") or "").strip()
     if platform_email and platform_password:
