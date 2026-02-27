@@ -346,6 +346,87 @@ a:hover {
   line-height: 1.42;
 }
 
+.service-shell:not(.auth-shell) .card,
+.service-shell:not(.auth-shell) .table-responsive,
+.service-shell:not(.auth-shell) .list-group-item,
+.service-shell:not(.auth-shell) details.panel-toggle > summary {
+  transition: transform 0.16s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.service-shell:not(.auth-shell) .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 28px rgba(20, 68, 70, 0.12);
+  border-color: #b7d9cc;
+}
+
+.service-shell:not(.auth-shell) .table-responsive:hover {
+  box-shadow: 0 12px 22px rgba(20, 68, 70, 0.08);
+}
+
+.service-shell:not(.auth-shell) .table tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.service-shell:not(.auth-shell) .table tbody tr:hover > * {
+  background-color: rgba(31, 157, 143, 0.08);
+}
+
+.service-shell:not(.auth-shell) .list-group-item:hover {
+  background: #eef8f3;
+  border-color: #c8e0d7;
+}
+
+.service-shell:not(.auth-shell) .btn {
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, border-color 0.16s ease;
+}
+
+.service-shell:not(.auth-shell) .btn:hover {
+  box-shadow: 0 8px 16px rgba(20, 68, 70, 0.12);
+}
+
+.service-shell:not(.auth-shell) .btn.btn-sm:hover {
+  box-shadow: 0 6px 12px rgba(20, 68, 70, 0.1);
+}
+
+.service-shell:not(.auth-shell) .btn:active {
+  filter: saturate(1.05);
+}
+
+.service-shell:not(.auth-shell) .btn:focus-visible,
+.service-shell:not(.auth-shell) .form-control:focus-visible,
+.service-shell:not(.auth-shell) .form-select:focus-visible,
+.service-shell:not(.auth-shell) .form-check-input:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 0.28rem rgba(31, 157, 143, 0.2);
+}
+
+.service-shell:not(.auth-shell) .badge {
+  transition: transform 0.14s ease, filter 0.14s ease;
+}
+
+.service-shell:not(.auth-shell) .badge:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.98);
+}
+
+.service-shell:not(.auth-shell) details.panel-toggle > summary:hover {
+  color: #1a5a60;
+}
+
+.service-shell:not(.auth-shell) .input-group:focus-within .input-group-text {
+  border-color: rgba(31, 157, 143, 0.7);
+  box-shadow: 0 0 0 0.24rem rgba(31, 157, 143, 0.12);
+}
+
+.service-shell:not(.auth-shell) .page-actions .btn,
+.service-shell:not(.auth-shell) .d-flex.gap-2 .btn {
+  white-space: nowrap;
+}
+
+.service-shell:not(.auth-shell) .card .card-body > .small.text-muted {
+  letter-spacing: 0.01em;
+}
+
 .service-shell > .card,
 .service-shell > .alert,
 .service-shell > .row {
@@ -397,6 +478,10 @@ a:hover {
   .service-shell > .card,
   .service-shell > .alert,
   .service-shell > .row,
+  .service-shell:not(.auth-shell) .card,
+  .service-shell:not(.auth-shell) .table-responsive,
+  .service-shell:not(.auth-shell) .list-group-item,
+  .service-shell:not(.auth-shell) .btn,
   .btn {
     animation: none !important;
     transition: none !important;
