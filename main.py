@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import threading
 import time
@@ -1320,18 +1321,43 @@ def fix_mojibake_text(value: str | None) -> str:
     text = (value or "")
     if not text:
         return ""
-    # Heuristic: common mojibake markers for UTF-8/CP1251 mismatch.
-    if "Р" not in text and "С" not in text:
-        return text
-    try:
-        repaired = text.encode("cp1251").decode("utf-8")
-    except Exception:
+
+    marker_pattern = re.compile(r"(?:[\u00D0\u00D1\u0420\u0421].){2,}")
+    if not marker_pattern.search(text):
         return text
 
-    def _cyr_count(s: str) -> int:
-        return sum(1 for ch in s if "\u0400" <= ch <= "\u04FF")
+    def _score(s: str) -> int:
+        cyr = sum(1 for ch in s if "\u0400" <= ch <= "\u04FF")
+        bad = len(re.findall(r"[\u00D0\u00D1\u0420\u0421](?=[^\s])", s)) + s.count("\uFFFD")
+        return cyr * 2 - bad
 
-    return repaired if _cyr_count(repaired) >= _cyr_count(text) else text
+    best = text
+    best_score = _score(text)
+    current = text
+
+    for _ in range(3):
+        candidates: list[str] = []
+        try:
+            candidates.append(current.encode("cp1251").decode("utf-8"))
+        except Exception:
+            pass
+        try:
+            candidates.append(current.encode("latin1").decode("utf-8"))
+        except Exception:
+            pass
+
+        improved = False
+        for candidate in candidates:
+            score = _score(candidate)
+            if score > best_score:
+                best = candidate
+                best_score = score
+                improved = True
+        if not improved:
+            break
+        current = best
+
+    return best
 
 
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
@@ -2660,14 +2686,14 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
         audit_security_event("web_login", request, success=False, email=email, detail="rate_limited")
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ РїРѕРїС‹С‚РѕРє РІС…РѕРґР°. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ."},
+            {"request": request, "error": "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u043f\u043e\u043f\u044b\u0442\u043e\u043a \u0432\u0445\u043e\u0434\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0437\u0436\u0435."},
             status_code=429,
         )
 
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.password_hash):
         audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
-        return templates.TemplateResponse("login.html", {"request": request, "error": "РќРµРІРµСЂРЅС‹Р№ email РёР»Рё РїР°СЂРѕР»СЊ"})
+        return templates.TemplateResponse("login.html", {"request": request, "error": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c"})
 
     token = create_access_token(str(user.id))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
