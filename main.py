@@ -1385,8 +1385,50 @@ def repair_mojibake_data(db: Session) -> int:
     return fixed
 
 
+def normalize_log_action(action: str | None) -> str:
+    raw = (action or "").strip()
+    text = fix_mojibake_text(raw).lower()
+    merged = f"{raw.lower()} {text}"
+
+    k_create = "\u0441\u043e\u0437\u0434"
+    k_template = "\u0448\u0430\u0431\u043b"
+    k_deadline = "\u0441\u0440\u043e\u043a"
+    k_executor = "\u0438\u0441\u043f\u043e\u043b\u043d"
+    k_project = "\u043f\u0440\u043e\u0435\u043a\u0442"
+    k_type = "\u0442\u0438\u043f"
+    k_ticket = "\u0437\u0430\u044f\u0432"
+    k_unit = "\u0443\u0437\u043b"
+    k_period = "\u043f\u0435\u0440\u0438\u043e\u0434"
+    k_file = "\u0444\u0430\u0439\u043b"
+    k_change = "\u0438\u0437\u043c\u0435\u043d"
+
+    if k_create in merged:
+        if k_template in merged:
+            return "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443"
+        return "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435"
+    if k_deadline in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0440\u043e\u043a\u0430"
+    if k_executor in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f"
+    if k_project in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u0430"
+    if k_type in merged and k_ticket in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
+    if k_unit in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0446\u0435\u043b\u0435\u0432\u043e\u0433\u043e \u0443\u0437\u043b\u0430"
+    if k_period in merged and k_template in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0438\u043e\u0434\u0430 \u0448\u0430\u0431\u043b\u043e\u043d\u0430"
+    if k_template in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0448\u0430\u0431\u043b\u043e\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
+    if k_file in merged or "file" in merged:
+        return "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
+    if k_change in merged:
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
+    return text or "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
+
+
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
-    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=fix_mojibake_text(action)))
+    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=normalize_log_action(action)))
 
 
 def push_is_configured() -> bool:
@@ -1446,7 +1488,7 @@ def create_inapp_notification(db: Session, user_id: int, title: str, body: str, 
 
 
 def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
-    safe_title = fix_mojibake_text((title or "").strip()) or "Уведомление"
+    safe_title = fix_mojibake_text((title or "").strip()) or "\u0423\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435"
     safe_body = fix_mojibake_text((body or "").strip())
     safe_url = (url or "").strip() or "/web"
     create_inapp_notification(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
@@ -1461,8 +1503,8 @@ def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"Новая заявка #{ticket.id}",
-        body=ticket.title or "Вам назначена новая заявка",
+        title=f"\u041d\u043e\u0432\u0430\u044f \u0437\u0430\u044f\u0432\u043a\u0430 #{ticket.id}",
+        body=ticket.title or "\u0412\u0430\u043c \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u043e\u0432\u0430\u044f \u0437\u0430\u044f\u0432\u043a\u0430",
         url=f"/web/tickets/{ticket.id}",
     )
 
@@ -1475,8 +1517,8 @@ def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Opt
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"Вам назначена заявка #{ticket.id}",
-        body=ticket.title or "Заявка назначена на вас",
+        title=f"\u0412\u0430\u043c \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0430 #{ticket.id}",
+        body=ticket.title or "\u0417\u0430\u044f\u0432\u043a\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441",
         url=f"/web/tickets/{ticket.id}",
     )
 
@@ -1493,7 +1535,7 @@ def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"Изменен статус заявки #{ticket.id}",
+            title=f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u044f\u0432\u043a\u0438 #{ticket.id}",
             body=f"{actor.name}: {status_label_ru(old_status)} -> {status_label_ru(ticket.status)}",
             url=f"/web/tickets/{ticket.id}",
         )
@@ -1508,8 +1550,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
         send_push_to_user(
             db=db,
             user_id=ticket.executor_id,
-            title=f"Новый комментарий в заявке #{ticket.id}",
-            body=short_text or f"{author.name} оставил комментарий",
+            title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
+            body=short_text or f"{author.name} \u043e\u0441\u0442\u0430\u0432\u0438\u043b \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1522,8 +1564,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"Новый комментарий в заявке #{ticket.id}",
-            body=short_text or f"{author.name} оставил комментарий",
+            title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
+            body=short_text or f"{author.name} \u043e\u0441\u0442\u0430\u0432\u0438\u043b \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1532,7 +1574,7 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
     if uploader.role != Role.executor:
         return
     file_name = fix_mojibake_text((original_name or "").lower())
-    if "акт" not in file_name and "act" not in file_name:
+    if "\u0430\u043a\u0442" not in file_name and "act" not in file_name:
         return
     curator_ids = [
         u.id
@@ -1543,8 +1585,8 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"Исполнитель прикрепил акт #{ticket.id}",
-            body=original_name or "Добавлен файл акта",
+            title=f"\u0418\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u0438\u043a\u0440\u0435\u043f\u0438\u043b \u0430\u043a\u0442 #{ticket.id}",
+            body=original_name or "\u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d \u0444\u0430\u0439\u043b \u0430\u043a\u0442\u0430",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1597,8 +1639,8 @@ def run_deadline_reminders_forever() -> None:
                     send_push_to_user(
                         db=db,
                         user_id=t.executor_id,
-                        title=f"Срок заявки #{t.id} скоро истечет",
-                        body=f"До дедлайна осталось {PUSH_REMINDER_MINUTES} минут",
+                        title=f"\u0421\u0440\u043e\u043a \u0437\u0430\u044f\u0432\u043a\u0438 #{t.id} \u0441\u043a\u043e\u0440\u043e \u0438\u0441\u0442\u0435\u0447\u0435\u0442",
+                        body=f"\u0414\u043e \u0434\u0435\u0434\u043b\u0430\u0439\u043d\u0430 \u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c {PUSH_REMINDER_MINUTES} \u043c\u0438\u043d\u0443\u0442",
                         url=f"/web/tickets/{t.id}",
                     )
                 db.commit()
