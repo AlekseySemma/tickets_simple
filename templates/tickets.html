@@ -13,6 +13,12 @@
       background: linear-gradient(180deg, #eef2f8 0%, #e8edf5 100%) !important;
       min-height: 100vh;
     }
+    .tickets-shell {
+      max-width: 1880px;
+      margin: 0 auto;
+      padding-left: 24px;
+      padding-right: 24px;
+    }
     .panel-card {
       border: 1px solid #d7e2f4;
       border-radius: 14px;
@@ -221,7 +227,7 @@
       min-width: 220px;
     }
     @media (max-width: 991.98px) {
-      .container {
+      .tickets-shell {
         padding-left: 10px;
         padding-right: 10px;
       }
@@ -270,7 +276,7 @@
   </style>
 </head>
 <body class="bg-light">
-  <div class="container py-4">
+  <div class="container-fluid py-4 tickets-shell">
     <div class="page-head mb-3">
       <div>
         <h3 class="mb-0">Заявки</h3>
