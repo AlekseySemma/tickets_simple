@@ -49,6 +49,7 @@
         {% if err == "delete_has_assignments" %}Нельзя удалить узел: есть закрепленные исполнители.{% endif %}
         {% if err == "delete_has_templates" %}Нельзя удалить узел: он используется в шаблонах заявок.{% endif %}
         {% if err == "delete_has_tickets" %}Нельзя удалить узел: по нему есть заявки.{% endif %}
+        {% if err == "delete_has_generation_keys" %}Нельзя удалить узел: по нему есть сгенерированные заявки в периодических шаблонах.{% endif %}
         {% if err == "delete_failed" %}Не удалось удалить узел.{% endif %}
       </div>
     {% endif %}

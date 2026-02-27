@@ -4166,6 +4166,18 @@ def web_org_structure_delete(
     if has_tickets:
         return RedirectResponse(url="/web/org-structure?error=delete_has_tickets", status_code=HTTP_303_SEE_OTHER)
 
+    has_generation_keys = (
+        db.query(TicketGenerationKey.id)
+        .filter(TicketGenerationKey.company_id == user.company_id, TicketGenerationKey.target_unit_id == unit_id)
+        .first()
+        is not None
+    )
+    if has_generation_keys:
+        return RedirectResponse(
+            url="/web/org-structure?error=delete_has_generation_keys",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
     try:
         db.delete(item)
         db.commit()
