@@ -10,9 +10,10 @@
   <link href="/static/service-theme.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-  <div class="container py-5" style="max-width: 520px;">
-    <div class="card shadow-sm">
+  <div class="container py-5 service-shell auth-shell" style="max-width: 520px;">
+    <div class="card shadow-sm auth-card">
       <div class="card-body p-4">
+        <div class="auth-brand">servora</div>
         <h3 class="mb-3">Вход</h3>
 
         {% if error %}
@@ -43,5 +44,6 @@
   <script src="/static/sw-register.js"></script>
 </body>
 </html>
+
 
 
