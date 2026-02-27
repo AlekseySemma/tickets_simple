@@ -118,6 +118,57 @@
       flex-wrap: wrap;
       justify-content: flex-end;
     }
+    .detail-banner {
+      border: 1px solid #cfe2da;
+      border-radius: 18px;
+      padding: 14px 16px;
+      background:
+        radial-gradient(430px 150px at 100% 0, rgba(31, 157, 143, 0.18), transparent 62%),
+        linear-gradient(180deg, #f9fefb, #f2f9f5);
+      box-shadow: 0 10px 22px rgba(22, 64, 67, 0.09);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .detail-kicker {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #145e55;
+      border: 1px solid rgba(31, 157, 143, 0.34);
+      background: rgba(31, 157, 143, 0.14);
+      margin-bottom: 6px;
+    }
+    .detail-title {
+      margin: 0;
+      color: #184a4c;
+      font-weight: 700;
+      font-size: 1.03rem;
+    }
+    .detail-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .detail-badge {
+      border: 1px solid #bfd8cf;
+      border-radius: 999px;
+      padding: 6px 11px;
+      background: #fff;
+      color: #2e6266;
+      font-size: 12px;
+    }
+    .detail-badge strong {
+      color: #184a4c;
+      margin-left: 3px;
+    }
     .ticket-layout {
       display: flex;
       justify-content: space-between;
@@ -160,6 +211,10 @@
         flex: 1 1 auto;
         min-width: 120px;
       }
+      .detail-badges {
+        width: 100%;
+        justify-content: flex-start;
+      }
     }
   </style>
 </head>
@@ -176,6 +231,17 @@
         <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
         <a class="btn btn-outline-secondary" href="/web">← Назад к списку</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+      </div>
+    </div>
+    <div class="detail-banner mb-3">
+      <div>
+        <span class="detail-kicker">Карточка исполнения</span>
+        <p class="detail-title">Заявка в работе: комментарии, файлы, статус и полный лог действий.</p>
+      </div>
+      <div class="detail-badges">
+        <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
+        <span class="detail-badge">Проект <strong>{{ projects_by_id.get(t.project_id, "—") }}</strong></span>
+        <span class="detail-badge">Исполнитель <strong>{{ users_by_id.get(t.executor_id, "—") }}</strong></span>
       </div>
     </div>
 

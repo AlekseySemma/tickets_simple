@@ -7,6 +7,67 @@
   <meta name="theme-color" content="#1f9d8f">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="/static/service-theme.css" rel="stylesheet">
+  <style>
+    .org-kpi {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .org-kpi-card {
+      border: 1px solid #cfe2da;
+      border-radius: 14px;
+      padding: 11px 12px;
+      background: linear-gradient(180deg, #f9fefb, #f2f9f5);
+      box-shadow: 0 8px 18px rgba(22, 64, 67, 0.08);
+    }
+    .org-kpi-card span {
+      display: block;
+      color: #4b6f74;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .org-kpi-card strong {
+      font-size: 1.2rem;
+      color: #1b4f52;
+      line-height: 1;
+    }
+    .org-hint {
+      border: 1px solid #d5e7df;
+      border-radius: 12px;
+      background: #f8fcfa;
+      color: #3d656a;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+    .org-card {
+      border-radius: 16px;
+    }
+    .org-card .card-body > h5 {
+      margin-bottom: 12px;
+      color: #1f565b;
+    }
+    .org-card .table-responsive {
+      border: 1px solid #d8e8e1;
+      border-radius: 12px;
+    }
+    .org-card .table {
+      margin-bottom: 0;
+    }
+    .org-card-focus {
+      border-color: #9fd5c6 !important;
+      box-shadow: 0 14px 30px rgba(31, 157, 143, 0.18);
+    }
+    @media (max-width: 991.98px) {
+      .org-kpi {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 575.98px) {
+      .org-kpi {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1400px;">
@@ -20,6 +81,27 @@
         <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
       </div>
+    </div>
+    <div class="org-kpi mb-3">
+      <div class="org-kpi-card">
+        <span>Узлы в дереве</span>
+        <strong>{{ units|length }}</strong>
+      </div>
+      <div class="org-kpi-card">
+        <span>Закрепления</span>
+        <strong>{{ assignments|length }}</strong>
+      </div>
+      <div class="org-kpi-card">
+        <span>Исполнители</span>
+        <strong>{{ executors|length }}</strong>
+      </div>
+      <div class="org-kpi-card">
+        <span>Типы узлов</span>
+        <strong>{{ unit_type_names|length }}</strong>
+      </div>
+    </div>
+    <div class="org-hint mb-3">
+      Соберите иерархию, назначьте ответственных по узлам и управляйте жизненным циклом структуры в одном рабочем контуре.
     </div>
 
     {% set err = request.query_params.get("error", "") %}
@@ -61,7 +143,7 @@
       </div>
     {% endif %}
 
-    <div class="card shadow-sm mb-3">
+    <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
         <h5 class="mb-3">Добавить узел</h5>
         <form method="post" action="/web/org-structure/create" class="row g-2">
@@ -94,7 +176,7 @@
     </div>
 
     {% if edit_unit %}
-      <div class="card shadow-sm mb-3 border-primary">
+      <div class="card shadow-sm mb-3 border-primary org-card org-card-focus">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Редактирование узла #{{ edit_unit.id }}</h5>
@@ -131,7 +213,7 @@
       </div>
     {% endif %}
 
-    <div class="card shadow-sm mb-3">
+    <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
         <h5 class="mb-3">Импорт из CSV</h5>
         <form method="post" action="/web/org-structure/import-csv" enctype="multipart/form-data" class="row g-2">
@@ -153,7 +235,7 @@
       </div>
     </div>
 
-    <div class="card shadow-sm mb-3">
+    <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
         <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
         <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
@@ -231,7 +313,7 @@
       </div>
     </div>
 
-    <div class="card shadow-sm">
+    <div class="card shadow-sm org-card">
       <div class="card-body">
         <h5 class="mb-3">Список узлов</h5>
         {% if units %}
