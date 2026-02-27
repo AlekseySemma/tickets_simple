@@ -64,6 +64,43 @@
       border-color: #63b7aa;
       box-shadow: 0 0 0 .2rem rgba(31,157,143,.16);
     }
+    .target-unit-combobox {
+      position: relative;
+    }
+    .target-unit-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 35;
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid #c9ddd4;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .08);
+      padding: 4px;
+    }
+    .target-unit-option {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      text-align: left;
+      background: transparent;
+      color: #2d5f62;
+      padding: 8px 10px;
+    }
+    .target-unit-option:hover,
+    .target-unit-option:focus {
+      background: #edf6f2;
+      color: #1f5558;
+      outline: none;
+    }
+    .target-unit-empty {
+      padding: 8px 10px;
+      color: #5c6f72;
+      font-size: 12px;
+    }
     .ticket {
       border: 1px solid #d9e8df;
       border-radius: 14px;
@@ -411,22 +448,30 @@
             {% if org_v2_enabled %}
             <div class="col-12 col-md-6">
               <label class="form-label mb-1">&#1059;&#1079;&#1077;&#1083; &#1086;&#1088;&#1075;&#1089;&#1090;&#1088;&#1091;&#1082;&#1090;&#1091;&#1088;&#1099;</label>
-              <input
-                id="create-target-unit-search"
-                class="form-control mb-2"
-                type="text"
-                placeholder="Быстрый поиск узла..."
-                aria-label="Поиск узла оргструктуры"
-                autocomplete="off"
-              />
-              <select id="create-target-unit-select" name="target_unit_id" class="form-select" required>
-                <option value="" selected disabled>Узел оргструктуры (обязательно)</option>
-                {% for u in org_units %}
-                  <option value="{{ u.id }}">{{ u.short_name }} (#{{ u.id }})</option>
-                {% endfor %}
-              </select>
-              <div id="create-target-unit-empty" class="muted small mt-1 d-none">
-                По вашему запросу узлы не найдены.
+              <div id="create-target-unit-combobox-wrap" class="target-unit-combobox">
+                <input type="hidden" id="create-target-unit-id" name="target_unit_id" />
+                <input
+                  id="create-target-unit-combobox"
+                  class="form-control"
+                  type="text"
+                  placeholder="Выберите или начните вводить узел..."
+                  aria-label="Узел оргструктуры"
+                  autocomplete="off"
+                  required
+                />
+                <div id="create-target-unit-dropdown" class="target-unit-dropdown d-none">
+                  {% for u in org_units %}
+                    <button
+                      type="button"
+                      class="target-unit-option"
+                      data-unit-id="{{ u.id }}"
+                      data-unit-label="{{ u.short_name }} (#{{ u.id }})"
+                    >{{ u.short_name }} (#{{ u.id }})</button>
+                  {% endfor %}
+                  <div id="create-target-unit-empty" class="target-unit-empty d-none">
+                    По вашему запросу узлы не найдены.
+                  </div>
+                </div>
               </div>
               <div class="muted small mt-1">
                 Заявки будут созданы на все конечные дочерние узлы выбранного узла.
@@ -990,42 +1035,130 @@ document.addEventListener("DOMContentLoaded", function () {
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  const searchInput = document.getElementById("create-target-unit-search");
-  const targetSelect = document.getElementById("create-target-unit-select");
+  const wrap = document.getElementById("create-target-unit-combobox-wrap");
+  const textInput = document.getElementById("create-target-unit-combobox");
+  const hiddenInput = document.getElementById("create-target-unit-id");
+  const dropdown = document.getElementById("create-target-unit-dropdown");
   const emptyHint = document.getElementById("create-target-unit-empty");
-  if (!searchInput || !targetSelect) return;
+  if (!wrap || !textInput || !hiddenInput || !dropdown || !emptyHint) return;
 
-  const options = Array.from(targetSelect.options);
+  const options = Array.from(dropdown.querySelectorAll(".target-unit-option"));
+  let selectedLabel = "";
   const normalize = (value) => (value || "").toLowerCase().replace(/\s+/g, " ").trim();
 
-  function applyTargetUnitFilter() {
-    const query = normalize(searchInput.value);
+  function isSameLabel(a, b) {
+    return normalize(a) === normalize(b);
+  }
+
+  function openDropdown() {
+    dropdown.classList.remove("d-none");
+    filterOptions(textInput.value);
+  }
+
+  function closeDropdown() {
+    dropdown.classList.add("d-none");
+  }
+
+  function filterOptions(queryText) {
+    const query = normalize(queryText);
     let visibleCount = 0;
 
-    options.forEach((option, index) => {
-      if (index === 0) {
-        option.hidden = false;
-        return;
-      }
-      const matches = !query || normalize(option.textContent).includes(query);
-      const visible = matches || option.selected;
-      option.hidden = !visible;
-      option.disabled = !visible;
+    options.forEach((btn) => {
+      const label = btn.dataset.unitLabel || btn.textContent || "";
+      const visible = !query || normalize(label).includes(query);
+      btn.classList.toggle("d-none", !visible);
       if (visible) visibleCount += 1;
     });
 
-    if (emptyHint) emptyHint.classList.toggle("d-none", !query || visibleCount > 0);
+    emptyHint.classList.toggle("d-none", visibleCount > 0);
   }
 
-  searchInput.addEventListener("input", applyTargetUnitFilter);
-  searchInput.addEventListener("keydown", function (event) {
+  function syncValidation() {
+    const hasText = Boolean((textInput.value || "").trim());
+    if (!hasText) {
+      textInput.setCustomValidity("");
+      return;
+    }
+    if (!hiddenInput.value) {
+      textInput.setCustomValidity("Выберите узел из выпадающего списка");
+      return;
+    }
+    textInput.setCustomValidity("");
+  }
+
+  function trySelectExactMatch() {
+    const typed = normalize(textInput.value);
+    if (!typed) return false;
+    const exact = options.find((btn) => normalize(btn.dataset.unitLabel || btn.textContent || "") === typed);
+    if (!exact) return false;
+    selectUnit(exact);
+    return true;
+  }
+
+  function selectUnit(btn) {
+    const unitId = btn.dataset.unitId || "";
+    const unitLabel = (btn.dataset.unitLabel || btn.textContent || "").trim();
+    hiddenInput.value = unitId;
+    selectedLabel = unitLabel;
+    textInput.value = unitLabel;
+    syncValidation();
+    closeDropdown();
+  }
+
+  textInput.addEventListener("focus", openDropdown);
+  textInput.addEventListener("click", openDropdown);
+  textInput.addEventListener("input", function () {
+    if (!isSameLabel(textInput.value, selectedLabel)) {
+      hiddenInput.value = "";
+    }
+    syncValidation();
+    openDropdown();
+  });
+  textInput.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      closeDropdown();
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      targetSelect.focus();
+      openDropdown();
+      const firstVisible = options.find((btn) => !btn.classList.contains("d-none"));
+      if (firstVisible) firstVisible.focus();
     }
   });
-  targetSelect.addEventListener("change", applyTargetUnitFilter);
-  applyTargetUnitFilter();
+
+  options.forEach((btn) => {
+    btn.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+      selectUnit(btn);
+    });
+    btn.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectUnit(btn);
+      }
+    });
+  });
+
+  document.addEventListener("click", function (event) {
+    if (!wrap.contains(event.target)) {
+      closeDropdown();
+    }
+  });
+
+  const createForm = textInput.closest("form");
+  if (createForm) {
+    createForm.addEventListener("submit", function () {
+      if (!isSameLabel(textInput.value, selectedLabel)) {
+        if (!trySelectExactMatch()) {
+          hiddenInput.value = "";
+        }
+      }
+      syncValidation();
+    }, true);
+  }
+
+  filterOptions("");
 });
 </script>
 
