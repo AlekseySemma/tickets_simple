@@ -67,6 +67,33 @@
     .target-unit-combobox {
       position: relative;
     }
+    .target-unit-input-wrap {
+      position: relative;
+    }
+    .target-unit-combobox-input {
+      padding-right: 34px;
+    }
+    .target-unit-clear {
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #6c757d;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0;
+    }
+    .target-unit-clear:hover,
+    .target-unit-clear:focus {
+      background: #edf6f2;
+      color: #1f5558;
+      outline: none;
+    }
     .target-unit-dropdown {
       position: absolute;
       top: calc(100% + 4px);
@@ -450,15 +477,20 @@
               <label class="form-label mb-1">&#1059;&#1079;&#1077;&#1083; &#1086;&#1088;&#1075;&#1089;&#1090;&#1088;&#1091;&#1082;&#1090;&#1091;&#1088;&#1099;</label>
               <div id="create-target-unit-combobox-wrap" class="target-unit-combobox">
                 <input type="hidden" id="create-target-unit-id" name="target_unit_id" />
-                <input
-                  id="create-target-unit-combobox"
-                  class="form-control"
-                  type="text"
-                  placeholder="Выберите или начните вводить узел..."
-                  aria-label="Узел оргструктуры"
-                  autocomplete="off"
-                  required
-                />
+                <div class="target-unit-input-wrap">
+                  <input
+                    id="create-target-unit-combobox"
+                    class="form-control target-unit-combobox-input"
+                    type="text"
+                    placeholder="Выберите или начните вводить узел..."
+                    aria-label="Узел оргструктуры"
+                    autocomplete="off"
+                    required
+                  />
+                  <button type="button" id="create-target-unit-clear" class="target-unit-clear d-none" aria-label="Очистить поле">
+                    &times;
+                  </button>
+                </div>
                 <div id="create-target-unit-dropdown" class="target-unit-dropdown d-none">
                   {% for u in org_units %}
                     <button
@@ -1037,10 +1069,11 @@ document.addEventListener("DOMContentLoaded", function () {
 document.addEventListener("DOMContentLoaded", function () {
   const wrap = document.getElementById("create-target-unit-combobox-wrap");
   const textInput = document.getElementById("create-target-unit-combobox");
+  const clearBtn = document.getElementById("create-target-unit-clear");
   const hiddenInput = document.getElementById("create-target-unit-id");
   const dropdown = document.getElementById("create-target-unit-dropdown");
   const emptyHint = document.getElementById("create-target-unit-empty");
-  if (!wrap || !textInput || !hiddenInput || !dropdown || !emptyHint) return;
+  if (!wrap || !textInput || !clearBtn || !hiddenInput || !dropdown || !emptyHint) return;
 
   const options = Array.from(dropdown.querySelectorAll(".target-unit-option"));
   let selectedLabel = "";
@@ -1074,6 +1107,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function syncValidation() {
+    clearBtn.classList.toggle("d-none", !Boolean((textInput.value || "").trim()));
     const hasText = Boolean((textInput.value || "").trim());
     if (!hasText) {
       textInput.setCustomValidity("");
@@ -1140,6 +1174,18 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
+  clearBtn.addEventListener("mousedown", function (event) {
+    event.preventDefault();
+  });
+  clearBtn.addEventListener("click", function () {
+    textInput.value = "";
+    hiddenInput.value = "";
+    selectedLabel = "";
+    syncValidation();
+    openDropdown();
+    textInput.focus();
+  });
+
   document.addEventListener("click", function (event) {
     if (!wrap.contains(event.target)) {
       closeDropdown();
@@ -1159,6 +1205,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   filterOptions("");
+  syncValidation();
 });
 </script>
 
