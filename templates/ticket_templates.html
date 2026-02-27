@@ -7,6 +7,104 @@
   <meta name="theme-color" content="#1f9d8f">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="/static/service-theme.css" rel="stylesheet">
+  <style>
+    .tmpl-hero {
+      border: 1px solid #cfe2da;
+      border-radius: 18px;
+      padding: 14px 16px;
+      background:
+        radial-gradient(430px 170px at 100% 0, rgba(31, 157, 143, 0.18), transparent 62%),
+        linear-gradient(180deg, #f9fefb, #f2f9f5);
+      box-shadow: 0 10px 22px rgba(22, 64, 67, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .tmpl-kicker {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #145e55;
+      border: 1px solid rgba(31, 157, 143, 0.34);
+      background: rgba(31, 157, 143, 0.14);
+      margin-bottom: 6px;
+    }
+    .tmpl-title {
+      margin: 0;
+      color: #184a4c;
+      font-weight: 700;
+      font-size: 1.03rem;
+    }
+    .tmpl-kpi {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .tmpl-kpi-card {
+      border: 1px solid #bfd8cf;
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    .tmpl-kpi-card span {
+      display: block;
+      color: #4f7176;
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+    .tmpl-kpi-card strong {
+      color: #1c5256;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .tmpl-card {
+      border-radius: 16px;
+    }
+    .tmpl-item {
+      border-radius: 14px;
+      border: 1px solid #d6e8e0;
+      background: linear-gradient(180deg, #ffffff, #fbfffd);
+      box-shadow: 0 9px 18px rgba(22, 64, 67, 0.07);
+    }
+    .tmpl-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed #cde1d8;
+    }
+    .tmpl-id {
+      color: #4f7075;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .tmpl-actions {
+      border: 1px dashed #cde1d8;
+      border-radius: 12px;
+      padding: 10px;
+      background: #f8fcfa;
+    }
+    @media (max-width: 991.98px) {
+      .tmpl-kpi {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 575.98px) {
+      .tmpl-kpi {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1400px;">
@@ -16,6 +114,31 @@
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
         <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+      </div>
+    </div>
+    {% set active_templates = items|selectattr("is_active")|list|length %}
+    <div class="tmpl-hero mb-3">
+      <div>
+        <span class="tmpl-kicker">Шаблонизация потока</span>
+        <p class="tmpl-title">Управляйте повторяющимися задачами через шаблоны, периоды запуска и контроль ключей генерации.</p>
+      </div>
+      <div class="tmpl-kpi">
+        <div class="tmpl-kpi-card">
+          <span>Всего шаблонов</span>
+          <strong>{{ items|length }}</strong>
+        </div>
+        <div class="tmpl-kpi-card">
+          <span>Активные</span>
+          <strong>{{ active_templates }}</strong>
+        </div>
+        <div class="tmpl-kpi-card">
+          <span>Типы заявок</span>
+          <strong>{{ ticket_types|length }}</strong>
+        </div>
+        <div class="tmpl-kpi-card">
+          <span>Исполнители</span>
+          <strong>{{ executors|length }}</strong>
+        </div>
       </div>
     </div>
 
@@ -42,7 +165,7 @@
       <div class="alert alert-danger">Не удалось удалить шаблон. Попробуйте позже.</div>
     {% endif %}
 
-    <div class="card shadow-sm mb-3">
+    <div class="card shadow-sm mb-3 tmpl-card">
       <div class="card-body">
         <h5 class="mb-3">Добавить шаблон</h5>
         <form method="post" action="/web/ticket-templates/create" class="row g-2">
@@ -88,8 +211,16 @@
     </div>
 
     {% for t in items %}
-      <div class="card shadow-sm mb-2">
+      <div class="card shadow-sm mb-2 tmpl-item">
         <div class="card-body">
+          <div class="tmpl-item-head">
+            <div class="tmpl-id">Шаблон #{{ t.id }}</div>
+            {% if t.is_active %}
+              <span class="badge text-bg-success">Активен</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Неактивен</span>
+            {% endif %}
+          </div>
           <form method="post" action="/web/ticket-templates/{{ t.id }}/update" class="row g-2">
             <div class="col-12 col-md-3"><input class="form-control" name="name" value="{{ t.name }}" required /></div>
             <div class="col-12 col-md-3">
@@ -131,26 +262,27 @@
             </div>
           </form>
 
-          <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run">
-            <div class="col-12 col-md-3">
-              <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
-            </div>
-            <div class="col-12 col-md-3">
-              <button class="btn btn-sm btn-success" type="submit">Запустить шаблон</button>
-            </div>
-          </form>
-          <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/clear-keys" onsubmit="return confirm('Очистить ключи генерации по периоду для этого шаблона?');">
-            <div class="col-12 col-md-3">
-              <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
-            </div>
-            <div class="col-12 col-md-3">
-              <button class="btn btn-sm btn-outline-warning" type="submit">Очистить ключи периода</button>
-            </div>
-          </form>
-
-          <form class="mt-2" method="post" action="/web/ticket-templates/{{ t.id }}/delete" onsubmit="return confirm('Удалить шаблон {{ t.name }}?');">
-            <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
-          </form>
+          <div class="tmpl-actions mt-2">
+            <form class="row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run">
+              <div class="col-12 col-md-4">
+                <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
+              </div>
+              <div class="col-12 col-md-4">
+                <button class="btn btn-sm btn-success" type="submit">Запустить шаблон</button>
+              </div>
+            </form>
+            <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/clear-keys" onsubmit="return confirm('Очистить ключи генерации по периоду для этого шаблона?');">
+              <div class="col-12 col-md-4">
+                <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
+              </div>
+              <div class="col-12 col-md-4">
+                <button class="btn btn-sm btn-outline-warning" type="submit">Очистить ключи периода</button>
+              </div>
+            </form>
+            <form class="mt-2" method="post" action="/web/ticket-templates/{{ t.id }}/delete" onsubmit="return confirm('Удалить шаблон {{ t.name }}?');">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+            </form>
+          </div>
         </div>
       </div>
     {% endfor %}
