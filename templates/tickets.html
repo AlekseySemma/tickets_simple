@@ -262,6 +262,41 @@
       color: #18484b;
       text-decoration: underline;
     }
+    .tickets-table {
+      width: 100%;
+      table-layout: fixed;
+    }
+    .tickets-table th:nth-child(1),
+    .tickets-table td:nth-child(1) { width: 56px; }
+    .tickets-table th:nth-child(2),
+    .tickets-table td:nth-child(2) { width: 118px; }
+    .tickets-table th:nth-child(3),
+    .tickets-table td:nth-child(3) { width: 118px; }
+    .tickets-table th:nth-child(4),
+    .tickets-table td:nth-child(4) { width: 120px; }
+    .tickets-table th:nth-child(5),
+    .tickets-table td:nth-child(5) { width: 120px; }
+    .tickets-table th:nth-child(6),
+    .tickets-table td:nth-child(6) { width: 120px; }
+    .tickets-table th:nth-child(7),
+    .tickets-table td:nth-child(7) { width: 112px; }
+    .tickets-table th:nth-child(9),
+    .tickets-table td:nth-child(9) { width: 170px; }
+    .tickets-table td:nth-child(4),
+    .tickets-table td:nth-child(5),
+    .tickets-table td:nth-child(6) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tickets-table .col-title {
+      white-space: normal;
+      word-break: break-word;
+    }
+    .tickets-table .col-title a {
+      display: inline-block;
+      width: 100%;
+      overflow-wrap: anywhere;
+    }
     .view-switch .btn {
       min-width: 120px;
     }
