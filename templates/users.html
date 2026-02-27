@@ -29,6 +29,8 @@
       <div class="alert alert-success">Данные пользователя обновлены.</div>
     {% elif ok == "deleted" %}
       <div class="alert alert-success">Пользователь удален.</div>
+    {% elif ok == "invite_created" %}
+      <div class="alert alert-success">Ссылка приглашения создана.</div>
     {% endif %}
 
     {% if err == "bad_input" %}
@@ -77,6 +79,56 @@
             <button class="btn btn-primary">Создать пользователя</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Ссылка для саморегистрации</h5>
+        <form method="post" action="/web/users/invites/create" class="row g-2">
+          {% if user.role == "ADMIN" %}
+            <div class="col-12 col-md-4">
+              <select name="role" class="form-select" required>
+                <option value="EXECUTOR">Исполнитель</option>
+                <option value="CURATOR">Куратор</option>
+              </select>
+            </div>
+          {% else %}
+            <input type="hidden" name="role" value="EXECUTOR" />
+            <div class="col-12">
+              <div class="form-control bg-light">Ссылка будет создана для роли: Исполнитель</div>
+            </div>
+          {% endif %}
+          <div class="col-12 col-md-4">
+            <input name="expires_days" type="number" min="1" max="30" value="7" class="form-control" />
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-primary">Сгенерировать ссылку</button>
+          </div>
+        </form>
+        <div class="text-muted small mt-2">Ссылка одноразовая и действует ограниченное время.</div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Активные/последние ссылки</h5>
+        {% if invite_links and invite_links|length > 0 %}
+          {% for inv in invite_links %}
+            <div class="border rounded p-2 mb-2">
+              <div class="small text-muted mb-1">
+                #{{ inv.id }} · {{ inv.role }} ·
+                {% if inv.is_used %}использована{% else %}не использована{% endif %}
+                {% if inv.expires_at %} · до {{ format_dt(inv.expires_at) }}{% endif %}
+              </div>
+              <div class="input-group input-group-sm">
+                <input class="form-control" readonly value="{{ inv.url }}" />
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="alert alert-info mb-0">Ссылок пока нет.</div>
+        {% endif %}
       </div>
     </div>
 

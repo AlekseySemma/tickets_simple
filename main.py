@@ -5088,6 +5088,36 @@ def web_users(
         .order_by(User.id.desc())
         .all()
     )
+    invites = (
+        db.query(
+            RegistrationInvite.id,
+            RegistrationInvite.role,
+            RegistrationInvite.token,
+            RegistrationInvite.created_at,
+            RegistrationInvite.expires_at,
+            RegistrationInvite.used_by,
+        )
+        .filter(
+            RegistrationInvite.company_id == user.company_id,
+            RegistrationInvite.role.in_(allowed_roles),
+        )
+        .order_by(RegistrationInvite.id.desc())
+        .limit(30)
+        .all()
+    )
+    base_url = str(request.base_url).rstrip("/")
+    invite_links = []
+    for inv in invites:
+        invite_links.append(
+            {
+                "id": inv.id,
+                "role": inv.role.value,
+                "url": f"{base_url}/web/register?token={inv.token}",
+                "created_at": inv.created_at,
+                "expires_at": inv.expires_at,
+                "is_used": inv.used_by is not None,
+            }
+        )
     curators = [u for u in users if u.role == Role.curator]
     executors = [u for u in users if u.role == Role.executor]
     return templates.TemplateResponse(
@@ -5097,6 +5127,7 @@ def web_users(
             "user": user,
             "curators": curators,
             "executors": executors,
+            "invite_links": invite_links,
             "ok": (ok or "").strip(),
             "err": (err or "").strip(),
         },
@@ -5105,15 +5136,24 @@ def web_users(
 
 @app.post("/web/users/invites/create")
 async def web_users_invite_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_admin(user):
-        raise HTTPException(403, "Only admin")
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
+    allowed_roles = manageable_roles_for_web_user_management(user)
+    if not allowed_roles:
+        raise HTTPException(403, "Forbidden")
 
     form = await request.form()
     role_raw = (form.get("role") or "").strip().upper()
     expires_days_raw = (form.get("expires_days") or "").strip()
-    if role_raw not in ("CURATOR", "EXECUTOR"):
-        return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+    if user.role == Role.curator:
+        role_value = Role.executor
+    else:
+        if role_raw not in ("CURATOR", "EXECUTOR"):
+            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
+        role_value = Role(role_raw)
+        if role_value not in allowed_roles:
+            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
 
     try:
         expires_days = int(expires_days_raw) if expires_days_raw else 7
@@ -5123,14 +5163,18 @@ async def web_users_invite_create(request: Request, db: Session = Depends(get_db
 
     invite = RegistrationInvite(
         token=secrets.token_urlsafe(24),
-        role=Role(role_raw),
+        role=role_value,
         company_id=user.company_id,
         created_by=user.id,
         expires_at=datetime.utcnow() + timedelta(days=expires_days),
     )
-    db.add(invite)
-    db.commit()
-    return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
+    try:
+        db.add(invite)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/users?ok=invite_created", status_code=HTTP_303_SEE_OTHER)
 
 @app.post("/web/users/create")
 async def web_users_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
