@@ -889,6 +889,11 @@ def resolve_deadline_by_rule(rule: str | None, now_dt: datetime | None = None) -
     if not raw:
         return None
     base = now_dt or local_now()
+    try:
+        exact_date = datetime.strptime(raw, "%Y-%m-%d")
+        return exact_date.replace(hour=23, minute=59, second=0, microsecond=0)
+    except ValueError:
+        pass
     if raw.startswith("+") and raw.endswith("h"):
         try:
             return base + timedelta(hours=max(1, int(raw[1:-1])))
@@ -900,6 +905,16 @@ def resolve_deadline_by_rule(rule: str | None, now_dt: datetime | None = None) -
         except ValueError:
             return None
     return None
+
+
+def template_deadline_date_value(rule: str | None) -> str:
+    raw = (rule or "").strip()
+    if not raw:
+        return ""
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
 
 
 def render_template_value(raw_value: str | None, period_key: str, unit_name: str) -> str | None:
@@ -1591,6 +1606,7 @@ templates = Jinja2Templates(directory="templates")
 templates.env.globals["format_dt"] = format_dt
 templates.env.globals["to_local_dt"] = to_local_dt
 templates.env.globals["format_deadline"] = format_deadline
+templates.env.globals["template_deadline_date_value"] = template_deadline_date_value
 
 
 @app.on_event("startup")

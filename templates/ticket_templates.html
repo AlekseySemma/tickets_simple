@@ -43,7 +43,7 @@
           </div>
           <div class="col-12 col-md-4"><input class="form-control" name="title_template" placeholder="Шаблон названия" /></div>
           <div class="col-12 col-md-6"><input class="form-control" name="description_template" placeholder="Шаблон описания" /></div>
-          <div class="col-12 col-md-2"><input class="form-control" name="default_deadline_rule" placeholder="Срок, напр. +24h" /></div>
+          <div class="col-12 col-md-2"><input class="form-control" type="date" name="default_deadline_rule" /></div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="scope_unit_id">
               <option value="">Scope-узел</option>
@@ -79,7 +79,7 @@
             </div>
             <div class="col-12 col-md-3"><input class="form-control" name="title_template" value="{{ t.title_template or '' }}" /></div>
             <div class="col-12 col-md-3"><input class="form-control" name="description_template" value="{{ t.description_template or '' }}" /></div>
-            <div class="col-12 col-md-2"><input class="form-control" name="default_deadline_rule" value="{{ t.default_deadline_rule or '' }}" /></div>
+            <div class="col-12 col-md-2"><input class="form-control" type="date" name="default_deadline_rule" value="{{ template_deadline_date_value(t.default_deadline_rule) }}" /></div>
             <div class="col-12 col-md-3">
               <select class="form-select" name="scope_unit_id">
                 <option value="">Scope-узел</option>
