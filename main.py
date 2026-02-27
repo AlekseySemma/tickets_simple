@@ -3763,59 +3763,89 @@ async def web_org_structure_assign_executor(
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
 
     form = await request.form()
-    unit_raw = (form.get("unit_id") or "").strip()
+    unit_values_raw = [str(v).strip() for v in form.getlist("unit_ids") if str(v).strip()]
+    if not unit_values_raw:
+        fallback_unit_raw = (form.get("unit_id") or "").strip()
+        if fallback_unit_raw:
+            unit_values_raw = [fallback_unit_raw]
     executor_raw = (form.get("executor_id") or "").strip()
     is_primary = (form.get("is_primary") or "").strip() in {"1", "on", "true", "yes"}
+
     try:
-        unit_id = int(unit_raw)
         executor_id = int(executor_raw)
     except ValueError:
         return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
 
-    unit = db.get(OrgUnit, unit_id)
+    unit_ids: list[int] = []
+    seen_unit_ids: set[int] = set()
+    try:
+        for unit_raw in unit_values_raw:
+            unit_id = int(unit_raw)
+            if unit_id not in seen_unit_ids:
+                seen_unit_ids.add(unit_id)
+                unit_ids.append(unit_id)
+    except ValueError:
+        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+
+    if not unit_ids:
+        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+
     executor = db.get(User, executor_id)
-    if not unit or unit.company_id != user.company_id:
-        return RedirectResponse(url="/web/org-structure?error=assign_unit_not_found", status_code=HTTP_303_SEE_OTHER)
     if not executor or executor.company_id != user.company_id or executor.role != Role.executor:
         return RedirectResponse(url="/web/org-structure?error=assign_executor_not_found", status_code=HTTP_303_SEE_OTHER)
 
+    found_unit_ids = {
+        row[0]
+        for row in (
+            db.query(OrgUnit.id)
+            .filter(OrgUnit.company_id == user.company_id, OrgUnit.id.in_(unit_ids))
+            .all()
+        )
+    }
+    if len(found_unit_ids) != len(unit_ids):
+        return RedirectResponse(url="/web/org-structure?error=assign_unit_not_found", status_code=HTTP_303_SEE_OTHER)
+
     try:
-        existing = (
+        existing_rows = (
             db.query(UnitAssignment)
             .filter(
                 UnitAssignment.company_id == user.company_id,
-                UnitAssignment.unit_id == unit_id,
+                UnitAssignment.unit_id.in_(unit_ids),
                 UnitAssignment.user_id == executor_id,
                 UnitAssignment.role_code == "EXECUTOR",
             )
-            .first()
+            .all()
         )
-        if existing:
-            existing.is_primary = existing.is_primary or is_primary
-            assignment_id = existing.id
-        else:
-            item = UnitAssignment(
-                company_id=user.company_id,
-                unit_id=unit_id,
-                user_id=executor_id,
-                role_code="EXECUTOR",
-                is_primary=is_primary,
-            )
-            db.add(item)
-            db.flush()
-            assignment_id = item.id
+        existing_by_unit_id = {row.unit_id: row for row in existing_rows}
 
-        if is_primary:
-            (
-                db.query(UnitAssignment)
-                .filter(
-                    UnitAssignment.company_id == user.company_id,
-                    UnitAssignment.unit_id == unit_id,
-                    UnitAssignment.role_code == "EXECUTOR",
-                    UnitAssignment.id != assignment_id,
+        for unit_id in unit_ids:
+            existing = existing_by_unit_id.get(unit_id)
+            if existing:
+                existing.is_primary = existing.is_primary or is_primary
+                assignment_id = existing.id
+            else:
+                item = UnitAssignment(
+                    company_id=user.company_id,
+                    unit_id=unit_id,
+                    user_id=executor_id,
+                    role_code="EXECUTOR",
+                    is_primary=is_primary,
                 )
-                .update({UnitAssignment.is_primary: False}, synchronize_session=False)
-            )
+                db.add(item)
+                db.flush()
+                assignment_id = item.id
+
+            if is_primary:
+                (
+                    db.query(UnitAssignment)
+                    .filter(
+                        UnitAssignment.company_id == user.company_id,
+                        UnitAssignment.unit_id == unit_id,
+                        UnitAssignment.role_code == "EXECUTOR",
+                        UnitAssignment.id != assignment_id,
+                    )
+                    .update({UnitAssignment.is_primary: False}, synchronize_session=False)
+                )
 
         db.commit()
     except SQLAlchemyError:

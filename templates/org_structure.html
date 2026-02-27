@@ -149,8 +149,8 @@
       <div class="card-body">
         <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
         <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
-          <div class="col-12 col-md-5">
-            <select class="form-select" name="unit_id" required>
+          <div class="col-12 col-md-6">
+            <select class="form-select" name="unit_ids" multiple size="8" required>
               <option value="" selected disabled>Узел</option>
               {% for u in units %}
                 {% if u.is_active %}
@@ -158,8 +158,9 @@
                 {% endif %}
               {% endfor %}
             </select>
+            <div class="form-text">Можно выбрать несколько узлов (Ctrl/Cmd + клик).</div>
           </div>
-          <div class="col-12 col-md-5">
+          <div class="col-12 col-md-4">
             <select class="form-select" name="executor_id" required>
               <option value="" selected disabled>Исполнитель</option>
               {% for e in executors %}
