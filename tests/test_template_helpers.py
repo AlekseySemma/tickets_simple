@@ -40,6 +40,13 @@ class TemplateHelpersTest(unittest.TestCase):
         self.assertEqual(plus_day, datetime(2026, 2, 2, 10, 0))
         self.assertEqual(plus_hours, datetime(2026, 2, 1, 15, 0))
 
+    def test_resolve_deadline_dom_rule(self):
+        base = datetime(2026, 2, 1, 10, 0)
+        dom_26 = main.resolve_deadline_by_rule("dom:26", now_dt=base)
+        dom_31 = main.resolve_deadline_by_rule("dom:31", now_dt=base)
+        self.assertEqual(dom_26, datetime(2026, 2, 26, 23, 59))
+        self.assertEqual(dom_31, datetime(2026, 2, 28, 23, 59))
+
 
 if __name__ == "__main__":
     unittest.main()

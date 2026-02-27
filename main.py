@@ -1,4 +1,5 @@
-﻿from datetime import datetime, timedelta
+from calendar import monthrange
+from datetime import datetime, timedelta
 import csv
 from enum import Enum
 import io
@@ -910,6 +911,16 @@ def resolve_deadline_by_rule(rule: str | None, now_dt: datetime | None = None) -
     if not raw:
         return None
     base = now_dt or local_now()
+    if raw.startswith("dom:"):
+        try:
+            day = int(raw.split(":", 1)[1])
+        except ValueError:
+            return None
+        if day < 1:
+            return None
+        last_day = monthrange(base.year, base.month)[1]
+        clamped_day = min(day, last_day)
+        return base.replace(day=clamped_day, hour=23, minute=59, second=0, microsecond=0)
     try:
         exact_date = datetime.strptime(raw, "%Y-%m-%d")
         return exact_date.replace(hour=23, minute=59, second=0, microsecond=0)
@@ -936,6 +947,60 @@ def template_deadline_date_value(rule: str | None) -> str:
         return datetime.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
     except ValueError:
         return ""
+
+
+def template_deadline_mode(rule: str | None) -> str:
+    raw = (rule or "").strip().lower()
+    if raw.startswith("dom:"):
+        return "dom"
+    if template_deadline_date_value(raw):
+        return "date"
+    return "none"
+
+
+def template_deadline_dom_value(rule: str | None) -> str:
+    raw = (rule or "").strip().lower()
+    if not raw.startswith("dom:"):
+        return ""
+    try:
+        day = int(raw.split(":", 1)[1])
+    except ValueError:
+        return ""
+    if day < 1 or day > 31:
+        return ""
+    return str(day)
+
+
+def parse_template_deadline_rule_from_form(form) -> str | None:
+    mode = (form.get("deadline_mode") or "").strip().lower()
+    if mode == "date":
+        date_value = (form.get("deadline_date") or "").strip()
+        if not date_value:
+            return None
+        try:
+            return datetime.strptime(date_value, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+    if mode == "dom":
+        dom_raw = (form.get("deadline_dom") or "").strip()
+        if not dom_raw:
+            return None
+        try:
+            day = int(dom_raw)
+        except ValueError:
+            return None
+        if day < 1 or day > 31:
+            return None
+        return f"dom:{day}"
+    legacy_raw = (form.get("default_deadline_rule") or "").strip().lower()
+    if not legacy_raw:
+        return None
+    if legacy_raw.startswith("dom:"):
+        return legacy_raw
+    try:
+        return datetime.strptime(legacy_raw, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return legacy_raw
 
 
 def render_template_value(raw_value: str | None, period_key: str, unit_name: str) -> str | None:
@@ -1683,6 +1748,8 @@ templates.env.globals["format_dt"] = format_dt
 templates.env.globals["to_local_dt"] = to_local_dt
 templates.env.globals["format_deadline"] = format_deadline
 templates.env.globals["template_deadline_date_value"] = template_deadline_date_value
+templates.env.globals["template_deadline_mode"] = template_deadline_mode
+templates.env.globals["template_deadline_dom_value"] = template_deadline_dom_value
 templates.env.globals["fix_mojibake_text"] = fix_mojibake_text
 
 
@@ -4552,7 +4619,7 @@ async def web_ticket_templates_create(request: Request, db: Session = Depends(ge
         name=name,
         title_template=(form.get("title_template") or "").strip() or None,
         description_template=(form.get("description_template") or "").strip() or None,
-        default_deadline_rule=(form.get("default_deadline_rule") or "").strip() or None,
+        default_deadline_rule=parse_template_deadline_rule_from_form(form),
         default_executor_id=default_executor_id,
         scope_unit_id=scope_unit_id,
         is_active=is_active,
@@ -4604,7 +4671,7 @@ async def web_ticket_templates_update(
     item.name = name
     item.title_template = (form.get("title_template") or "").strip() or None
     item.description_template = (form.get("description_template") or "").strip() or None
-    item.default_deadline_rule = (form.get("default_deadline_rule") or "").strip() or None
+    item.default_deadline_rule = parse_template_deadline_rule_from_form(form)
     item.default_executor_id = default_executor_id
     item.scope_unit_id = scope_unit_id
     item.is_active = is_active

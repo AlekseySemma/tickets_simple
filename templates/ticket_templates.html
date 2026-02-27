@@ -43,7 +43,15 @@
           </div>
           <div class="col-12 col-md-4"><input class="form-control" name="title_template" placeholder="Шаблон названия" /></div>
           <div class="col-12 col-md-6"><input class="form-control" name="description_template" placeholder="Шаблон описания" /></div>
-          <div class="col-12 col-md-2"><input class="form-control" type="date" name="default_deadline_rule" /></div>
+          <div class="col-12 col-md-2">
+            <select class="form-select" name="deadline_mode">
+              <option value="none" selected>Без срока</option>
+              <option value="date">Точная дата</option>
+              <option value="dom">День месяца</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-2"><input class="form-control" type="date" name="deadline_date" /></div>
+          <div class="col-12 col-md-2"><input class="form-control" type="number" min="1" max="31" name="deadline_dom" placeholder="День (1-31)" /></div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="scope_unit_id">
               <option value="">Scope-узел</option>
@@ -79,7 +87,15 @@
             </div>
             <div class="col-12 col-md-3"><input class="form-control" name="title_template" value="{{ t.title_template or '' }}" /></div>
             <div class="col-12 col-md-3"><input class="form-control" name="description_template" value="{{ t.description_template or '' }}" /></div>
-            <div class="col-12 col-md-2"><input class="form-control" type="date" name="default_deadline_rule" value="{{ template_deadline_date_value(t.default_deadline_rule) }}" /></div>
+            <div class="col-12 col-md-2">
+              <select class="form-select" name="deadline_mode">
+                <option value="none" {% if template_deadline_mode(t.default_deadline_rule) == "none" %}selected{% endif %}>Без срока</option>
+                <option value="date" {% if template_deadline_mode(t.default_deadline_rule) == "date" %}selected{% endif %}>Точная дата</option>
+                <option value="dom" {% if template_deadline_mode(t.default_deadline_rule) == "dom" %}selected{% endif %}>День месяца</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-2"><input class="form-control" type="date" name="deadline_date" value="{{ template_deadline_date_value(t.default_deadline_rule) }}" /></div>
+            <div class="col-12 col-md-2"><input class="form-control" type="number" min="1" max="31" name="deadline_dom" value="{{ template_deadline_dom_value(t.default_deadline_rule) }}" placeholder="День (1-31)" /></div>
             <div class="col-12 col-md-3">
               <select class="form-select" name="scope_unit_id">
                 <option value="">Scope-узел</option>
