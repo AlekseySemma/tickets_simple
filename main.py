@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+﻿from datetime import datetime, timedelta
 import csv
 from enum import Enum
 import io
@@ -35,13 +35,13 @@ except Exception:
 
 
 # =========================
-# Настройки (простые)
+# РќР°СЃС‚СЂРѕР№РєРё (РїСЂРѕСЃС‚С‹Рµ)
 # =========================
 JWT_SECRET = (os.getenv("JWT_SECRET") or "").strip()
 if len(JWT_SECRET) < 32:
     raise RuntimeError("JWT_SECRET must be set and contain at least 32 characters")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 РґРЅРµР№
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
@@ -74,7 +74,7 @@ TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().l
 TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
 
 # =========================
-# База данных (SQLite)
+# Р‘Р°Р·Р° РґР°РЅРЅС‹С… (SQLite)
 # =========================
 engine_kwargs = {}
 if DB_URL.startswith("sqlite"):
@@ -86,7 +86,7 @@ class Base(DeclarativeBase):
     pass
 
 # =========================
-# Модели
+# РњРѕРґРµР»Рё
 # =========================
 class Role(str, Enum):
     platform_admin = "PLATFORM_ADMIN"
@@ -247,6 +247,27 @@ class Ticket(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
+class TicketGenerationKey(Base):
+    __tablename__ = "ticket_generation_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "ticket_template_id",
+            "target_unit_id",
+            "period_key",
+            name="uq_ticket_generation_keys_scope",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    ticket_template_id: Mapped[int] = mapped_column(ForeignKey("ticket_templates.id"), index=True)
+    target_unit_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), index=True)
+    period_key: Mapped[str] = mapped_column(String(16), index=True)
+    ticket_id: Mapped[Optional[int]] = mapped_column(Integer, default=None, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class Comment(Base):
     __tablename__ = "comments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -328,7 +349,7 @@ if (os.getenv("SKIP_MIGRATION_CHECK", "0").strip().lower() not in {"1", "true", 
     ensure_migrations_ready()
 
 # =========================
-# Схемы API
+# РЎС…РµРјС‹ API
 # =========================
 class TokenOut(BaseModel):
     access_token: str
@@ -523,13 +544,13 @@ class PushUnsubscribeIn(BaseModel):
     endpoint: str
 
 # =========================
-# Безопасность
+# Р‘РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ
 # =========================
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
 
-# ВАЖНО: auto_error=False чтобы cookie-логин для веба работал без Bearer
+# Р’РђР–РќРћ: auto_error=False С‡С‚РѕР±С‹ cookie-Р»РѕРіРёРЅ РґР»СЏ РІРµР±Р° СЂР°Р±РѕС‚Р°Р» Р±РµР· Bearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 def get_db():
@@ -936,12 +957,12 @@ def ticket_exists_for_template_period(
     period_key: str,
 ) -> bool:
     row = (
-        db.query(Ticket.id)
+        db.query(TicketGenerationKey.id)
         .filter(
-            Ticket.company_id == company_id,
-            Ticket.ticket_template_id == template_id,
-            Ticket.target_unit_id == target_unit_id,
-            Ticket.period_key == period_key,
+            TicketGenerationKey.company_id == company_id,
+            TicketGenerationKey.ticket_template_id == template_id,
+            TicketGenerationKey.target_unit_id == target_unit_id,
+            TicketGenerationKey.period_key == period_key,
         )
         .first()
     )
@@ -996,6 +1017,14 @@ def create_tickets_from_template(
 
         try:
             with db.begin_nested():
+                generation_key = TicketGenerationKey(
+                    company_id=template.company_id,
+                    ticket_template_id=template.id,
+                    target_unit_id=leaf_unit_id,
+                    period_key=effective_period,
+                )
+                db.add(generation_key)
+                db.flush()
                 ticket = Ticket(
                     title=title,
                     description=description,
@@ -1013,13 +1042,14 @@ def create_tickets_from_template(
                 )
                 db.add(ticket)
                 db.flush()
-                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="создание по шаблону")
+                generation_key.ticket_id = ticket.id
+                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="СЃРѕР·РґР°РЅРёРµ РїРѕ С€Р°Р±Р»РѕРЅСѓ")
                 if ticket.executor_id and ticket.executor_id != actor_id:
                     send_push_to_user(
                         db=db,
                         user_id=ticket.executor_id,
-                        title=f"Новая заявка #{ticket.id}",
-                        body=ticket.title or "Вам назначена новая заявка",
+                        title=f"РќРѕРІР°СЏ Р·Р°СЏРІРєР° #{ticket.id}",
+                        body=ticket.title or "Р’Р°Рј РЅР°Р·РЅР°С‡РµРЅР° РЅРѕРІР°СЏ Р·Р°СЏРІРєР°",
                         url=f"/web/tickets/{ticket.id}",
                     )
             created_count += 1
@@ -1115,7 +1145,7 @@ def local_now() -> datetime:
 def format_dt(dt: datetime | None) -> str:
     local_dt = to_local_dt(dt)
     if local_dt is None:
-        return "—"
+        return "вЂ”"
 
     now_local = to_local_dt(datetime.utcnow())
     if not now_local:
@@ -1125,15 +1155,15 @@ def format_dt(dt: datetime | None) -> str:
     now_date = now_local.date()
 
     if date_part == now_date:
-        return local_dt.strftime("Сегодня, %H:%M")
+        return local_dt.strftime("РЎРµРіРѕРґРЅСЏ, %H:%M")
     if date_part == (now_date - timedelta(days=1)):
-        return local_dt.strftime("Вчера, %H:%M")
+        return local_dt.strftime("Р’С‡РµСЂР°, %H:%M")
     if date_part == (now_date + timedelta(days=1)):
-        return local_dt.strftime("Завтра, %H:%M")
+        return local_dt.strftime("Р—Р°РІС‚СЂР°, %H:%M")
 
     month_names = {
-        1: "янв", 2: "фев", 3: "мар", 4: "апр", 5: "мая", 6: "июн",
-        7: "июл", 8: "авг", 9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+        1: "СЏРЅРІ", 2: "С„РµРІ", 3: "РјР°СЂ", 4: "Р°РїСЂ", 5: "РјР°СЏ", 6: "РёСЋРЅ",
+        7: "РёСЋР»", 8: "Р°РІРі", 9: "СЃРµРЅ", 10: "РѕРєС‚", 11: "РЅРѕСЏ", 12: "РґРµРє",
     }
 
     if local_dt.year == now_local.year:
@@ -1147,22 +1177,22 @@ def format_dt(dt: datetime | None) -> str:
 
 def format_deadline(dt: datetime | None) -> str:
     if dt is None:
-        return "—"
+        return "вЂ”"
 
     now_local = local_now()
     date_part = dt.date()
     now_date = now_local.date()
 
     if date_part == now_date:
-        return dt.strftime("Сегодня, %H:%M")
+        return dt.strftime("РЎРµРіРѕРґРЅСЏ, %H:%M")
     if date_part == (now_date - timedelta(days=1)):
-        return dt.strftime("Вчера, %H:%M")
+        return dt.strftime("Р’С‡РµСЂР°, %H:%M")
     if date_part == (now_date + timedelta(days=1)):
-        return dt.strftime("Завтра, %H:%M")
+        return dt.strftime("Р—Р°РІС‚СЂР°, %H:%M")
 
     month_names = {
-        1: "янв", 2: "фев", 3: "мар", 4: "апр", 5: "мая", 6: "июн",
-        7: "июл", 8: "авг", 9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+        1: "СЏРЅРІ", 2: "С„РµРІ", 3: "РјР°СЂ", 4: "Р°РїСЂ", 5: "РјР°СЏ", 6: "РёСЋРЅ",
+        7: "РёСЋР»", 8: "Р°РІРі", 9: "СЃРµРЅ", 10: "РѕРєС‚", 11: "РЅРѕСЏ", 12: "РґРµРє",
     }
 
     if dt.year == now_local.year:
@@ -1253,7 +1283,7 @@ def create_inapp_notification(db: Session, user_id: int, title: str, body: str, 
     n = Notification(
         company_id=user.company_id,
         user_id=user_id,
-        title=(title or "").strip()[:255] or "Уведомление",
+        title=(title or "").strip()[:255] or "РЈРІРµРґРѕРјР»РµРЅРёРµ",
         body=(body or "").strip()[:2000] or None,
         url=(url or "").strip()[:500] or "/web",
         is_read=False,
@@ -1274,8 +1304,8 @@ def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"Новая заявка #{ticket.id}",
-        body=ticket.title or "Вам назначили новую заявку",
+        title=f"РќРѕРІР°СЏ Р·Р°СЏРІРєР° #{ticket.id}",
+        body=ticket.title or "Р’Р°Рј РЅР°Р·РЅР°С‡РёР»Рё РЅРѕРІСѓСЋ Р·Р°СЏРІРєСѓ",
         url=f"/web/tickets/{ticket.id}",
     )
 
@@ -1288,8 +1318,8 @@ def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Opt
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"Вам назначена заявка #{ticket.id}",
-        body=ticket.title or "Заявка назначена на вас",
+        title=f"Р’Р°Рј РЅР°Р·РЅР°С‡РµРЅР° Р·Р°СЏРІРєР° #{ticket.id}",
+        body=ticket.title or "Р—Р°СЏРІРєР° РЅР°Р·РЅР°С‡РµРЅР° РЅР° РІР°СЃ",
         url=f"/web/tickets/{ticket.id}",
     )
 
@@ -1306,7 +1336,7 @@ def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"Изменен статус заявки #{ticket.id}",
+            title=f"РР·РјРµРЅРµРЅ СЃС‚Р°С‚СѓСЃ Р·Р°СЏРІРєРё #{ticket.id}",
             body=f"{actor.name}: {status_label_ru(old_status)} -> {status_label_ru(ticket.status)}",
             url=f"/web/tickets/{ticket.id}",
         )
@@ -1321,8 +1351,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
         send_push_to_user(
             db=db,
             user_id=ticket.executor_id,
-            title=f"Новый комментарий в заявке #{ticket.id}",
-            body=short_text or f"{author.name} оставил комментарий",
+            title=f"РќРѕРІС‹Р№ РєРѕРјРјРµРЅС‚Р°СЂРёР№ РІ Р·Р°СЏРІРєРµ #{ticket.id}",
+            body=short_text or f"{author.name} РѕСЃС‚Р°РІРёР» РєРѕРјРјРµРЅС‚Р°СЂРёР№",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1335,8 +1365,8 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"Новый комментарий в заявке #{ticket.id}",
-            body=short_text or f"{author.name} оставил комментарий",
+            title=f"РќРѕРІС‹Р№ РєРѕРјРјРµРЅС‚Р°СЂРёР№ РІ Р·Р°СЏРІРєРµ #{ticket.id}",
+            body=short_text or f"{author.name} РѕСЃС‚Р°РІРёР» РєРѕРјРјРµРЅС‚Р°СЂРёР№",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1345,7 +1375,7 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
     if uploader.role != Role.executor:
         return
     file_name = (original_name or "").lower()
-    if "акт" not in file_name and "act" not in file_name:
+    if "Р°РєС‚" not in file_name and "act" not in file_name:
         return
     curator_ids = [
         u.id
@@ -1356,8 +1386,8 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"Исполнитель прикрепил акт #{ticket.id}",
-            body=original_name or "Добавлен файл акта",
+            title=f"РСЃРїРѕР»РЅРёС‚РµР»СЊ РїСЂРёРєСЂРµРїРёР» Р°РєС‚ #{ticket.id}",
+            body=original_name or "Р”РѕР±Р°РІР»РµРЅ С„Р°Р№Р» Р°РєС‚Р°",
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -1410,8 +1440,8 @@ def run_deadline_reminders_forever() -> None:
                     send_push_to_user(
                         db=db,
                         user_id=t.executor_id,
-                        title=f"Срок заявки #{t.id} скоро истечет",
-                        body=f"До дедлайна осталось {PUSH_REMINDER_MINUTES} минут",
+                        title=f"РЎСЂРѕРє Р·Р°СЏРІРєРё #{t.id} СЃРєРѕСЂРѕ РёСЃС‚РµС‡РµС‚",
+                        body=f"Р”Рѕ РґРµРґР»Р°Р№РЅР° РѕСЃС‚Р°Р»РѕСЃСЊ {PUSH_REMINDER_MINUTES} РјРёРЅСѓС‚",
                         url=f"/web/tickets/{t.id}",
                     )
                 db.commit()
@@ -1567,7 +1597,7 @@ def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | No
     return invite
 
 # =========================
-# Приложение
+# РџСЂРёР»РѕР¶РµРЅРёРµ
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
 
@@ -1725,8 +1755,8 @@ def push_test(request: Request, db: Session = Depends(get_db), user: User = Depe
     report = send_push_to_user_report(
         db=db,
         user_id=user.id,
-        title="Тест push",
-        body=f"Проверка уведомлений для {user.name}",
+        title="РўРµСЃС‚ push",
+        body=f"РџСЂРѕРІРµСЂРєР° СѓРІРµРґРѕРјР»РµРЅРёР№ РґР»СЏ {user.name}",
         url="/web",
     )
     db.commit()
@@ -2317,11 +2347,11 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     try:
         db.add(t)
         db.flush()
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise HTTPException(400, "Не удалось создать заявку")
+        raise HTTPException(400, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р·Р°СЏРІРєСѓ")
     db.refresh(t)
     notify_executor_new_ticket(db, t, user)
     try:
@@ -2349,7 +2379,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     if user.role == Role.executor:
         if t.executor_id != user.id and t.created_by != user.id:
             raise HTTPException(403, "Forbidden")
-        allowed = {"status", "description"}  # можно расширить
+        allowed = {"status", "description"}  # РјРѕР¶РЅРѕ СЂР°СЃС€РёСЂРёС‚СЊ
         incoming = {k: v for k, v in incoming.items() if k in allowed}
 
     if "title" in incoming:
@@ -2381,30 +2411,30 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
 
     has_specific_log = False
     if t.deadline != old_deadline:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение срока")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°")
         has_specific_log = True
     if t.executor_id != old_executor_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение исполнителя")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ")
         has_specific_log = True
     if t.project_id != old_project_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°")
         has_specific_log = True
 
     if t.ticket_type_id != old_ticket_type_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение типа заявки")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С‚РёРїР° Р·Р°СЏРІРєРё")
         has_specific_log = True
     if t.target_unit_id != old_target_unit_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение целевого узла")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С†РµР»РµРІРѕРіРѕ СѓР·Р»Р°")
         has_specific_log = True
     if t.ticket_template_id != old_template_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение шаблона заявки")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С€Р°Р±Р»РѕРЅР° Р·Р°СЏРІРєРё")
         has_specific_log = True
     if t.period_key != old_period_key:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение периода шаблона")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїРµСЂРёРѕРґР° С€Р°Р±Р»РѕРЅР°")
         has_specific_log = True
 
     if not has_specific_log:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
 
     db.commit(); db.refresh(t)
     notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
@@ -2437,7 +2467,7 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
     db.add(a)
-    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°")
     db.commit(); db.refresh(a)
     notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
@@ -2486,14 +2516,14 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
         audit_security_event("web_login", request, success=False, email=email, detail="rate_limited")
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Слишком много попыток входа. Попробуйте позже."},
+            {"request": request, "error": "РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ РїРѕРїС‹С‚РѕРє РІС…РѕРґР°. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ."},
             status_code=429,
         )
 
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.password_hash):
         audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный email или пароль"})
+        return templates.TemplateResponse("login.html", {"request": request, "error": "РќРµРІРµСЂРЅС‹Р№ email РёР»Рё РїР°СЂРѕР»СЊ"})
 
     token = create_access_token(str(user.id))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
@@ -2555,7 +2585,7 @@ async def web_register_company_submit(request: Request, db: Session = Depends(ge
         audit_security_event("register_company", request, success=False, email=admin_email, detail="validation_error")
         return templates.TemplateResponse(
             "register_company.html",
-            {"request": request, "error": "Проверьте введенные данные", "success": False},
+            {"request": request, "error": "РџСЂРѕРІРµСЂСЊС‚Рµ РІРІРµРґРµРЅРЅС‹Рµ РґР°РЅРЅС‹Рµ", "success": False},
         )
 
 
@@ -2588,7 +2618,7 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
         audit_security_event("web_register", request, success=False, email=email, detail="rate_limited")
         return templates.TemplateResponse(
             "register.html",
-            {"request": request, "token": token, "role_value": "", "error": "Слишком много попыток. Попробуйте позже.", "success": False},
+            {"request": request, "token": token, "role_value": "", "error": "РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ РїРѕРїС‹С‚РѕРє. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ.", "success": False},
             status_code=429,
         )
 
@@ -2599,19 +2629,19 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
         audit_security_event("web_register", request, success=False, email=email, detail="invalid_invite")
         return templates.TemplateResponse(
             "register.html",
-            {"request": request, "token": token, "role_value": role_value, "error": "Ссылка недействительна", "success": False},
+            {"request": request, "token": token, "role_value": role_value, "error": "РЎСЃС‹Р»РєР° РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР°", "success": False},
         )
     if not (name and email and password):
         audit_security_event("web_register", request, success=False, email=email, detail="missing_fields")
         return templates.TemplateResponse(
             "register.html",
-            {"request": request, "token": token, "role_value": role_value, "error": "Заполните все поля", "success": False},
+            {"request": request, "token": token, "role_value": role_value, "error": "Р—Р°РїРѕР»РЅРёС‚Рµ РІСЃРµ РїРѕР»СЏ", "success": False},
         )
     if db.query(User).filter(User.email == email).first():
         audit_security_event("web_register", request, success=False, email=email, detail="email_exists")
         return templates.TemplateResponse(
             "register.html",
-            {"request": request, "token": token, "role_value": role_value, "error": "Email уже используется", "success": False},
+            {"request": request, "token": token, "role_value": role_value, "error": "Email СѓР¶Рµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ", "success": False},
         )
 
     try:
@@ -2633,7 +2663,7 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
         db.rollback()
         return templates.TemplateResponse(
             "register.html",
-            {"request": request, "token": token, "role_value": role_value, "error": "Не удалось завершить регистрацию", "success": False},
+            {"request": request, "token": token, "role_value": role_value, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РІРµСЂС€РёС‚СЊ СЂРµРіРёСЃС‚СЂР°С†РёСЋ", "success": False},
         )
 
     audit_security_event("web_register", request, success=True, email=email, user_id=user.id)
@@ -2656,7 +2686,7 @@ def web_tickets(
     status_filter: str | None = None,
     project_id: str | None = None,
     ticket_type_id: str | None = None,
-    executor_id: str | None = None,   # <-- ДОБАВИЛИ
+    executor_id: str | None = None,   # <-- Р”РћР‘РђР’РР›Р
     target_unit_id: str | None = None,
     unit_executor_id: str | None = None,
     q: str | None = None,
@@ -2670,12 +2700,12 @@ def web_tickets(
     if is_platform_admin(user):
         return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
     ensure_company_user(user)
-    # 1) tickets с учетом роли
+    # 1) tickets СЃ СѓС‡РµС‚РѕРј СЂРѕР»Рё
     base_query = db.query(Ticket).filter(Ticket.company_id == user.company_id)
     if user.role == Role.executor:
         base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
 
-    # 2) данные для UI
+    # 2) РґР°РЅРЅС‹Рµ РґР»СЏ UI
     projects = (
         db.query(Project.id, Project.name)
         .filter(Project.company_id == user.company_id)
@@ -2721,8 +2751,8 @@ def web_tickets(
     while stack:
         current_id, current_name, depth, ancestor_has_next, is_last = stack.pop()
         if depth > 0:
-            tree_trunk = "".join("│  " if has_next else "   " for has_next in ancestor_has_next)
-            tree_branch = "└─ " if is_last else "├─ "
+            tree_trunk = "".join("в”‚  " if has_next else "   " for has_next in ancestor_has_next)
+            tree_branch = "в””в”Ђ " if is_last else "в”њв”Ђ "
             tree_name = f"{tree_trunk}{tree_branch}{current_name}"
             short_name = f"{'- ' * depth}{current_name}"
         else:
@@ -2750,7 +2780,7 @@ def web_tickets(
     projects_by_id = {p.id: p.name for p in projects}
     ticket_types_by_id = {tt.id: tt.name for tt in ticket_types}
 
-    # 3) фильтры
+    # 3) С„РёР»СЊС‚СЂС‹
     project_id_int: int | None = None
     if project_id is not None and str(project_id).strip() != "":
         try:
@@ -2826,7 +2856,7 @@ def web_tickets(
         else:
             filtered_query = filtered_query.filter(Ticket.id == -1)
 
-    # Фильтр по исполнителю — только куратор
+    # Р¤РёР»СЊС‚СЂ РїРѕ РёСЃРїРѕР»РЅРёС‚РµР»СЋ вЂ” С‚РѕР»СЊРєРѕ РєСѓСЂР°С‚РѕСЂ
     if is_manager(user):
         if executor_none:
             filtered_query = filtered_query.filter(Ticket.executor_id.is_(None))
@@ -2844,7 +2874,7 @@ def web_tickets(
     now = local_now()
     now_plus_24h = now + timedelta(hours=24)
 
-        # только просроченные
+        # С‚РѕР»СЊРєРѕ РїСЂРѕСЃСЂРѕС‡РµРЅРЅС‹Рµ
     overdue_enabled = (only_overdue == "1")
     if overdue_enabled:
         filtered_query = filtered_query.filter(
@@ -2853,7 +2883,7 @@ def web_tickets(
             Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
         )
 
-        # сортировка
+        # СЃРѕСЂС‚РёСЂРѕРІРєР°
     sort_value = (sort or "").strip() or "id_desc"
     raw_view_mode = (view_mode or "").strip().lower()
     if is_manager(user):
@@ -2908,13 +2938,13 @@ def web_tickets(
         tickets_query = tickets_query.order_by(Ticket.id.desc())
 
     status_labels = {
-        "NEW": "Новая",
-        "IN_PROGRESS": "В работе",
-        "DONE": "Выполнена",
-        "CANCELED": "Отменена",
+        "NEW": "РќРѕРІР°СЏ",
+        "IN_PROGRESS": "Р’ СЂР°Р±РѕС‚Рµ",
+        "DONE": "Р’С‹РїРѕР»РЅРµРЅР°",
+        "CANCELED": "РћС‚РјРµРЅРµРЅР°",
     }
 
-    # Дашборд по текущему списку tickets (после фильтров)
+    # Р”Р°С€Р±РѕСЂРґ РїРѕ С‚РµРєСѓС‰РµРјСѓ СЃРїРёСЃРєСѓ tickets (РїРѕСЃР»Рµ С„РёР»СЊС‚СЂРѕРІ)
     filters_form_open = bool(
         (status_filter or "").strip()
         or project_id_int is not None
@@ -2932,7 +2962,7 @@ def web_tickets(
         current_list_url = f"{current_list_url}?{request.url.query}"
     current_list_url_encoded = quote(current_list_url, safe="")
 
-    # Пагинация
+    # РџР°РіРёРЅР°С†РёСЏ
     per_page = 10
     total_pages = max(1, (total_count + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
@@ -2959,7 +2989,7 @@ def web_tickets(
             "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
             "target_unit_id_filter": target_unit_id_int if target_unit_id_int is not None else "",
             "unit_executor_id_filter": unit_executor_id_int if unit_executor_id_int is not None else "",
-            "executor_id_filter": executor_id or "",  # <-- ДОБАВИЛИ (строка!)
+            "executor_id_filter": executor_id or "",  # <-- Р”РћР‘РђР’РР›Р (СЃС‚СЂРѕРєР°!)
             "q": q or "",
             "only_overdue": "1" if overdue_enabled else "",
             "sort": sort_value,
@@ -3158,7 +3188,7 @@ def web_notifications_open(
 
 
 def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
-    normalized = (type_name or "").strip() or "Узел"
+    normalized = (type_name or "").strip() or "РЈР·РµР»"
     existing = (
         db.query(UnitType)
         .filter(
@@ -3199,9 +3229,9 @@ def parse_bool_text(raw: str | None, default: bool = True) -> bool:
     value = (raw or "").strip().lower()
     if not value:
         return default
-    if value in {"1", "true", "yes", "y", "on", "да"}:
+    if value in {"1", "true", "yes", "y", "on", "РґР°"}:
         return True
-    if value in {"0", "false", "no", "n", "off", "нет"}:
+    if value in {"0", "false", "no", "n", "off", "РЅРµС‚"}:
         return False
     return default
 
@@ -3220,13 +3250,13 @@ def safe_notification_target(raw_url: str | None) -> str:
 
 def infer_notification_kind(title: str | None, body: str | None, url: str | None) -> str:
     text = f"{(title or '').lower()} {(body or '').lower()} {(url or '').lower()}"
-    if "комментар" in text:
+    if "РєРѕРјРјРµРЅС‚Р°СЂ" in text:
         return "comment"
-    if "срок" in text or "дедлайн" in text:
+    if "СЃСЂРѕРє" in text or "РґРµРґР»Р°Р№РЅ" in text:
         return "deadline"
-    if "статус" in text:
+    if "СЃС‚Р°С‚СѓСЃ" in text:
         return "status"
-    if "назнач" in text or "исполнител" in text:
+    if "РЅР°Р·РЅР°С‡" in text or "РёСЃРїРѕР»РЅРёС‚РµР»" in text:
         return "assignment"
     return "other"
 
@@ -3317,7 +3347,7 @@ def web_org_structure(
     )
     unit_type_names = [r[0] for r in type_names]
     if not unit_type_names:
-        unit_type_names = ["Узел"]
+        unit_type_names = ["РЈР·РµР»"]
     executors = (
         db.query(User.id, User.name, User.email)
         .filter(User.company_id == user.company_id, User.role == Role.executor)
@@ -3428,7 +3458,7 @@ async def web_org_structure_create(
     form = await request.form()
     name = (form.get("name") or "").strip()
     parent_raw = (form.get("parent_id") or "").strip()
-    type_name = (form.get("unit_type_name") or "").strip() or "Узел"
+    type_name = (form.get("unit_type_name") or "").strip() or "РЈР·РµР»"
     if not name:
         return RedirectResponse(url="/web/org-structure?error=empty_name", status_code=HTTP_303_SEE_OTHER)
 
@@ -3597,7 +3627,7 @@ async def web_org_structure_update(
     form = await request.form()
     name = (form.get("name") or "").strip()
     parent_raw = (form.get("parent_id") or "").strip()
-    type_name = (form.get("unit_type_name") or "").strip() or "Узел"
+    type_name = (form.get("unit_type_name") or "").strip() or "РЈР·РµР»"
     is_active = (form.get("is_active") or "").strip() in {"1", "on", "true", "yes"}
 
     if not name:
@@ -3724,7 +3754,7 @@ async def web_org_structure_import_csv(
                     parent_id = int(unit_info["id"])
                     continue
 
-                type_name = types[idx] if idx < len(types) else "Узел"
+                type_name = types[idx] if idx < len(types) else "РЈР·РµР»"
                 unit_type = get_or_create_unit_type(db, user.company_id, type_name)
                 new_item = OrgUnit(
                     company_id=user.company_id,
@@ -3884,7 +3914,7 @@ def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
 
 @app.post("/web/tickets/create")
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # куратор и исполнитель могут создавать
+    # РєСѓСЂР°С‚РѕСЂ Рё РёСЃРїРѕР»РЅРёС‚РµР»СЊ РјРѕРіСѓС‚ СЃРѕР·РґР°РІР°С‚СЊ
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
@@ -3928,7 +3958,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     if not ORG_STRUCTURE_V2_ENABLED and project_id is None:
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
-    # Если создаёт исполнитель и не выбрал исполнителя — назначаем на него
+    # Р•СЃР»Рё СЃРѕР·РґР°С‘С‚ РёСЃРїРѕР»РЅРёС‚РµР»СЊ Рё РЅРµ РІС‹Р±СЂР°Р» РёСЃРїРѕР»РЅРёС‚РµР»СЏ вЂ” РЅР°Р·РЅР°С‡Р°РµРј РЅР° РЅРµРіРѕ
     if user.role == Role.executor and executor_id is None:
         executor_id = user.id
 
@@ -3960,10 +3990,10 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 )
                 db.add(t)
                 db.flush()
-                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
                 created_tickets.append(t)
         else:
-            # ВАЖНО: именно deadline=deadline
+            # Р’РђР–РќРћ: РёРјРµРЅРЅРѕ deadline=deadline
             t = Ticket(
                 title=title,
                 description=description,
@@ -3976,7 +4006,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             )
             db.add(t)
             db.flush()
-            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="создание")
+            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
             created_tickets.append(t)
         db.commit()
     except SQLAlchemyError:
@@ -3996,7 +4026,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # права
+    # РїСЂР°РІР°
     if is_manager(user):
         allowed = True
     elif user.role == Role.executor and t.created_by == user.id:
@@ -4007,7 +4037,7 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
     if not allowed:
         raise HTTPException(403, "Forbidden")
 
-    # удаляем связанные записи до удаления заявки (FK в Postgres)
+    # СѓРґР°Р»СЏРµРј СЃРІСЏР·Р°РЅРЅС‹Рµ Р·Р°РїРёСЃРё РґРѕ СѓРґР°Р»РµРЅРёСЏ Р·Р°СЏРІРєРё (FK РІ Postgres)
     db.query(Comment).filter(Comment.ticket_id == ticket_id).delete(synchronize_session=False)
     db.query(Attachment).filter(Attachment.ticket_id == ticket_id).delete(synchronize_session=False)
     db.query(TicketLog).filter(TicketLog.ticket_id == ticket_id).delete(synchronize_session=False)
@@ -4023,7 +4053,7 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
 async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # права: куратор всегда, исполнитель — если заявка его (создал или назначена)
+    # РїСЂР°РІР°: РєСѓСЂР°С‚РѕСЂ РІСЃРµРіРґР°, РёСЃРїРѕР»РЅРёС‚РµР»СЊ вЂ” РµСЃР»Рё Р·Р°СЏРІРєР° РµРіРѕ (СЃРѕР·РґР°Р» РёР»Рё РЅР°Р·РЅР°С‡РµРЅР°)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
@@ -4034,7 +4064,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
 
     old_status = t.status
     t.status = TicketStatus(status_raw)
-    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
     db.commit()
     notify_curators_status_changed(db, t, actor=user, old_status=old_status)
     db.commit()
@@ -4042,7 +4072,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
     now = local_now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled))
 
-    # если запрос пришёл через fetch (Accept: application/json) — вернём JSON
+    # РµСЃР»Рё Р·Р°РїСЂРѕСЃ РїСЂРёС€С‘Р» С‡РµСЂРµР· fetch (Accept: application/json) вЂ” РІРµСЂРЅС‘Рј JSON
     accept = (request.headers.get("accept") or "").lower()
     if "application/json" in accept:
         return JSONResponse(
@@ -4054,7 +4084,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
             }
         )
 
-    # иначе обычный сценарий (перезагрузка)
+    # РёРЅР°С‡Рµ РѕР±С‹С‡РЅС‹Р№ СЃС†РµРЅР°СЂРёР№ (РїРµСЂРµР·Р°РіСЂСѓР·РєР°)
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
 
@@ -4082,7 +4112,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
 
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # права (как у комментариев/статусов)
+    # РїСЂР°РІР° (РєР°Рє Сѓ РєРѕРјРјРµРЅС‚Р°СЂРёРµРІ/СЃС‚Р°С‚СѓСЃРѕРІ)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
@@ -4091,10 +4121,10 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     dest_path = UPLOAD_DIR / safe_name
     await write_upload_file_async(file, dest_path)
 
-    # сохраняем путь как URL (удобно для шаблонов)
+    # СЃРѕС…СЂР°РЅСЏРµРј РїСѓС‚СЊ РєР°Рє URL (СѓРґРѕР±РЅРѕ РґР»СЏ С€Р°Р±Р»РѕРЅРѕРІ)
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
     db.add(a)
-    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="добавление файла")
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°")
     db.commit()
     notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
@@ -4108,7 +4138,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
 def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # права на просмотр/редактирование
+    # РїСЂР°РІР° РЅР° РїСЂРѕСЃРјРѕС‚СЂ/СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ
     if is_manager(user):
         can_edit_full = True
     elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
@@ -4139,16 +4169,16 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
     next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
     error_code = (request.query_params.get("error") or "").strip().lower()
     if error_code == "title_too_long":
-        error_message = f"Название слишком длинное. Максимум: {MAX_TICKET_TITLE_LEN} символов."
+        error_message = f"РќР°Р·РІР°РЅРёРµ СЃР»РёС€РєРѕРј РґР»РёРЅРЅРѕРµ. РњР°РєСЃРёРјСѓРј: {MAX_TICKET_TITLE_LEN} СЃРёРјРІРѕР»РѕРІ."
     else:
         error_message = None
 
 
-    # подготовим дату/время для формы
+    # РїРѕРґРіРѕС‚РѕРІРёРј РґР°С‚Сѓ/РІСЂРµРјСЏ РґР»СЏ С„РѕСЂРјС‹
     deadline_date = None
     deadline_time4 = None
     if t.deadline:
-        # deadline хранится в локальном времени, без UTC-смещения
+        # deadline С…СЂР°РЅРёС‚СЃСЏ РІ Р»РѕРєР°Р»СЊРЅРѕРј РІСЂРµРјРµРЅРё, Р±РµР· UTC-СЃРјРµС‰РµРЅРёСЏ
         deadline_date = t.deadline.strftime("%Y-%m-%d")
         deadline_time4 = t.deadline.strftime("%H%M")
 
@@ -4179,7 +4209,7 @@ async def web_ticket_edit_save(
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # права: куратор — всегда, исполнитель — только свои (создал/назначен)
+    # РїСЂР°РІР°: РєСѓСЂР°С‚РѕСЂ вЂ” РІСЃРµРіРґР°, РёСЃРїРѕР»РЅРёС‚РµР»СЊ вЂ” С‚РѕР»СЊРєРѕ СЃРІРѕРё (СЃРѕР·РґР°Р»/РЅР°Р·РЅР°С‡РµРЅ)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
@@ -4248,23 +4278,23 @@ async def web_ticket_edit_save(
 
     has_specific_log = False
     if t.deadline != old_deadline:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение срока")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°")
         has_specific_log = True
     if t.executor_id != old_executor_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение исполнителя")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ")
         has_specific_log = True
     if t.project_id != old_project_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение проекта")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°")
         has_specific_log = True
 
     if t.ticket_type_id != old_ticket_type_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение типа заявки")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С‚РёРїР° Р·Р°СЏРІРєРё")
         has_specific_log = True
 
     if not has_specific_log:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="изменение")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
 
-    db.commit()          # ✅ без этого не сохранится
+    db.commit()          # вњ… Р±РµР· СЌС‚РѕРіРѕ РЅРµ СЃРѕС…СЂР°РЅРёС‚СЃСЏ
     db.refresh(t)
     notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
     notify_curators_status_changed(db, t, actor=user, old_status=old_status)
@@ -4702,7 +4732,7 @@ def web_ticket_detail(
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # права
+    # РїСЂР°РІР°
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
@@ -4752,10 +4782,10 @@ def web_ticket_detail(
     )
 
     status_labels = {
-        "NEW": "Новая",
-        "IN_PROGRESS": "В работе",
-        "DONE": "Выполнена",
-        "CANCELED": "Отменена",
+        "NEW": "РќРѕРІР°СЏ",
+        "IN_PROGRESS": "Р’ СЂР°Р±РѕС‚Рµ",
+        "DONE": "Р’С‹РїРѕР»РЅРµРЅР°",
+        "CANCELED": "РћС‚РјРµРЅРµРЅР°",
     }
 
     return templates.TemplateResponse(

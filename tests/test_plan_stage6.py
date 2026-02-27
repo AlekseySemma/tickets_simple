@@ -165,6 +165,63 @@ class Stage6PlanTests(unittest.TestCase):
             self.assertEqual(skipped_2, 2)
             self.assertEqual(total, 2)
 
+    def test_template_dedupe_survives_ticket_delete(self):
+        ids = self.seed_companies_users()
+        with main.SessionLocal() as db:
+            tt = main.TicketType(company_id=ids["company1"], name="Plan", description=None, is_active=True)
+            ut = main.UnitType(company_id=ids["company1"], name="Node", code="node", is_active=True)
+            db.add_all([tt, ut])
+            db.flush()
+
+            root = main.OrgUnit(company_id=ids["company1"], name="Branch", unit_type_id=ut.id, parent_id=None, is_active=True)
+            store = main.OrgUnit(company_id=ids["company1"], name="Store 1", unit_type_id=ut.id, parent_id=None, is_active=True)
+            db.add_all([root, store])
+            db.flush()
+            store.parent_id = root.id
+
+            tmpl = main.TicketTemplate(
+                company_id=ids["company1"],
+                ticket_type_id=tt.id,
+                name="Monthly Plan",
+                title_template="Plan {period}",
+                description_template=None,
+                default_deadline_rule="2026-02-28",
+                default_executor_id=ids["exec1"],
+                scope_unit_id=root.id,
+                is_active=True,
+            )
+            db.add(tmpl)
+            db.commit()
+
+            created_1, skipped_1, _ = main.create_tickets_from_template(
+                db=db,
+                template=tmpl,
+                actor_id=ids["admin1"],
+                period_key="2026-02",
+            )
+            db.commit()
+            self.assertEqual(created_1, 1)
+            self.assertEqual(skipped_1, 0)
+
+            created_ticket = (
+                db.query(main.Ticket)
+                .filter(main.Ticket.company_id == ids["company1"], main.Ticket.ticket_template_id == tmpl.id)
+                .first()
+            )
+            self.assertIsNotNone(created_ticket)
+            db.delete(created_ticket)
+            db.commit()
+
+            created_2, skipped_2, _ = main.create_tickets_from_template(
+                db=db,
+                template=tmpl,
+                actor_id=ids["admin1"],
+                period_key="2026-02",
+            )
+            db.commit()
+            self.assertEqual(created_2, 0)
+            self.assertEqual(skipped_2, 1)
+
     def test_ticket_visibility_company_and_executor_rules(self):
         ids = self.seed_companies_users()
         with main.SessionLocal() as db:
