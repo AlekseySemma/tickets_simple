@@ -2313,15 +2313,59 @@ def web_notifications(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    status_filter: str | None = None,
+    kind_filter: str | None = None,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
     ensure_company_user(user)
-    items = (
+    base_query = (
         db.query(Notification)
         .filter(Notification.user_id == user.id)
-        .order_by(Notification.is_read.asc(), Notification.id.desc())
-        .limit(200)
-        .all()
     )
+    status_value = (status_filter or "all").strip().lower()
+    if status_value == "unread":
+        base_query = base_query.filter(Notification.is_read.is_(False))
+    elif status_value == "read":
+        base_query = base_query.filter(Notification.is_read.is_(True))
+    else:
+        status_value = "all"
+
+    date_from_value = (date_from or "").strip()
+    if date_from_value:
+        try:
+            dt_from = datetime.strptime(date_from_value, "%Y-%m-%d")
+            base_query = base_query.filter(Notification.created_at >= dt_from)
+        except ValueError:
+            date_from_value = ""
+
+    date_to_value = (date_to or "").strip()
+    if date_to_value:
+        try:
+            dt_to = datetime.strptime(date_to_value, "%Y-%m-%d") + timedelta(days=1)
+            base_query = base_query.filter(Notification.created_at < dt_to)
+        except ValueError:
+            date_to_value = ""
+
+    raw_items = base_query.order_by(Notification.id.desc()).limit(1000).all()
+    kind_value = (kind_filter or "all").strip().lower()
+    if kind_value not in {"all", "status", "comment", "deadline", "assignment", "other"}:
+        kind_value = "all"
+    q_value = (q or "").strip().lower()
+
+    items: list[Notification] = []
+    for item in raw_items:
+        item_kind = infer_notification_kind(item.title, item.body, item.url)
+        setattr(item, "kind", item_kind)
+        if kind_value != "all" and item_kind != kind_value:
+            continue
+        haystack = f"{(item.title or '').lower()} {(item.body or '').lower()}"
+        if q_value and q_value not in haystack:
+            continue
+        items.append(item)
+
+    items.sort(key=lambda n: (n.is_read, -int(n.id)))
     unread_count = (
         db.query(func.count(Notification.id))
         .filter(Notification.user_id == user.id, Notification.is_read.is_(False))
@@ -2335,6 +2379,11 @@ def web_notifications(
             "user": user,
             "notifications": items,
             "unread_count": int(unread_count),
+            "status_filter": status_value,
+            "kind_filter": kind_value,
+            "q": q or "",
+            "date_from": date_from_value,
+            "date_to": date_to_value,
         },
     )
 
@@ -2371,6 +2420,32 @@ def web_notifications_read_all(
             synchronize_session=False,
         )
     )
+    db.commit()
+    return RedirectResponse(url="/web/notifications", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/notifications/delete-all")
+def web_notifications_delete_all(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ensure_company_user(user)
+    db.query(Notification).filter(Notification.user_id == user.id).delete(synchronize_session=False)
+    db.commit()
+    return RedirectResponse(url="/web/notifications", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/notifications/{notification_id}/delete")
+def web_notifications_delete_one(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ensure_company_user(user)
+    item = db.get(Notification, notification_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(404, "Notification not found")
+    db.delete(item)
     db.commit()
     return RedirectResponse(url="/web/notifications", status_code=HTTP_303_SEE_OTHER)
 
@@ -2451,6 +2526,19 @@ def safe_notification_target(raw_url: str | None) -> str:
     if not target.startswith("/"):
         return "/web/notifications"
     return target
+
+
+def infer_notification_kind(title: str | None, body: str | None, url: str | None) -> str:
+    text = f"{(title or '').lower()} {(body or '').lower()} {(url or '').lower()}"
+    if "комментар" in text:
+        return "comment"
+    if "срок" in text or "дедлайн" in text:
+        return "deadline"
+    if "статус" in text:
+        return "status"
+    if "назнач" in text or "исполнител" in text:
+        return "assignment"
+    return "other"
 
 
 def build_unit_parent_map(db: Session, company_id: int) -> dict[int, int | None]:
