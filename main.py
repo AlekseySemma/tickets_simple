@@ -4532,6 +4532,14 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
 
     now = local_now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled))
+    company = db.get(Company, user.company_id) if user.company_id is not None else None
+    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
+    is_deadline_soon = bool(
+        t.deadline
+        and not is_overdue
+        and t.status not in (TicketStatus.done, TicketStatus.canceled)
+        and t.deadline <= now + timedelta(minutes=deadline_soon_warning_minutes)
+    )
 
     # РµСЃР»Рё Р·Р°РїСЂРѕСЃ РїСЂРёС€С‘Р» С‡РµСЂРµР· fetch (Accept: application/json) вЂ” РІРµСЂРЅС‘Рј JSON
     accept = (request.headers.get("accept") or "").lower()
@@ -4542,6 +4550,7 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
                 "ticket_id": t.id,
                 "status": t.status.value,
                 "is_overdue": is_overdue,
+                "is_deadline_soon": is_deadline_soon,
             }
         )
 

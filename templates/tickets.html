@@ -140,6 +140,10 @@
     .badge-status { font-size: 12px; }
     .ticket.overdue { border-color: #dc3545; }
     .ticket.overdue .st-OVERDUE { background: #dc3545 !important; }
+    .ticket.soon {
+      border-color: #ffc107;
+      background: #fff8e6;
+    }
     .badge-status { font-weight: 600; }
     .badge-status {
       cursor: pointer;
@@ -252,6 +256,17 @@
     }
     .tickets-table tbody tr.overdue td {
       background: #fff4f6;
+    }
+    .tickets-table tbody tr.soon td {
+      background: #fff8e6;
+      border-top-color: #ffe08a;
+      border-bottom-color: #ffe08a;
+    }
+    .tickets-table tbody tr.soon td:first-child {
+      border-left: 2px solid #ffe08a;
+    }
+    .tickets-table tbody tr.soon td:last-child {
+      border-right: 2px solid #ffe08a;
     }
     .tickets-table .col-title a {
       color: #1f5c5f;
@@ -794,7 +809,8 @@
             <tbody>
             {% for t in tickets %}
               {% set is_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
-              <tr id="ticket-{{ t.id }}" class="{% if is_overdue %}overdue{% endif %}">
+              {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not is_overdue) and t.deadline <= now_plus_deadline_warning %}
+              <tr id="ticket-{{ t.id }}" class="{% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
                 <td class="text-nowrap">#{{ t.id }}</td>
                 <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
                 <td class="text-nowrap">{{ format_deadline(t.deadline) }}</td>
@@ -837,7 +853,9 @@
       </div>
     {% else %}
     {% for t in tickets %}
-      <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if t.deadline and t.status != 'DONE' and t.status != 'CANCELED' and t.deadline < now %}overdue{% endif %}">
+      {% set deadline_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
+      {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not deadline_overdue) and t.deadline <= now_plus_deadline_warning %}
+      <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
         <div class="ticket-row">
           <div class="ticket-main">
             <div class="ticket-head">
@@ -851,8 +869,6 @@
 
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
-                {% set deadline_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
-                {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not deadline_overdue) and t.deadline <= now_plus_deadline_warning %}
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
                 <span class="meta-chip deadline-chip {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок: <b>{{ format_deadline(t.deadline) }}</b></span>
@@ -1329,6 +1345,9 @@ document.addEventListener("DOMContentLoaded", function () {
     if (ticketEl) {
       if (data.is_overdue) ticketEl.classList.add("overdue");
       else ticketEl.classList.remove("overdue");
+
+      if (data.is_deadline_soon) ticketEl.classList.add("soon");
+      else ticketEl.classList.remove("soon");
     }
 
     // 3) закрыть меню
