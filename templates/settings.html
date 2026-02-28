@@ -110,6 +110,45 @@
         <span class="settings-chip">Оргструктура: {% if org_v2_enabled %}включена{% else %}выключена{% endif %}</span>
       </div>
     </div>
+    {% if deadline_warning_saved %}
+      <div class="alert alert-success py-2">Порог желтой подсветки дедлайна сохранен.</div>
+    {% elif deadline_warning_error == "bad_value" %}
+      <div class="alert alert-danger py-2">Укажите число от {{ min_deadline_soon_warning_minutes }} до {{ max_deadline_soon_warning_minutes }} минут.</div>
+    {% elif deadline_warning_error == "save_failed" %}
+      <div class="alert alert-danger py-2">Не удалось сохранить настройку. Попробуйте еще раз.</div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3 settings-card">
+      <div class="card-body">
+        <h5 class="mb-2">Подсветка срока</h5>
+        <div class="settings-note mt-0">Желтым выделяются заявки, у которых до дедлайна осталось не больше указанного времени.</div>
+        {% if can_manage_deadline_warning %}
+          <form method="post" action="/web/settings/deadline-warning" class="row g-2 align-items-end mt-1">
+            <div class="col-12 col-sm-6 col-md-4">
+              <label class="form-label mb-1">Порог (минут)</label>
+              <input
+                type="number"
+                class="form-control"
+                name="deadline_soon_warning_minutes"
+                min="{{ min_deadline_soon_warning_minutes }}"
+                max="{{ max_deadline_soon_warning_minutes }}"
+                step="5"
+                value="{{ deadline_soon_warning_minutes }}"
+                required
+              />
+            </div>
+            <div class="col-12 col-sm-auto">
+              <button class="btn btn-outline-primary">Сохранить</button>
+            </div>
+          </form>
+        {% else %}
+          <div class="small text-muted mt-2">
+            Текущий порог: <b>{{ deadline_soon_warning_minutes }} мин.</b>
+            Изменять могут администратор и куратор.
+          </div>
+        {% endif %}
+      </div>
+    </div>
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
