@@ -15,7 +15,11 @@ down_revision = "0007_ticket_generation_keys"
 branch_labels = None
 depends_on = None
 
-DEFAULT_WARNING_MINUTES = 24 * 60
+DEFAULT_WARNING_MINUTES = 1440
+
+
+def _column_names(insp: sa.Inspector, table_name: str) -> set[str]:
+    return {col["name"] for col in insp.get_columns(table_name)}
 
 
 def upgrade() -> None:
@@ -25,17 +29,16 @@ def upgrade() -> None:
     if not insp.has_table("companies"):
         return
 
-    company_columns = {col["name"] for col in insp.get_columns("companies")}
-    if "deadline_warning_minutes" not in company_columns:
-        op.add_column("companies", sa.Column("deadline_warning_minutes", sa.Integer(), nullable=True))
+    columns = _column_names(insp, "companies")
+    if "deadline_soon_warning_minutes" not in columns:
+        op.add_column("companies", sa.Column("deadline_soon_warning_minutes", sa.Integer(), nullable=True))
 
-    # Important: use bind.execute for SQL with parameters.
     bind.execute(
         sa.text(
             """
             UPDATE companies
-            SET deadline_warning_minutes = :default_minutes
-            WHERE deadline_warning_minutes IS NULL
+            SET deadline_soon_warning_minutes = :default_minutes
+            WHERE deadline_soon_warning_minutes IS NULL
             """
         ),
         {"default_minutes": DEFAULT_WARNING_MINUTES},
@@ -43,7 +46,7 @@ def upgrade() -> None:
 
     op.alter_column(
         "companies",
-        "deadline_warning_minutes",
+        "deadline_soon_warning_minutes",
         existing_type=sa.Integer(),
         nullable=False,
         server_default=sa.text(str(DEFAULT_WARNING_MINUTES)),
@@ -53,9 +56,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     insp = sa.inspect(bind)
+
     if not insp.has_table("companies"):
         return
 
-    company_columns = {col["name"] for col in insp.get_columns("companies")}
-    if "deadline_warning_minutes" in company_columns:
-        op.drop_column("companies", "deadline_warning_minutes")
+    columns = _column_names(insp, "companies")
+    if "deadline_soon_warning_minutes" in columns:
+        op.drop_column("companies", "deadline_soon_warning_minutes")

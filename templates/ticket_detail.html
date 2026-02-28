@@ -182,6 +182,19 @@
     .ticket-side {
       min-width: 280px;
     }
+    .ticket-actions {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ticket-actions form {
+      margin: 0;
+      width: 100%;
+    }
+    .ticket-actions .btn {
+      width: 100%;
+    }
     @media (max-width: 991.98px) {
       .container {
         padding-left: 10px;
@@ -298,21 +311,23 @@
               </span>
             </div>
 
-            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
-              <a class="btn btn-sm btn-outline-secondary w-100 mt-2"
-   href="/web/tickets/{{ t.id }}/edit?next=/web/tickets/{{ t.id }}">Изменить</a>
-
-            {% endif %}
-
-            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
-    <form method="post"
-      action="/web/tickets/{{ t.id }}/delete"
-      onsubmit="return confirm('Удалить заявку?');">
-
-  <input type="hidden" name="next" value="/web">
-  <button class="btn btn-sm btn-outline-danger">Удалить</button>
-</form>
-
+            {% set can_edit = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
+            {% set can_delete = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+            {% if can_edit or can_delete %}
+            <div class="ticket-actions">
+              {% if can_edit %}
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="/web/tickets/{{ t.id }}/edit?next=/web/tickets/{{ t.id }}">Изменить</a>
+              {% endif %}
+              {% if can_delete %}
+                <form method="post"
+                      action="/web/tickets/{{ t.id }}/delete"
+                      onsubmit="return confirm('Удалить заявку?');">
+                  <input type="hidden" name="next" value="/web">
+                  <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                </form>
+              {% endif %}
+            </div>
             {% endif %}
           </div>
         </div>

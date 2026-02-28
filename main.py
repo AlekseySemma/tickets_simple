@@ -64,6 +64,15 @@ VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
 MAX_TICKET_TITLE_LEN = 255
+MIN_DEADLINE_SOON_WARNING_MINUTES = 5
+MAX_DEADLINE_SOON_WARNING_MINUTES = 10080
+DEFAULT_DEADLINE_SOON_WARNING_MINUTES = max(
+    MIN_DEADLINE_SOON_WARNING_MINUTES,
+    min(
+        MAX_DEADLINE_SOON_WARNING_MINUTES,
+        int(os.getenv("DEFAULT_DEADLINE_SOON_WARNING_MINUTES", "1440")),
+    ),
+)
 LOCAL_TIME_OFFSET_HOURS = int(os.getenv("LOCAL_TIME_OFFSET_HOURS", "3"))
 RL_LOGIN_LIMIT = int(os.getenv("RL_LOGIN_LIMIT", "10"))
 RL_LOGIN_WINDOW_SEC = int(os.getenv("RL_LOGIN_WINDOW_SEC", "300"))
@@ -134,6 +143,11 @@ class Company(Base):
     __tablename__ = "companies"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    deadline_soon_warning_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=DEFAULT_DEADLINE_SOON_WARNING_MINUTES,
+        server_default=str(DEFAULT_DEADLINE_SOON_WARNING_MINUTES),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class RegistrationInvite(Base):
@@ -376,6 +390,7 @@ class UserOut(BaseModel):
 class CompanyOut(BaseModel):
     id: int
     name: str
+    deadline_soon_warning_minutes: int
     created_at: datetime
     class Config:
         from_attributes = True
@@ -1207,6 +1222,33 @@ def to_local_dt(dt: datetime | None) -> datetime | None:
 
 def local_now() -> datetime:
     return datetime.utcnow() + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
+
+
+def clamp_deadline_soon_warning_minutes(value: int) -> int:
+    return max(
+        MIN_DEADLINE_SOON_WARNING_MINUTES,
+        min(MAX_DEADLINE_SOON_WARNING_MINUTES, int(value)),
+    )
+
+
+def parse_deadline_soon_warning_minutes(raw: str | None) -> int | None:
+    raw_value = (raw or "").strip()
+    if not raw_value:
+        return None
+    if not re.fullmatch(r"\d+", raw_value):
+        return None
+    parsed = int(raw_value)
+    if parsed < MIN_DEADLINE_SOON_WARNING_MINUTES or parsed > MAX_DEADLINE_SOON_WARNING_MINUTES:
+        return None
+    return parsed
+
+
+def get_company_deadline_soon_warning_minutes(company: Company | None) -> int:
+    if not company:
+        return DEFAULT_DEADLINE_SOON_WARNING_MINUTES
+    if company.deadline_soon_warning_minutes is None:
+        return DEFAULT_DEADLINE_SOON_WARNING_MINUTES
+    return clamp_deadline_soon_warning_minutes(company.deadline_soon_warning_minutes)
 
 
 def format_dt(dt: datetime | None) -> str:
@@ -2965,6 +3007,8 @@ def web_tickets(
     if is_platform_admin(user):
         return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
     ensure_company_user(user)
+    company = db.get(Company, user.company_id) if user.company_id is not None else None
+    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
     # 1) tickets СЃ СѓС‡РµС‚РѕРј СЂРѕР»Рё
     base_query = db.query(Ticket).filter(Ticket.company_id == user.company_id)
     if user.role == Role.executor:
@@ -3135,7 +3179,7 @@ def web_tickets(
             )
 
     now = local_now()
-    now_plus_24h = now + timedelta(hours=24)
+    now_plus_deadline_warning = now + timedelta(minutes=deadline_soon_warning_minutes)
 
         # С‚РѕР»СЊРєРѕ РїСЂРѕСЃСЂРѕС‡РµРЅРЅС‹Рµ
     overdue_enabled = (only_overdue == "1")
@@ -3246,7 +3290,8 @@ def web_tickets(
             "projects_by_id": projects_by_id,
             "ticket_types_by_id": ticket_types_by_id,
             "now": now,
-            "now_plus_24h": now_plus_24h,
+            "now_plus_deadline_warning": now_plus_deadline_warning,
+            "deadline_soon_warning_minutes": deadline_soon_warning_minutes,
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
@@ -3280,15 +3325,66 @@ def web_tickets(
 
 
 @app.get("/web/settings")
-def web_settings(request: Request, user: User = Depends(get_current_user)):
+def web_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company: Company | None = None
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        if user.company_id is not None:
+            company = db.get(Company, user.company_id)
+    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
+    deadline_warning_saved = (request.query_params.get("deadline_warning_saved") or "").strip() == "1"
+    deadline_warning_error = (request.query_params.get("deadline_warning_error") or "").strip().lower()
+    if deadline_warning_error not in {"bad_value", "save_failed"}:
+        deadline_warning_error = ""
+    can_manage_deadline_warning = user.role in (Role.admin, Role.curator)
     return templates.TemplateResponse(
         "settings.html",
         {
             "request": request,
             "user": user,
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
+            "deadline_soon_warning_minutes": deadline_soon_warning_minutes,
+            "deadline_warning_saved": deadline_warning_saved,
+            "deadline_warning_error": deadline_warning_error,
+            "can_manage_deadline_warning": can_manage_deadline_warning,
+            "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
+            "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
         },
     )
+
+
+@app.post("/web/settings/deadline-warning")
+async def web_settings_deadline_warning(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    company = db.get(Company, user.company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    form = await request.form()
+    parsed = parse_deadline_soon_warning_minutes(form.get("deadline_soon_warning_minutes"))
+    if parsed is None:
+        return RedirectResponse(
+            url="/web/settings?deadline_warning_error=bad_value",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    try:
+        company.deadline_soon_warning_minutes = parsed
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url="/web/settings?deadline_warning_error=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url="/web/settings?deadline_warning_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/notifications")
@@ -5369,13 +5465,15 @@ def web_ticket_detail(
         )
         users_by_id = {uid: uname for uid, uname in users}
 
+    company = db.get(Company, user.company_id) if user.company_id is not None else None
+    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
     now = local_now()
     is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
     is_deadline_soon = bool(
         t.deadline
         and not is_overdue
         and t.status.value not in ("DONE", "CANCELED")
-        and t.deadline <= now + timedelta(hours=24)
+        and t.deadline <= now + timedelta(minutes=deadline_soon_warning_minutes)
     )
 
     status_labels = {
