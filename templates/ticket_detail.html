@@ -27,13 +27,17 @@
       border-radius: 14px;
       box-shadow: 0 .45rem 1rem rgba(33, 37, 41, .05);
     }
+    .ticket.overdue,
+    .ticket.soon {
+      border-width: 2px;
+    }
     .ticket.overdue {
       border-color: #dc3545 !important;
-      background: #fff1f3;
+      background-color: #fff1f3 !important;
     }
     .ticket.soon {
       border-color: #ffc107 !important;
-      background: #fff8e6;
+      background-color: #fff8e6 !important;
     }
     .ticket.overdue .ticket-head {
       background: linear-gradient(135deg, #fff8f9 0%, #ffecef 55%, #ffe2e7 100%);
