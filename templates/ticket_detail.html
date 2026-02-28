@@ -27,7 +27,22 @@
       border-radius: 14px;
       box-shadow: 0 .45rem 1rem rgba(33, 37, 41, .05);
     }
-    .ticket.overdue { border-color: #dc3545 !important; }
+    .ticket.overdue {
+      border-color: #dc3545 !important;
+      background: #fff1f3;
+    }
+    .ticket.soon {
+      border-color: #ffc107 !important;
+      background: #fff8e6;
+    }
+    .ticket.overdue .ticket-head {
+      background: linear-gradient(135deg, #fff8f9 0%, #ffecef 55%, #ffe2e7 100%);
+      border-color: #f1aeb5;
+    }
+    .ticket.soon .ticket-head {
+      background: linear-gradient(135deg, #fffdf6 0%, #fff6dc 55%, #ffefbf 100%);
+      border-color: #ffe08a;
+    }
 
     .status-menu {
       position: absolute;
@@ -258,7 +273,7 @@
       </div>
     </div>
 
-    <div id="ticket-{{ t.id }}" class="card shadow-sm ticket {% if is_overdue %}overdue{% endif %}">
+    <div id="ticket-{{ t.id }}" class="card shadow-sm ticket {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
       <div class="card-body">
         <div class="ticket-layout">
           <div class="ticket-main">
@@ -522,6 +537,9 @@ document.addEventListener("DOMContentLoaded", function () {
     if (ticketEl) {
       if (data.is_overdue) ticketEl.classList.add("overdue");
       else ticketEl.classList.remove("overdue");
+
+      if (data.is_deadline_soon) ticketEl.classList.add("soon");
+      else ticketEl.classList.remove("soon");
     }
 
     closeAllMenus(null);

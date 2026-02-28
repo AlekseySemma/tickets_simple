@@ -138,11 +138,22 @@
     }
     .ticket h5 { margin: 0 0 8px 0; }
     .badge-status { font-size: 12px; }
-    .ticket.overdue { border-color: #dc3545; }
+    .ticket.overdue {
+      border-color: #dc3545;
+      background: #fff1f3;
+    }
     .ticket.overdue .st-OVERDUE { background: #dc3545 !important; }
     .ticket.soon {
       border-color: #ffc107;
       background: #fff8e6;
+    }
+    .ticket.overdue .ticket-head {
+      background: linear-gradient(135deg, #fff8f9 0%, #ffecef 55%, #ffe2e7 100%);
+      border-color: #f1aeb5;
+    }
+    .ticket.soon .ticket-head {
+      background: linear-gradient(135deg, #fffdf6 0%, #fff6dc 55%, #ffefbf 100%);
+      border-color: #ffe08a;
     }
     .badge-status { font-weight: 600; }
     .badge-status {
@@ -256,6 +267,14 @@
     }
     .tickets-table tbody tr.overdue td {
       background: #fff4f6;
+      border-top-color: #f1aeb5;
+      border-bottom-color: #f1aeb5;
+    }
+    .tickets-table tbody tr.overdue td:first-child {
+      border-left: 2px solid #f1aeb5;
+    }
+    .tickets-table tbody tr.overdue td:last-child {
+      border-right: 2px solid #f1aeb5;
     }
     .tickets-table tbody tr.soon td {
       background: #fff8e6;
