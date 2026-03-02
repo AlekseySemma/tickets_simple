@@ -5340,7 +5340,19 @@ def web_projects(request: Request, db: Session = Depends(get_db), user: User = D
         .order_by(Project.id.desc())
         .all()
     )
-    return templates.TemplateResponse("projects.html", {"request": request, "projects": projects})
+    project_deleted = (request.query_params.get("project_deleted") or "").strip() == "1"
+    delete_error = (request.query_params.get("delete_error") or "").strip().lower()
+    if delete_error not in {"in_use", "not_found", "failed"}:
+        delete_error = ""
+    return templates.TemplateResponse(
+        "projects.html",
+        {
+            "request": request,
+            "projects": projects,
+            "project_deleted": project_deleted,
+            "delete_error": delete_error,
+        },
+    )
 
 @app.post("/web/projects/create")
 async def web_projects_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -5357,6 +5369,32 @@ async def web_projects_create(request: Request, db: Session = Depends(get_db), u
     p = Project(name=name, description=description, company_id=user.company_id)
     db.add(p); db.commit()
     return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/projects/{project_id}/delete")
+async def web_projects_delete(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    p = db.get(Project, project_id)
+    if not p or p.company_id != user.company_id:
+        return RedirectResponse(url="/web/projects?delete_error=not_found", status_code=HTTP_303_SEE_OTHER)
+
+    has_tickets = (
+        db.query(Ticket.id)
+        .filter(Ticket.company_id == user.company_id, Ticket.project_id == project_id)
+        .first()
+    )
+    if has_tickets:
+        return RedirectResponse(url="/web/projects?delete_error=in_use", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        db.delete(p)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/projects?delete_error=failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/projects?project_deleted=1", status_code=HTTP_303_SEE_OTHER)
 
 # ====== WEB: Ticket Types ======
 @app.get("/web/ticket-types")

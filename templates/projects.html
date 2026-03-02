@@ -112,6 +112,16 @@
         </div>
       </div>
     </div>
+    {% if project_deleted %}
+      <div class="alert alert-success py-2">Проект удален.</div>
+    {% endif %}
+    {% if delete_error == "in_use" %}
+      <div class="alert alert-danger py-2">Проект нельзя удалить: он используется в заявках.</div>
+    {% elif delete_error == "not_found" %}
+      <div class="alert alert-danger py-2">Проект не найден.</div>
+    {% elif delete_error == "failed" %}
+      <div class="alert alert-danger py-2">Не удалось удалить проект. Повторите позже.</div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3 projects-card">
       <div class="card-body">
@@ -132,9 +142,14 @@
 
     {% for p in projects %}
       <div class="card shadow-sm mb-2 project-item">
-        <div class="card-body">
-          <b>#{{ p.id }} — {{ p.name }}</b>
-          <div class="text-muted">{{ p.description or "" }}</div>
+        <div class="card-body d-flex justify-content-between align-items-start gap-2">
+          <div>
+            <b>#{{ p.id }} — {{ p.name }}</b>
+            <div class="text-muted">{{ p.description or "" }}</div>
+          </div>
+          <form method="post" action="/web/projects/{{ p.id }}/delete" class="m-0" onsubmit="return confirm('Удалить проект #{{ p.id }}?');">
+            <button class="btn btn-sm btn-outline-danger">Удалить</button>
+          </form>
         </div>
       </div>
     {% endfor %}
