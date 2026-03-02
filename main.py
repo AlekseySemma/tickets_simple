@@ -1304,13 +1304,13 @@ def create_tickets_from_template(
                 db.add(ticket)
                 db.flush()
                 generation_key.ticket_id = ticket.id
-                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="СЃРѕР·РґР°РЅРёРµ РїРѕ С€Р°Р±Р»РѕРЅСѓ")
+                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="Создание по шаблону")
                 if ticket.executor_id and ticket.executor_id != actor_id:
                     send_push_to_user(
                         db=db,
                         user_id=ticket.executor_id,
-                        title=f"РќРѕРІР°СЏ Р·Р°СЏРІРєР° #{ticket.id}",
-                        body=ticket.title or "Р’Р°Рј РЅР°Р·РЅР°С‡РµРЅР° РЅРѕРІР°СЏ Р·Р°СЏРІРєР°",
+                        title=f"Новая заявка #{ticket.id}",
+                        body=ticket.title or "Вам назначена новая заявка",
                         url=f"/web/tickets/{ticket.id}",
                     )
             created_count += 1
@@ -3917,7 +3917,16 @@ def web_notifications(
     q_value = (q or "").strip().lower()
 
     items: list[Notification] = []
+    needs_repair_commit = False
     for item in raw_items:
+        fixed_title = fix_mojibake_text(item.title or "")
+        fixed_body = fix_mojibake_text(item.body or "") if item.body else None
+        if fixed_title != (item.title or ""):
+            item.title = fixed_title
+            needs_repair_commit = True
+        if fixed_body != item.body:
+            item.body = fixed_body
+            needs_repair_commit = True
         item_kind = infer_notification_kind(item.title, item.body, item.url)
         setattr(item, "kind", item_kind)
         if kind_value != "all" and item_kind != kind_value:
@@ -3926,6 +3935,9 @@ def web_notifications(
         if q_value and q_value not in haystack:
             continue
         items.append(item)
+
+    if needs_repair_commit:
+        db.commit()
 
     items.sort(key=lambda n: (n.is_read, -int(n.id)))
     unread_count = (
@@ -4030,7 +4042,7 @@ def web_notifications_open(
 
 
 def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
-    normalized = (type_name or "").strip() or "РЈР·РµР»"
+    normalized = (type_name or "").strip() or "Узел"
     existing = (
         db.query(UnitType)
         .filter(
@@ -4071,9 +4083,9 @@ def parse_bool_text(raw: str | None, default: bool = True) -> bool:
     value = (raw or "").strip().lower()
     if not value:
         return default
-    if value in {"1", "true", "yes", "y", "on", "РґР°"}:
+    if value in {"1", "true", "yes", "y", "on", "да"}:
         return True
-    if value in {"0", "false", "no", "n", "off", "РЅРµС‚"}:
+    if value in {"0", "false", "no", "n", "off", "нет"}:
         return False
     return default
 
@@ -4091,14 +4103,17 @@ def safe_notification_target(raw_url: str | None) -> str:
 
 
 def infer_notification_kind(title: str | None, body: str | None, url: str | None) -> str:
-    text = f"{(title or '').lower()} {(body or '').lower()} {(url or '').lower()}"
-    if "РєРѕРјРјРµРЅС‚Р°СЂ" in text:
+    normalized_title = fix_mojibake_text(title or "").lower()
+    normalized_body = fix_mojibake_text(body or "").lower()
+    normalized_url = (url or "").lower()
+    text = f"{normalized_title} {normalized_body} {normalized_url}"
+    if "комментар" in text:
         return "comment"
-    if "СЃСЂРѕРє" in text or "РґРµРґР»Р°Р№РЅ" in text:
+    if "срок" in text or "дедлайн" in text:
         return "deadline"
-    if "СЃС‚Р°С‚СѓСЃ" in text:
+    if "статус" in text:
         return "status"
-    if "РЅР°Р·РЅР°С‡" in text or "РёСЃРїРѕР»РЅРёС‚РµР»" in text:
+    if "назнач" in text or "исполнител" in text:
         return "assignment"
     return "other"
 
