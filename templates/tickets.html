@@ -334,59 +334,6 @@
       flex-wrap: wrap;
       justify-content: flex-end;
     }
-    .workspace-banner {
-      border: 1px solid #cfe2da;
-      border-radius: 18px;
-      padding: 14px 16px;
-      background:
-        radial-gradient(420px 160px at 100% 0, rgba(31, 157, 143, 0.18), transparent 62%),
-        linear-gradient(180deg, #f9fefb, #f2f9f5);
-      box-shadow: 0 10px 24px rgba(22, 64, 67, 0.1);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .workspace-kicker {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      color: #145e55;
-      background: rgba(31, 157, 143, 0.14);
-      border: 1px solid rgba(31, 157, 143, 0.35);
-      margin-bottom: 6px;
-    }
-    .workspace-title {
-      margin: 0;
-      color: #184a4c;
-      font-weight: 700;
-      font-size: 1.06rem;
-    }
-    .workspace-pills {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    .workspace-pill {
-      border: 1px solid #bfd8cf;
-      background: #ffffff;
-      color: #2f6266;
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .workspace-pill strong {
-      color: #184a4c;
-      margin-left: 4px;
-    }
     .ticket-row {
       display: flex;
       justify-content: space-between;
@@ -442,10 +389,6 @@
         flex: 1 1 auto;
         min-width: 120px;
       }
-      .workspace-pills {
-        width: 100%;
-        justify-content: flex-start;
-      }
       .form-check.mt-4 {
         margin-top: 0.5rem !important;
       }
@@ -473,21 +416,6 @@
   <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
   <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
 </div>
-    </div>
-    <div class="workspace-banner mb-3">
-      <div>
-        <span class="workspace-kicker">Операционный центр</span>
-        <p class="workspace-title">Управление заявками в одном потоке: фильтры, статусы, дедлайны и приоритет реакции.</p>
-      </div>
-      <div class="workspace-pills">
-        <span class="workspace-pill">Всего <strong>{{ total_count }}</strong></span>
-        {% if is_archive_page %}
-        <span class="workspace-pill">Legal hold <strong>{{ legal_hold_count }}</strong></span>
-        {% else %}
-        <span class="workspace-pill">Просрочено <strong>{{ overdue_count }}</strong></span>
-        {% endif %}
-        <span class="workspace-pill">Режим <strong>{% if view_mode == 'table' %}Таблица{% else %}Карточки{% endif %}</strong></span>
-      </div>
     </div>
     {% if create_error == "title_too_long" %}
     <div class="alert alert-danger">
