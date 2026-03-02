@@ -75,13 +75,13 @@ def upgrade() -> None:
             op.add_column("tickets", sa.Column("delete_at", sa.DateTime(), nullable=True))
         if "is_legal_hold" not in ticket_cols:
             op.add_column("tickets", sa.Column("is_legal_hold", sa.Boolean(), nullable=True))
-            bind.execute(sa.text("UPDATE tickets SET is_legal_hold = 0 WHERE is_legal_hold IS NULL"))
+            bind.execute(sa.text("UPDATE tickets SET is_legal_hold = false WHERE is_legal_hold IS NULL"))
             op.alter_column(
                 "tickets",
                 "is_legal_hold",
                 existing_type=sa.Boolean(),
                 nullable=False,
-                server_default=sa.text("0"),
+                server_default=sa.false(),
             )
 
         ticket_indexes = _index_names(insp, "tickets")
