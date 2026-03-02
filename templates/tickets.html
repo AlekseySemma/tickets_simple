@@ -862,6 +862,9 @@
                 <th>#</th>
                 <th>Дата создания</th>
                 <th>Крайний срок</th>
+                {% if is_archive_page %}
+                <th>Удалить после</th>
+                {% endif %}
                 <th>Проект</th>
                 <th>Тип заявки</th>
                 <th>Исполнитель</th>
@@ -878,6 +881,9 @@
                 <td class="text-nowrap">#{{ t.id }}</td>
                 <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
                 <td class="text-nowrap">{{ format_deadline(t.deadline) }}</td>
+                {% if is_archive_page %}
+                <td class="text-nowrap">{{ format_dt(t.delete_at) if t.delete_at else "—" }}</td>
+                {% endif %}
                 <td class="text-nowrap">{{ projects_by_id.get(t.project_id, "—") }}</td>
                 <td class="text-nowrap">{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</td>
                 <td class="text-nowrap">{{ users_by_id.get(t.executor_id, "—") }}</td>
