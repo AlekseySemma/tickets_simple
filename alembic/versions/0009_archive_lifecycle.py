@@ -32,7 +32,7 @@ def upgrade() -> None:
     dialect = bind.dialect.name
 
     if dialect == "postgresql":
-        op.execute("ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS 'ARCHIVED'")
+        op.execute("ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS 'archived'")
 
     if insp.has_table("companies"):
         company_cols = _column_names(insp, "companies")
@@ -186,4 +186,4 @@ def downgrade() -> None:
         if "archive_retention_days_default" in company_cols:
             op.drop_column("companies", "archive_retention_days_default")
 
-    # PostgreSQL ENUM value ARCHIVED is intentionally kept.
+    # PostgreSQL ENUM value is intentionally kept.
