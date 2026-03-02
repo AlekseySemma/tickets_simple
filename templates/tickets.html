@@ -170,6 +170,7 @@
     .st-IN_PROGRESS { background: #1f9d8f !important; }  /* бирюзовый */
     .st-DONE { background: #2f9a76 !important; }         /* зелёный */
     .st-CANCELED { background: #212529 !important; }     /* тёмный */
+    .st-ARCHIVED { background: #6c757d !important; }     /* архив */
     .st-OVERDUE { background: #dc3545 !important; }      /* красный */
     .status-menu {
       position: absolute;
@@ -480,7 +481,11 @@
       </div>
       <div class="workspace-pills">
         <span class="workspace-pill">Всего <strong>{{ total_count }}</strong></span>
+        {% if is_archive_page %}
+        <span class="workspace-pill">Legal hold <strong>{{ legal_hold_count }}</strong></span>
+        {% else %}
         <span class="workspace-pill">Просрочено <strong>{{ overdue_count }}</strong></span>
+        {% endif %}
         <span class="workspace-pill">Режим <strong>{% if view_mode == 'table' %}Таблица{% else %}Карточки{% endif %}</strong></span>
       </div>
     </div>
@@ -763,60 +768,86 @@
      data-q="{{ q }}"
      data-sort="{{ sort }}"
      data-view-mode="{{ view_mode }}">
-
-  <div class="col-6 col-lg-2">
-    <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
-      <div class="card-body py-2">
-        <div class="small muted">Всего</div>
-        <div class="fs-5 fw-semibold">{{ total_count }}</div>
+  {% if is_archive_page %}
+    <div class="col-6 col-lg-4">
+      <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
+        <div class="card-body py-2">
+          <div class="small muted">Всего</div>
+          <div class="fs-5 fw-semibold">{{ total_count }}</div>
+        </div>
       </div>
     </div>
-  </div>
-
-  <div class="col-6 col-lg-2">
-    <div class="card shadow-sm dash-card dash-OVERDUE dashboard-card" data-dash="overdue">
-      <div class="card-body py-2">
-        <div class="small muted">Просрочено</div>
-        <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
+    <div class="col-6 col-lg-4">
+      <div class="card shadow-sm dash-card dashboard-card" data-dash="status" data-status="ARCHIVED">
+        <div class="card-body py-2">
+          <div class="small muted">В архиве</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["ARCHIVED"] }}</div>
+        </div>
       </div>
     </div>
-  </div>
-
-  <div class="col-6 col-lg-2">
-    <div class="card shadow-sm dash-card dash-NEW dashboard-card" data-dash="status" data-status="NEW">
-      <div class="card-body py-2">
-        <div class="small muted">Новые</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
+    <div class="col-6 col-lg-4">
+      <div class="card shadow-sm dash-card">
+        <div class="card-body py-2">
+          <div class="small muted">Legal hold</div>
+          <div class="fs-5 fw-semibold">{{ legal_hold_count }}</div>
+        </div>
       </div>
     </div>
-  </div>
-
-  <div class="col-6 col-lg-2">
-    <div class="card shadow-sm dash-card dash-IN_PROGRESS dashboard-card" data-dash="status" data-status="IN_PROGRESS">
-      <div class="card-body py-2">
-        <div class="small muted">В работе</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
+  {% else %}
+    <div class="col-6 col-lg-2">
+      <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
+        <div class="card-body py-2">
+          <div class="small muted">Всего</div>
+          <div class="fs-5 fw-semibold">{{ total_count }}</div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="col-6 col-lg-2">
-    <div class="card shadow-sm dash-card dash-DONE dashboard-card" data-dash="status" data-status="DONE">
-      <div class="card-body py-2">
-        <div class="small muted">Выполнены</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
+    <div class="col-6 col-lg-2">
+      <div class="card shadow-sm dash-card dash-OVERDUE dashboard-card" data-dash="overdue">
+        <div class="card-body py-2">
+          <div class="small muted">Просрочено</div>
+          <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="col-6 col-lg-2">
-    <div class="card shadow-sm dash-card dash-CANCELED dashboard-card" data-dash="status" data-status="CANCELED">
-      <div class="card-body py-2">
-        <div class="small muted">Отменены</div>
-        <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
+    <div class="col-6 col-lg-2">
+      <div class="card shadow-sm dash-card dash-NEW dashboard-card" data-dash="status" data-status="NEW">
+        <div class="card-body py-2">
+          <div class="small muted">Новые</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <div class="col-6 col-lg-2">
+      <div class="card shadow-sm dash-card dash-IN_PROGRESS dashboard-card" data-dash="status" data-status="IN_PROGRESS">
+        <div class="card-body py-2">
+          <div class="small muted">В работе</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-2">
+      <div class="card shadow-sm dash-card dash-DONE dashboard-card" data-dash="status" data-status="DONE">
+        <div class="card-body py-2">
+          <div class="small muted">Выполнены</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-2">
+      <div class="card shadow-sm dash-card dash-CANCELED dashboard-card" data-dash="status" data-status="CANCELED">
+        <div class="card-body py-2">
+          <div class="small muted">Отменены</div>
+          <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
 </div>
 
 
@@ -841,8 +872,8 @@
             </thead>
             <tbody>
             {% for t in tickets %}
-              {% set is_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
-              {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not is_overdue) and t.deadline <= now_plus_deadline_warning %}
+              {% set is_overdue = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and t.deadline < now %}
+              {% set is_deadline_soon = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and (not is_overdue) and t.deadline <= now_plus_deadline_warning %}
               <tr id="ticket-{{ t.id }}" class="{% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
                 <td class="text-nowrap">#{{ t.id }}</td>
                 <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
@@ -851,10 +882,20 @@
                 <td class="text-nowrap">{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</td>
                 <td class="text-nowrap">{{ users_by_id.get(t.executor_id, "—") }}</td>
                 <td>
+                  {% set can_archive = user.role in ["ADMIN", "CURATOR"] and t.status.value in ["DONE", "CANCELED"] %}
+                  {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
                   <div class="position-relative d-inline-block">
                     {% if is_overdue %}
                     <span id="overdue-badge-{{ t.id }}" class="badge badge-status st-OVERDUE me-1">Просрочено</span>
                     {% endif %}
+                    {% if is_archive_page %}
+                    <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
+                      {{ status_labels[t.status.value] }}
+                    </span>
+                    {% if t.is_legal_hold %}
+                    <span class="badge text-bg-warning ms-1">Legal hold</span>
+                    {% endif %}
+                    {% else %}
                     <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
                       {{ status_labels[t.status.value] }} ▼
                     </span>
@@ -864,18 +905,42 @@
                       <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
                       <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
                     </div>
+                    {% endif %}
                   </div>
                 </td>
                 <td class="col-title">
-                  <a href="/web/tickets/{{ t.id }}">{{ t.title }}</a>
+                  <a href="/web/tickets/{{ t.id }}?next={{ current_list_url_encoded }}">{{ t.title }}</a>
                 </td>
                 <td class="text-nowrap">
                   <div class="d-flex gap-1">
-                    <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
-                    <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
-                      <input type="hidden" name="next" value="{{ list_path }}">
-                      <button class="btn btn-sm btn-outline-danger">Удалить</button>
-                    </form>
+                    {% if not is_archive_page %}
+                      <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
+                    {% endif %}
+                    {% if can_archive %}
+                      <form method="post" action="/web/tickets/{{ t.id }}/archive" class="m-0" onsubmit="return confirm('Отправить заявку #{{ t.id }} в архив?');">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <button class="btn btn-sm btn-outline-secondary">В архив</button>
+                      </form>
+                    {% endif %}
+                    {% if can_restore %}
+                      <form method="post" action="/web/tickets/{{ t.id }}/restore" class="m-0" onsubmit="return confirm('Восстановить заявку #{{ t.id }} из архива?');">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <button class="btn btn-sm btn-outline-primary">Восстановить</button>
+                      </form>
+                      <form method="post" action="/web/tickets/{{ t.id }}/legal-hold" class="m-0">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <input type="hidden" name="is_legal_hold" value="{% if t.is_legal_hold %}0{% else %}1{% endif %}">
+                        <button class="btn btn-sm {% if t.is_legal_hold %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                          {% if t.is_legal_hold %}Снять hold{% else %}Legal hold{% endif %}
+                        </button>
+                      </form>
+                    {% endif %}
+                    {% if not is_archive_page %}
+                      <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                      </form>
+                    {% endif %}
                   </div>
                 </td>
               </tr>
@@ -886,8 +951,8 @@
       </div>
     {% else %}
     {% for t in tickets %}
-      {% set deadline_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
-      {% set is_deadline_soon = t.deadline and t.status != "DONE" and t.status != "CANCELED" and (not deadline_overdue) and t.deadline <= now_plus_deadline_warning %}
+      {% set deadline_overdue = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and t.deadline < now %}
+      {% set is_deadline_soon = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and (not deadline_overdue) and t.deadline <= now_plus_deadline_warning %}
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
         <div class="ticket-row">
           <div class="ticket-main">
@@ -895,7 +960,7 @@
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
               <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <h5 class="ticket-head-title">
-                <a href="/web/tickets/{{ t.id }}" class="text-decoration-none">
+                <a href="/web/tickets/{{ t.id }}?next={{ current_list_url_encoded }}" class="text-decoration-none">
                   {{ t.title }}
                 </a>
               </h5>
@@ -910,7 +975,7 @@
           </div>
 
           <div class="ticket-side text-md-end">
-            {% set is_overdue = t.deadline and t.status != "DONE" and t.status != "CANCELED" and t.deadline < now %}
+            {% set is_overdue = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and t.deadline < now %}
 
 <div class="d-flex flex-wrap justify-content-md-between justify-content-start align-items-center gap-2">
   <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -927,6 +992,14 @@
   <div class="position-relative d-inline-block">
   
   <!-- Текущий статус -->
+  {% if is_archive_page %}
+  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
+  {{ status_labels[t.status.value] }}
+</span>
+  {% if t.is_legal_hold %}
+  <span class="badge text-bg-warning ms-1">Legal hold</span>
+  {% endif %}
+  {% else %}
   <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
   {{ status_labels[t.status.value] }} ▼
 </span>
@@ -939,20 +1012,47 @@
   <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
   <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
 </div>
+  {% endif %}
 
 
 </div>
 
 </div>
 
-            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
+            {% set can_archive = user.role in ["ADMIN", "CURATOR"] and t.status.value in ["DONE", "CANCELED"] %}
+            {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
+
+            {% if not is_archive_page and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id))) %}
   <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
 {% endif %}
 
-            {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+            {% if can_archive %}
+            <form method="post" action="/web/tickets/{{ t.id }}/archive" class="mt-2"
+              onsubmit="return confirm('Отправить заявку #{{ t.id }} в архив?');">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
+              <button class="btn btn-sm btn-outline-secondary w-100">В архив</button>
+            </form>
+            {% endif %}
+
+            {% if can_restore %}
+            <form method="post" action="/web/tickets/{{ t.id }}/restore" class="mt-2"
+              onsubmit="return confirm('Восстановить заявку #{{ t.id }} из архива?');">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
+              <button class="btn btn-sm btn-outline-primary w-100">Восстановить</button>
+            </form>
+            <form method="post" action="/web/tickets/{{ t.id }}/legal-hold" class="mt-2">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
+            <input type="hidden" name="is_legal_hold" value="{% if t.is_legal_hold %}0{% else %}1{% endif %}">
+              <button class="btn btn-sm {% if t.is_legal_hold %}btn-warning{% else %}btn-outline-warning{% endif %} w-100">
+                {% if t.is_legal_hold %}Снять hold{% else %}Legal hold{% endif %}
+              </button>
+            </form>
+            {% endif %}
+
+            {% if not is_archive_page and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) %}
             <form method="post" action="/web/tickets/{{ t.id }}/delete" class="mt-2"
               onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
-            <input type="hidden" name="next" value="{{ list_path }}">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
               <button class="btn btn-sm btn-outline-danger w-100">Удалить</button>
             </form>
             {% endif %}
@@ -1358,6 +1458,7 @@ document.addEventListener("DOMContentLoaded", function () {
   IN_PROGRESS: "В работе",
   DONE: "Выполнена",
   CANCELED: "Отменена",
+  ARCHIVED: "В архиве",
 };
     // 1) обновить бейдж статуса
     const badge = document.getElementById("status-badge-" + ticketId);

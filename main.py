@@ -2,12 +2,14 @@ from calendar import monthrange
 from datetime import datetime, timedelta
 import csv
 from enum import Enum
+import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import threading
 import time
 from typing import Optional
@@ -48,6 +50,8 @@ DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
+ARCHIVE_UPLOAD_SUBDIR = "_archive"
+ARCHIVE_UPLOAD_DIR = UPLOAD_DIR / ARCHIVE_UPLOAD_SUBDIR
 MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))
 ALLOWED_UPLOAD_EXTENSIONS = {
     ext.strip().lower()
@@ -64,6 +68,16 @@ VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
 MAX_TICKET_TITLE_LEN = 255
+MIN_ARCHIVE_RETENTION_DAYS = 1
+MAX_ARCHIVE_RETENTION_DAYS = 3650
+DEFAULT_ARCHIVE_RETENTION_DAYS = max(
+    MIN_ARCHIVE_RETENTION_DAYS,
+    min(
+        MAX_ARCHIVE_RETENTION_DAYS,
+        int(os.getenv("DEFAULT_ARCHIVE_RETENTION_DAYS", "180")),
+    ),
+)
+ARCHIVE_CLEANUP_POLL_SECONDS = max(3600, int(os.getenv("ARCHIVE_CLEANUP_POLL_SECONDS", "86400")))
 MIN_DEADLINE_SOON_WARNING_MINUTES = 5
 MAX_DEADLINE_SOON_WARNING_MINUTES = 10080
 DEFAULT_DEADLINE_SOON_WARNING_MINUTES = max(
@@ -111,6 +125,7 @@ class TicketStatus(str, Enum):
     in_progress = "IN_PROGRESS"
     done = "DONE"
     canceled = "CANCELED"
+    archived = "ARCHIVED"
 
 
 STATUS_LABELS_RU = {
@@ -118,7 +133,11 @@ STATUS_LABELS_RU = {
     TicketStatus.in_progress: "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
     TicketStatus.done: "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
     TicketStatus.canceled: "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
+    TicketStatus.archived: "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435",
 }
+
+FINAL_TICKET_STATUSES = (TicketStatus.done, TicketStatus.canceled, TicketStatus.archived)
+ARCHIVE_SOURCE_STATUSES = (TicketStatus.done, TicketStatus.canceled)
 
 
 def status_label_ru(value: TicketStatus | str) -> str:
@@ -147,6 +166,11 @@ class Company(Base):
         Integer,
         default=DEFAULT_DEADLINE_SOON_WARNING_MINUTES,
         server_default=str(DEFAULT_DEADLINE_SOON_WARNING_MINUTES),
+    )
+    archive_retention_days_default: Mapped[int] = mapped_column(
+        Integer,
+        default=DEFAULT_ARCHIVE_RETENTION_DAYS,
+        server_default=str(DEFAULT_ARCHIVE_RETENTION_DAYS),
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -224,6 +248,7 @@ class TicketType(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    archive_retention_days: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -261,6 +286,11 @@ class Ticket(Base):
     period_key: Mapped[Optional[str]] = mapped_column(String(16), index=True, default=None)
     batch_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, default=None)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None, index=True)
+    archived_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
+    retention_days: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    delete_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None, index=True)
+    is_legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -300,6 +330,9 @@ class Attachment(Base):
     uploader_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     file_path: Mapped[str] = mapped_column(String(500))
     original_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    file_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class TicketLog(Base):
@@ -327,6 +360,19 @@ class DeadlineReminderLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     reminder_key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ArchiveCleanupLog(Base):
+    __tablename__ = "archive_cleanup_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+    ticket_id: Mapped[int] = mapped_column(Integer, index=True)
+    archived_by: Mapped[Optional[int]] = mapped_column(Integer, index=True, default=None)
+    ticket_title: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    retention_days: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    delete_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class Notification(Base):
@@ -391,6 +437,7 @@ class CompanyOut(BaseModel):
     id: int
     name: str
     deadline_soon_warning_minutes: int
+    archive_retention_days_default: int
     created_at: datetime
     class Config:
         from_attributes = True
@@ -438,17 +485,20 @@ class UnitTypeOut(BaseModel):
 class TicketTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    archive_retention_days: Optional[int] = None
     is_active: bool = True
 
 class TicketTypeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    archive_retention_days: Optional[int] = None
     is_active: Optional[bool] = None
 
 class TicketTypeOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    archive_retention_days: Optional[int]
     is_active: bool
     created_at: datetime
     class Config:
@@ -529,6 +579,11 @@ class TicketOut(BaseModel):
     period_key: Optional[str]
     batch_id: Optional[str]
     created_by: int
+    archived_at: Optional[datetime]
+    archived_by: Optional[int]
+    retention_days: Optional[int]
+    delete_at: Optional[datetime]
+    is_legal_hold: bool
     created_at: datetime
     class Config:
         from_attributes = True
@@ -550,6 +605,9 @@ class AttachmentOut(BaseModel):
     ticket_id: int
     uploader_id: int
     file_path: str
+    file_size_bytes: Optional[int]
+    file_sha256: Optional[str]
+    archived_at: Optional[datetime]
     created_at: datetime
     class Config:
         from_attributes = True
@@ -707,6 +765,127 @@ def resolve_attachment_disk_path(raw_path: str | None) -> Path | None:
     except ValueError:
         return None
     return resolved
+
+
+def resolve_ticket_archive_retention_days(db: Session, ticket: Ticket, company: Company | None) -> int:
+    if ticket.ticket_type_id is not None:
+        tt = db.get(TicketType, ticket.ticket_type_id)
+        if tt and tt.company_id == ticket.company_id and tt.archive_retention_days is not None:
+            return clamp_archive_retention_days(tt.archive_retention_days)
+    return get_company_archive_retention_days(company)
+
+
+def is_ticket_archived(ticket: Ticket) -> bool:
+    return ticket.status == TicketStatus.archived
+
+
+def archive_ticket(db: Session, ticket: Ticket, actor_id: int, company: Company | None) -> None:
+    if ticket.status not in ARCHIVE_SOURCE_STATUSES:
+        raise HTTPException(400, "Only done or canceled tickets can be archived")
+    if is_ticket_archived(ticket):
+        return
+    archived_at = local_now()
+    retention_days = resolve_ticket_archive_retention_days(db, ticket, company)
+    ticket.status = TicketStatus.archived
+    ticket.archived_at = archived_at
+    ticket.archived_by = actor_id
+    ticket.retention_days = retention_days
+    ticket.delete_at = archived_at + timedelta(days=retention_days)
+    ticket.is_legal_hold = False
+    attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
+    for attachment in attachments:
+        move_attachment_to_archive(attachment, ticket.id, archived_at)
+    add_ticket_log(
+        db,
+        ticket_id=ticket.id,
+        actor_id=actor_id,
+        action=f"архивирование (удаление после {format_deadline(ticket.delete_at)})",
+    )
+
+
+def restore_ticket_from_archive(db: Session, ticket: Ticket, actor_id: int) -> None:
+    if not is_ticket_archived(ticket):
+        raise HTTPException(400, "Ticket is not archived")
+    ticket.status = TicketStatus.done
+    ticket.archived_at = None
+    ticket.archived_by = None
+    ticket.retention_days = None
+    ticket.delete_at = None
+    ticket.is_legal_hold = False
+    attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
+    for attachment in attachments:
+        move_attachment_to_active_storage(attachment, ticket.id)
+    add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="восстановление из архива")
+
+
+def delete_ticket_with_related_data(
+    db: Session,
+    ticket: Ticket,
+    remove_files: bool = True,
+) -> None:
+    attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
+    if remove_files:
+        for attachment in attachments:
+            path = resolve_attachment_disk_path(attachment.file_path)
+            if not path:
+                continue
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                pass
+    db.query(Comment).filter(Comment.ticket_id == ticket.id).delete(synchronize_session=False)
+    db.query(Attachment).filter(Attachment.ticket_id == ticket.id).delete(synchronize_session=False)
+    db.query(TicketLog).filter(TicketLog.ticket_id == ticket.id).delete(synchronize_session=False)
+    db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id == ticket.id).delete(synchronize_session=False)
+    db.query(TicketGenerationKey).filter(TicketGenerationKey.ticket_id == ticket.id).update(
+        {"ticket_id": None},
+        synchronize_session=False,
+    )
+    db.delete(ticket)
+
+
+def run_archive_cleanup_once() -> None:
+    with SessionLocal() as db:
+        candidates = (
+            db.query(Ticket)
+            .filter(
+                Ticket.status == TicketStatus.archived,
+                Ticket.delete_at.is_not(None),
+                Ticket.delete_at <= local_now(),
+                Ticket.is_legal_hold.is_(False),
+            )
+            .order_by(Ticket.delete_at.asc(), Ticket.id.asc())
+            .all()
+        )
+        for ticket in candidates:
+            try:
+                deleted_at = local_now()
+                db.add(
+                    ArchiveCleanupLog(
+                        company_id=ticket.company_id,
+                        ticket_id=ticket.id,
+                        archived_by=ticket.archived_by,
+                        ticket_title=(ticket.title or "")[:255] or None,
+                        archived_at=ticket.archived_at,
+                        retention_days=ticket.retention_days,
+                        delete_at=ticket.delete_at,
+                        deleted_at=deleted_at,
+                    )
+                )
+                delete_ticket_with_related_data(db, ticket, remove_files=True)
+                db.commit()
+            except Exception:
+                db.rollback()
+
+
+def run_archive_cleanup_forever() -> None:
+    while True:
+        try:
+            run_archive_cleanup_once()
+        except Exception:
+            pass
+        time.sleep(ARCHIVE_CLEANUP_POLL_SECONDS)
 
 
 def validate_ticket_links(
@@ -1214,6 +1393,81 @@ async def write_upload_file_async(upload: UploadFile, destination: Path, max_siz
         raise
 
 
+def build_upload_url_from_disk_path(path: Path) -> str:
+    upload_root = UPLOAD_DIR.resolve(strict=False)
+    resolved = path.resolve(strict=False)
+    relative = resolved.relative_to(upload_root).as_posix()
+    return f"/uploads/{relative}"
+
+
+def compute_file_sha256_and_size(path: Path) -> tuple[str, int]:
+    hasher = hashlib.sha256()
+    size = 0
+    with path.open("rb") as source:
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+            size += len(chunk)
+    return hasher.hexdigest(), size
+
+
+def enrich_attachment_metadata(attachment: Attachment, disk_path: Path | None = None) -> None:
+    resolved = disk_path or resolve_attachment_disk_path(attachment.file_path)
+    if not resolved or not resolved.exists() or not resolved.is_file():
+        return
+    file_hash, file_size = compute_file_sha256_and_size(resolved)
+    attachment.file_sha256 = file_hash
+    attachment.file_size_bytes = file_size
+
+
+def choose_attachment_storage_name(attachment: Attachment, ticket_id: int) -> str:
+    preferred_name = (attachment.original_name or "").strip()
+    if preferred_name:
+        try:
+            return make_safe_upload_name(preferred_name, ticket_id=ticket_id)
+        except HTTPException:
+            pass
+    fallback_name = Path(attachment.file_path or "").name
+    try:
+        return make_safe_upload_name(fallback_name, ticket_id=ticket_id)
+    except HTTPException:
+        ext = Path(fallback_name).suffix.lower()[:10]
+        if not ext:
+            ext = ".bin"
+        return f"{ticket_id}_{uuid.uuid4().hex}{ext}"
+
+
+def move_attachment_to_archive(attachment: Attachment, ticket_id: int, archived_at: datetime) -> None:
+    source = resolve_attachment_disk_path(attachment.file_path)
+    if not source or not source.exists() or not source.is_file():
+        attachment.archived_at = archived_at
+        return
+    archive_name = choose_attachment_storage_name(attachment, ticket_id)
+    target_dir = ARCHIVE_UPLOAD_DIR / str(ticket_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / archive_name
+    shutil.move(str(source), str(target))
+    attachment.file_path = build_upload_url_from_disk_path(target)
+    attachment.archived_at = archived_at
+    enrich_attachment_metadata(attachment, target)
+
+
+def move_attachment_to_active_storage(attachment: Attachment, ticket_id: int) -> None:
+    source = resolve_attachment_disk_path(attachment.file_path)
+    if not source or not source.exists() or not source.is_file():
+        attachment.archived_at = None
+        return
+    active_name = choose_attachment_storage_name(attachment, ticket_id)
+    target = UPLOAD_DIR / active_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(target))
+    attachment.file_path = build_upload_url_from_disk_path(target)
+    attachment.archived_at = None
+    enrich_attachment_metadata(attachment, target)
+
+
 def to_local_dt(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
@@ -1249,6 +1503,45 @@ def get_company_deadline_soon_warning_minutes(company: Company | None) -> int:
     if company.deadline_soon_warning_minutes is None:
         return DEFAULT_DEADLINE_SOON_WARNING_MINUTES
     return clamp_deadline_soon_warning_minutes(company.deadline_soon_warning_minutes)
+
+
+def clamp_archive_retention_days(value: int) -> int:
+    return max(
+        MIN_ARCHIVE_RETENTION_DAYS,
+        min(MAX_ARCHIVE_RETENTION_DAYS, int(value)),
+    )
+
+
+def parse_archive_retention_days(raw: str | None) -> int | None:
+    raw_value = (raw or "").strip()
+    if not raw_value:
+        return None
+    if not re.fullmatch(r"\d+", raw_value):
+        return None
+    parsed = int(raw_value)
+    if parsed < MIN_ARCHIVE_RETENTION_DAYS or parsed > MAX_ARCHIVE_RETENTION_DAYS:
+        return None
+    return parsed
+
+
+def get_company_archive_retention_days(company: Company | None) -> int:
+    if not company:
+        return DEFAULT_ARCHIVE_RETENTION_DAYS
+    if company.archive_retention_days_default is None:
+        return DEFAULT_ARCHIVE_RETENTION_DAYS
+    return clamp_archive_retention_days(company.archive_retention_days_default)
+
+
+def normalize_ticket_type_archive_retention_days(value: int | None) -> int | None:
+    if value is None:
+        return None
+    parsed = int(value)
+    if parsed < MIN_ARCHIVE_RETENTION_DAYS or parsed > MAX_ARCHIVE_RETENTION_DAYS:
+        raise HTTPException(
+            422,
+            f"archive_retention_days must be between {MIN_ARCHIVE_RETENTION_DAYS} and {MAX_ARCHIVE_RETENTION_DAYS}",
+        )
+    return parsed
 
 
 def format_dt(dt: datetime | None) -> str:
@@ -1663,7 +1956,7 @@ def run_deadline_reminders_forever() -> None:
                     .filter(
                         Ticket.executor_id.is_not(None),
                         Ticket.deadline.is_not(None),
-                        Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+                        Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
                         Ticket.deadline >= deadline_from,
                         Ticket.deadline <= deadline_to,
                     )
@@ -1832,6 +2125,7 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
     db.query(Project).filter(Project.company_id == company_id).delete(synchronize_session=False)
     db.query(RegistrationInvite).filter(RegistrationInvite.company_id == company_id).delete(synchronize_session=False)
     db.query(Notification).filter(Notification.company_id == company_id).delete(synchronize_session=False)
+    db.query(ArchiveCleanupLog).filter(ArchiveCleanupLog.company_id == company_id).delete(synchronize_session=False)
     if user_ids:
         db.query(PushSubscription).filter(PushSubscription.user_id.in_(user_ids)).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id.in_(user_ids)).delete(synchronize_session=False)
@@ -1893,6 +2187,7 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ARCHIVE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PWA_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(PWA_STATIC_DIR)), name="static")
@@ -1940,6 +2235,7 @@ def app_startup() -> None:
         threading.Thread(target=run_deadline_reminders_forever, daemon=True).start()
     if TEMPLATE_AUTOGEN_ENABLED:
         threading.Thread(target=run_template_autogen_forever, daemon=True).start()
+    threading.Thread(target=run_archive_cleanup_forever, daemon=True).start()
 
 
 
@@ -2338,6 +2634,7 @@ def create_ticket_type(
         company_id=_manager.company_id,
         name=name,
         description=(payload.description or "").strip() or None,
+        archive_retention_days=normalize_ticket_type_archive_retention_days(payload.archive_retention_days),
         is_active=bool(payload.is_active),
     )
     db.add(item)
@@ -2390,6 +2687,8 @@ def update_ticket_type(
         item.description = (incoming.get("description") or "").strip() or None
     if "is_active" in incoming:
         item.is_active = bool(incoming.get("is_active"))
+    if "archive_retention_days" in incoming:
+        item.archive_retention_days = normalize_ticket_type_archive_retention_days(incoming.get("archive_retention_days"))
     db.commit()
     db.refresh(item)
     return item
@@ -2680,8 +2979,12 @@ def list_tickets(db: Session = Depends(get_db), user: User = Depends(get_current
 @app.patch("/tickets/{ticket_id}", response_model=TicketOut)
 def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_api_ticket_or_404(db, user, ticket_id)
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
 
     incoming = patch.model_dump(exclude_unset=True)
+    if incoming.get("status") == TicketStatus.archived:
+        raise HTTPException(400, "Use archive endpoint")
 
     if user.role == Role.executor:
         if t.executor_id != user.id and t.created_by != user.id:
@@ -2754,6 +3057,8 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
     t = get_api_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=payload.text)
     db.add(c); db.commit(); db.refresh(c)
@@ -2766,6 +3071,8 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
     t = get_api_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
 
     UPLOAD_DIR.mkdir(exist_ok=True)
     safe_name = make_safe_upload_name(file.filename)
@@ -2773,6 +3080,7 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
     write_upload_file(file, path)
 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
+    enrich_attachment_metadata(a, path)
     db.add(a)
     add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°")
     db.commit(); db.refresh(a)
@@ -3012,7 +3320,7 @@ def _render_web_tickets_page(
     list_path = "/web/archive" if archive_mode else "/web"
     page_title = "Архив заявок" if archive_mode else "Заявки"
     empty_text = "В архиве пока нет заявок." if archive_mode else "Заявок пока нет."
-    status_filter_options = ["DONE", "CANCELED"] if archive_mode else ["NEW", "IN_PROGRESS", "DONE", "CANCELED"]
+    status_filter_options = ["ARCHIVED"] if archive_mode else ["NEW", "IN_PROGRESS", "DONE", "CANCELED"]
     create_enabled = (not archive_mode) and user.role in (Role.admin, Role.curator, Role.executor)
     view_mode_storage_key = "tickets_view_mode_archive" if archive_mode else "tickets_view_mode"
     # 1) tickets СЃ СѓС‡РµС‚РѕРј СЂРѕР»Рё
@@ -3020,7 +3328,9 @@ def _render_web_tickets_page(
     if user.role == Role.executor:
         base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
     if archive_mode:
-        base_query = base_query.filter(Ticket.status.in_([TicketStatus.done, TicketStatus.canceled]))
+        base_query = base_query.filter(Ticket.status == TicketStatus.archived)
+    else:
+        base_query = base_query.filter(Ticket.status != TicketStatus.archived)
 
     # 2) РґР°РЅРЅС‹Рµ РґР»СЏ UI
     projects = (
@@ -3139,7 +3449,7 @@ def _render_web_tickets_page(
     if status_filter:
         try:
             status_enum = TicketStatus(status_filter)
-            if archive_mode and status_enum not in (TicketStatus.done, TicketStatus.canceled):
+            if archive_mode and status_enum != TicketStatus.archived:
                 filtered_query = filtered_query.filter(Ticket.id == -1)
             else:
                 filtered_query = filtered_query.filter(Ticket.status == status_enum)
@@ -3200,7 +3510,7 @@ def _render_web_tickets_page(
         filtered_query = filtered_query.filter(
             Ticket.deadline.is_not(None),
             Ticket.deadline < now,
-            Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+            Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
         )
 
         # СЃРѕСЂС‚РёСЂРѕРІРєР°
@@ -3212,8 +3522,9 @@ def _render_web_tickets_page(
         view_mode_value = "cards"
 
     total_count = filtered_query.count()
+    legal_hold_count = filtered_query.filter(Ticket.is_legal_hold.is_(True)).count()
 
-    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0}
+    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0, "ARCHIVED": 0}
     status_counts = (
         filtered_query.with_entities(Ticket.status, func.count(Ticket.id))
         .group_by(Ticket.status)
@@ -3228,7 +3539,7 @@ def _render_web_tickets_page(
         filtered_query.filter(
             Ticket.deadline.is_not(None),
             Ticket.deadline < now,
-            Ticket.status.notin_([TicketStatus.done, TicketStatus.canceled]),
+            Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
         ).count()
     )
 
@@ -3262,6 +3573,7 @@ def _render_web_tickets_page(
         "IN_PROGRESS": "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
         "DONE": "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
         "CANCELED": "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
+        "ARCHIVED": "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435",
     }
 
     # Р”Р°С€Р±РѕСЂРґ РїРѕ С‚РµРєСѓС‰РµРјСѓ СЃРїРёСЃРєСѓ tickets (РїРѕСЃР»Рµ С„РёР»СЊС‚СЂРѕРІ)
@@ -3331,6 +3643,7 @@ def _render_web_tickets_page(
             "view_mode": view_mode_value,
             "status_labels": status_labels,
             "total_count": total_count,
+            "legal_hold_count": legal_hold_count,
             "counts_by_status": counts_by_status,
             "overdue_count": overdue_count,
             "filters_form_open": filters_form_open,
@@ -3441,11 +3754,17 @@ def web_settings(
         if user.company_id is not None:
             company = db.get(Company, user.company_id)
     deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
+    archive_retention_days_default = get_company_archive_retention_days(company)
     deadline_warning_saved = (request.query_params.get("deadline_warning_saved") or "").strip() == "1"
     deadline_warning_error = (request.query_params.get("deadline_warning_error") or "").strip().lower()
     if deadline_warning_error not in {"bad_value", "save_failed"}:
         deadline_warning_error = ""
+    archive_retention_saved = (request.query_params.get("archive_retention_saved") or "").strip() == "1"
+    archive_retention_error = (request.query_params.get("archive_retention_error") or "").strip().lower()
+    if archive_retention_error not in {"bad_value", "save_failed"}:
+        archive_retention_error = ""
     can_manage_deadline_warning = user.role in (Role.admin, Role.curator)
+    can_manage_archive_retention = user.role in (Role.admin, Role.curator)
     return templates.TemplateResponse(
         "settings.html",
         {
@@ -3455,9 +3774,15 @@ def web_settings(
             "deadline_soon_warning_minutes": deadline_soon_warning_minutes,
             "deadline_warning_saved": deadline_warning_saved,
             "deadline_warning_error": deadline_warning_error,
+            "archive_retention_days_default": archive_retention_days_default,
+            "archive_retention_saved": archive_retention_saved,
+            "archive_retention_error": archive_retention_error,
             "can_manage_deadline_warning": can_manage_deadline_warning,
+            "can_manage_archive_retention": can_manage_archive_retention,
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
             "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
+            "min_archive_retention_days": MIN_ARCHIVE_RETENTION_DAYS,
+            "max_archive_retention_days": MAX_ARCHIVE_RETENTION_DAYS,
         },
     )
 
@@ -3490,6 +3815,36 @@ async def web_settings_deadline_warning(
             status_code=HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(url="/web/settings?deadline_warning_saved=1", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/settings/archive-retention")
+async def web_settings_archive_retention(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin, Role.curator)),
+):
+    ensure_company_user(user)
+    company = db.get(Company, user.company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    form = await request.form()
+    parsed = parse_archive_retention_days(form.get("archive_retention_days_default"))
+    if parsed is None:
+        return RedirectResponse(
+            url="/web/settings?archive_retention_error=bad_value",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    try:
+        company.archive_retention_days_default = parsed
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url="/web/settings?archive_retention_error=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url="/web/settings?archive_retention_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/notifications")
@@ -4596,6 +4951,8 @@ async def web_delete_ticket(
     user: User = Depends(get_current_user),
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived tickets are removed by cleanup job")
 
     # РїСЂР°РІР°
     if is_manager(user):
@@ -4609,12 +4966,7 @@ async def web_delete_ticket(
         raise HTTPException(403, "Forbidden")
 
     # СѓРґР°Р»СЏРµРј СЃРІСЏР·Р°РЅРЅС‹Рµ Р·Р°РїРёСЃРё РґРѕ СѓРґР°Р»РµРЅРёСЏ Р·Р°СЏРІРєРё (FK РІ Postgres)
-    db.query(Comment).filter(Comment.ticket_id == ticket_id).delete(synchronize_session=False)
-    db.query(Attachment).filter(Attachment.ticket_id == ticket_id).delete(synchronize_session=False)
-    db.query(TicketLog).filter(TicketLog.ticket_id == ticket_id).delete(synchronize_session=False)
-    db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id == ticket_id).delete(synchronize_session=False)
-
-    db.delete(t)
+    delete_ticket_with_related_data(db, t, remove_files=True)
     db.commit()
 
     form = await request.form()
@@ -4634,6 +4986,10 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
     status_raw = (form.get("status") or "").strip()
     if not status_raw:
         raise HTTPException(400, "Missing status")
+    if status_raw == TicketStatus.archived.value:
+        raise HTTPException(400, "Use archive action")
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket must be restored first")
 
     old_status = t.status
     t.status = TicketStatus(status_raw)
@@ -4643,13 +4999,13 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
     db.commit()
 
     now = local_now()
-    is_overdue = bool(t.deadline and t.deadline < now and t.status not in (TicketStatus.done, TicketStatus.canceled))
+    is_overdue = bool(t.deadline and t.deadline < now and t.status not in FINAL_TICKET_STATUSES)
     company = db.get(Company, user.company_id) if user.company_id is not None else None
     deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
     is_deadline_soon = bool(
         t.deadline
         and not is_overdue
-        and t.status not in (TicketStatus.done, TicketStatus.canceled)
+        and t.status not in FINAL_TICKET_STATUSES
         and t.deadline <= now + timedelta(minutes=deadline_soon_warning_minutes)
     )
 
@@ -4670,6 +5026,82 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
 
+@app.post("/web/tickets/{ticket_id}/archive")
+async def web_archive_ticket(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    t = get_company_ticket_or_404(db, user, ticket_id)
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web")
+    if t.status == TicketStatus.archived:
+        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+    company = db.get(Company, user.company_id) if user.company_id is not None else None
+    old_status = t.status
+    archive_ticket(db, t, actor_id=user.id, company=company)
+    db.commit()
+    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
+    db.commit()
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/tickets/{ticket_id}/restore")
+async def web_restore_ticket(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    t = get_company_ticket_or_404(db, user, ticket_id)
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/archive")
+    old_status = t.status
+    restore_ticket_from_archive(db, t, actor_id=user.id)
+    db.commit()
+    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
+    db.commit()
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/tickets/{ticket_id}/legal-hold")
+async def web_ticket_legal_hold(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    t = get_company_ticket_or_404(db, user, ticket_id)
+    if t.status != TicketStatus.archived:
+        raise HTTPException(400, "Legal hold works only for archived tickets")
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/archive")
+    hold_enabled = (form.get("is_legal_hold") or "").strip() == "1"
+    t.is_legal_hold = hold_enabled
+    if not hold_enabled:
+        if t.retention_days is None:
+            company = db.get(Company, user.company_id) if user.company_id is not None else None
+            t.retention_days = resolve_ticket_archive_retention_days(db, t, company)
+        if t.archived_at is None:
+            t.archived_at = local_now()
+        t.delete_at = t.archived_at + timedelta(days=t.retention_days)
+    add_ticket_log(
+        db,
+        ticket_id=t.id,
+        actor_id=user.id,
+        action="установлен legal hold" if hold_enabled else "снят legal hold",
+    )
+    db.commit()
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
 @app.post("/web/tickets/{ticket_id}/comments")
 async def web_add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     form = await request.form()
@@ -4679,6 +5111,8 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     t = get_company_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
 
     c = Comment(ticket_id=ticket_id, author_id=user.id, text=text)
     db.add(c); db.commit()
@@ -4697,6 +5131,8 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     # РїСЂР°РІР° (РєР°Рє Сѓ РєРѕРјРјРµРЅС‚Р°СЂРёРµРІ/СЃС‚Р°С‚СѓСЃРѕРІ)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
 
     safe_name = make_safe_upload_name(file.filename, ticket_id=ticket_id)
 
@@ -4705,6 +5141,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
 
     # СЃРѕС…СЂР°РЅСЏРµРј РїСѓС‚СЊ РєР°Рє URL (СѓРґРѕР±РЅРѕ РґР»СЏ С€Р°Р±Р»РѕРЅРѕРІ)
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
+    enrich_attachment_metadata(a, dest_path)
     db.add(a)
     add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°")
     db.commit()
@@ -4719,6 +5156,8 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
 @app.get("/web/tickets/{ticket_id}/edit")
 def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_company_ticket_or_404(db, user, ticket_id)
+    if t.status == TicketStatus.archived:
+        return RedirectResponse(url=f"/web/tickets/{ticket_id}", status_code=HTTP_303_SEE_OTHER)
 
     # РїСЂР°РІР° РЅР° РїСЂРѕСЃРјРѕС‚СЂ/СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ
     if is_manager(user):
@@ -4794,10 +5233,14 @@ async def web_ticket_edit_save(
     # РїСЂР°РІР°: РєСѓСЂР°С‚РѕСЂ вЂ” РІСЃРµРіРґР°, РёСЃРїРѕР»РЅРёС‚РµР»СЊ вЂ” С‚РѕР»СЊРєРѕ СЃРІРѕРё (СЃРѕР·РґР°Р»/РЅР°Р·РЅР°С‡РµРЅ)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
+    if t.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
 
     can_edit_full = is_manager(user)
     form = await request.form()
     status_raw = (form.get("status") or "").strip()
+    if status_raw == TicketStatus.archived.value:
+        raise HTTPException(400, "Use archive action")
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
 
     title = normalize_ticket_title(form.get("title"))
@@ -4922,7 +5365,13 @@ def web_ticket_types(request: Request, db: Session = Depends(get_db), user: User
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
     ticket_types = (
-        db.query(TicketType.id, TicketType.name, TicketType.description, TicketType.is_active)
+        db.query(
+            TicketType.id,
+            TicketType.name,
+            TicketType.description,
+            TicketType.archive_retention_days,
+            TicketType.is_active,
+        )
         .filter(TicketType.company_id == user.company_id)
         .order_by(TicketType.id.desc())
         .all()
@@ -4943,6 +5392,9 @@ async def web_ticket_types_create(request: Request, db: Session = Depends(get_db
     form = await request.form()
     name = (form.get("name") or "").strip()
     description = (form.get("description") or "").strip() or None
+    archive_retention_days = parse_archive_retention_days(form.get("archive_retention_days"))
+    if (form.get("archive_retention_days") or "").strip() and archive_retention_days is None:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
     is_active = (form.get("is_active") or "1").strip() == "1"
     if not name:
         return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
@@ -4957,6 +5409,7 @@ async def web_ticket_types_create(request: Request, db: Session = Depends(get_db
         company_id=user.company_id,
         name=name,
         description=description,
+        archive_retention_days=archive_retention_days,
         is_active=is_active,
     )
     db.add(item)
@@ -4980,6 +5433,9 @@ async def web_ticket_types_update(
     form = await request.form()
     name = (form.get("name") or "").strip()
     description = (form.get("description") or "").strip() or None
+    archive_retention_days = parse_archive_retention_days(form.get("archive_retention_days"))
+    if (form.get("archive_retention_days") or "").strip() and archive_retention_days is None:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
     is_active = (form.get("is_active") or "").strip() == "1"
     if not name:
         return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
@@ -4998,6 +5454,7 @@ async def web_ticket_types_update(
 
     item.name = name
     item.description = description
+    item.archive_retention_days = archive_retention_days
     item.is_active = is_active
     db.commit()
     return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
@@ -5484,7 +5941,7 @@ async def web_users_delete(
     # Do not delete users that already have business history in the ticket system.
     has_ticket_refs = db.query(Ticket.id).filter(
         Ticket.company_id == user.company_id,
-        or_(Ticket.created_by == item.id, Ticket.executor_id == item.id),
+        or_(Ticket.created_by == item.id, Ticket.executor_id == item.id, Ticket.archived_by == item.id),
     ).first()
     has_comment_refs = (
         db.query(Comment.id)
@@ -5545,6 +6002,11 @@ def web_ticket_detail(
     user: User = Depends(get_current_user),
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
+    default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
+    next_url = safe_next(request.query_params.get("next"), fallback=default_next)
+    next_url_encoded = quote(next_url, safe="")
+    can_archive = is_manager(user) and t.status in ARCHIVE_SOURCE_STATUSES
+    can_restore = is_manager(user) and t.status == TicketStatus.archived
 
     # РїСЂР°РІР°
     if not can_access_ticket(user, t):
@@ -5589,11 +6051,11 @@ def web_ticket_detail(
     company = db.get(Company, user.company_id) if user.company_id is not None else None
     deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
     now = local_now()
-    is_overdue = bool(t.deadline and t.deadline < now and t.status.value not in ("DONE", "CANCELED"))
+    is_overdue = bool(t.deadline and t.deadline < now and t.status not in FINAL_TICKET_STATUSES)
     is_deadline_soon = bool(
         t.deadline
         and not is_overdue
-        and t.status.value not in ("DONE", "CANCELED")
+        and t.status not in FINAL_TICKET_STATUSES
         and t.deadline <= now + timedelta(minutes=deadline_soon_warning_minutes)
     )
 
@@ -5602,6 +6064,7 @@ def web_ticket_detail(
         "IN_PROGRESS": "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
         "DONE": "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
         "CANCELED": "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
+        "ARCHIVED": "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435",
     }
 
     return templates.TemplateResponse(
@@ -5620,5 +6083,9 @@ def web_ticket_detail(
             "is_overdue": is_overdue,
             "is_deadline_soon": is_deadline_soon,
             "status_labels": status_labels,
+            "next_url": next_url,
+            "next_url_encoded": next_url_encoded,
+            "can_archive": can_archive,
+            "can_restore": can_restore,
         },
     )

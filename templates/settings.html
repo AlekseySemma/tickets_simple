@@ -117,6 +117,13 @@
     {% elif deadline_warning_error == "save_failed" %}
       <div class="alert alert-danger py-2">Не удалось сохранить настройку. Попробуйте еще раз.</div>
     {% endif %}
+    {% if archive_retention_saved %}
+      <div class="alert alert-success py-2">Срок хранения архивных заявок сохранен.</div>
+    {% elif archive_retention_error == "bad_value" %}
+      <div class="alert alert-danger py-2">Укажите срок хранения от {{ min_archive_retention_days }} до {{ max_archive_retention_days }} дней.</div>
+    {% elif archive_retention_error == "save_failed" %}
+      <div class="alert alert-danger py-2">Не удалось сохранить срок хранения. Попробуйте еще раз.</div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
@@ -144,6 +151,38 @@
         {% else %}
           <div class="small text-muted mt-2">
             Текущий порог: <b>{{ deadline_soon_warning_minutes }} мин.</b>
+            Изменять могут администратор и куратор.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3 settings-card">
+      <div class="card-body">
+        <h5 class="mb-2">Архив заявок</h5>
+        <div class="settings-note mt-0">Через этот срок архивная заявка и связанные данные удаляются фоновым процессом.</div>
+        {% if can_manage_archive_retention %}
+          <form method="post" action="/web/settings/archive-retention" class="row g-2 align-items-end mt-1">
+            <div class="col-12 col-sm-6 col-md-4">
+              <label class="form-label mb-1">Срок хранения (дней)</label>
+              <input
+                type="number"
+                class="form-control"
+                name="archive_retention_days_default"
+                min="{{ min_archive_retention_days }}"
+                max="{{ max_archive_retention_days }}"
+                step="1"
+                value="{{ archive_retention_days_default }}"
+                required
+              />
+            </div>
+            <div class="col-12 col-sm-auto">
+              <button class="btn btn-outline-primary">Сохранить</button>
+            </div>
+          </form>
+        {% else %}
+          <div class="small text-muted mt-2">
+            Текущий срок хранения: <b>{{ archive_retention_days_default }} дн.</b>
             Изменять могут администратор и куратор.
           </div>
         {% endif %}

@@ -131,11 +131,14 @@
       <div class="card-body">
         <h5 class="mb-3">Добавить тип заявки</h5>
         <form method="post" action="/web/ticket-types/create" class="row g-2">
-          <div class="col-12 col-md-5">
+          <div class="col-12 col-md-4">
             <input name="name" class="form-control" placeholder="Название" required />
           </div>
-          <div class="col-12 col-md-5">
+          <div class="col-12 col-md-4">
             <input name="description" class="form-control" placeholder="Описание (необязательно)" />
+          </div>
+          <div class="col-12 col-md-2">
+            <input name="archive_retention_days" type="number" min="1" max="3650" class="form-control" placeholder="Хранение, дн." />
           </div>
           <div class="col-12 col-md-2 d-flex align-items-center">
             <div class="form-check">
@@ -162,15 +165,27 @@
             {% endif %}
           </div>
           <form method="post" action="/web/ticket-types/{{ tt.id }}/update" class="row g-2">
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-3">
               <label class="form-label">Название</label>
               <input name="name" class="form-control" value="{{ tt.name }}" required />
             </div>
-            <div class="col-12 col-md-5">
+            <div class="col-12 col-md-4">
               <label class="form-label">Описание</label>
               <input name="description" class="form-control" value="{{ tt.description or '' }}" />
             </div>
-            <div class="col-12 col-md-3 d-flex align-items-end">
+            <div class="col-12 col-md-3">
+              <label class="form-label">Хранение в архиве (дни)</label>
+              <input
+                name="archive_retention_days"
+                type="number"
+                min="1"
+                max="3650"
+                class="form-control"
+                value="{{ tt.archive_retention_days or '' }}"
+                placeholder="По умолчанию компании"
+              />
+            </div>
+            <div class="col-12 col-md-2 d-flex align-items-end">
               <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="active_{{ tt.id }}" {% if tt.is_active %}checked{% endif %}>
                 <label class="form-check-label" for="active_{{ tt.id }}">Активен</label>

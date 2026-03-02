@@ -20,6 +20,7 @@
     .st-IN_PROGRESS { background: #1f9d8f !important; }
     .st-DONE { background: #2f9a76 !important; }
     .st-CANCELED { background: #212529 !important; }
+    .st-ARCHIVED { background: #6c757d !important; }
     .st-OVERDUE { background: #dc3545 !important; }
 
     .ticket {
@@ -261,7 +262,7 @@
       <div class="page-actions">
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
         <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
-        <a class="btn btn-outline-secondary" href="/web">← Назад к списку</a>
+        <a class="btn btn-outline-secondary" href="{{ next_url }}">← Назад к списку</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
@@ -274,6 +275,12 @@
         <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
         <span class="detail-badge">Проект <strong>{{ projects_by_id.get(t.project_id, "—") }}</strong></span>
         <span class="detail-badge">Исполнитель <strong>{{ users_by_id.get(t.executor_id, "—") }}</strong></span>
+        {% if t.status.value == "ARCHIVED" %}
+          <span class="detail-badge">Удаление <strong>{{ format_deadline(t.delete_at) }}</strong></span>
+          {% if t.is_legal_hold %}
+            <span class="detail-badge">Legal hold <strong>включен</strong></span>
+          {% endif %}
+        {% endif %}
       </div>
     </div>
 
@@ -306,6 +313,12 @@
           <div class="ticket-side text-md-end">
             <div class="d-flex justify-content-end gap-2 align-items-center">
               <div class="position-relative d-inline-block">
+                {% if t.status.value == "ARCHIVED" %}
+                <span id="status-badge-{{ t.id }}"
+                      class="badge badge-status st-{{ t.status.value }}">
+                  {{ status_labels[t.status.value] }}
+                </span>
+                {% else %}
                 <span id="status-badge-{{ t.id }}"
                       class="badge badge-status st-{{ t.status.value }} status-toggle"
                       data-ticket-id="{{ t.id }}">
@@ -322,6 +335,7 @@
                   <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option"
                           data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
                 </div>
+                {% endif %}
               </div>
 
               <span id="overdue-badge-{{ t.id }}"
@@ -332,17 +346,40 @@
 
             {% set can_edit = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
             {% set can_delete = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
-            {% if can_edit or can_delete %}
+            {% if can_edit or can_delete or can_archive or can_restore %}
             <div class="ticket-actions">
-              {% if can_edit %}
+              {% if can_edit and t.status.value != "ARCHIVED" %}
                 <a class="btn btn-sm btn-outline-secondary"
-                   href="/web/tickets/{{ t.id }}/edit?next=/web/tickets/{{ t.id }}">Изменить</a>
+                   href="/web/tickets/{{ t.id }}/edit?next={{ next_url_encoded }}">Изменить</a>
               {% endif %}
-              {% if can_delete %}
+              {% if can_archive %}
+                <form method="post"
+                      action="/web/tickets/{{ t.id }}/archive"
+                      onsubmit="return confirm('Отправить заявку в архив?');">
+                  <input type="hidden" name="next" value="{{ next_url }}">
+                  <button class="btn btn-sm btn-outline-secondary">В архив</button>
+                </form>
+              {% endif %}
+              {% if can_restore %}
+                <form method="post"
+                      action="/web/tickets/{{ t.id }}/restore"
+                      onsubmit="return confirm('Восстановить заявку из архива?');">
+                  <input type="hidden" name="next" value="{{ next_url }}">
+                  <button class="btn btn-sm btn-outline-primary">Восстановить</button>
+                </form>
+                <form method="post" action="/web/tickets/{{ t.id }}/legal-hold">
+                  <input type="hidden" name="next" value="{{ next_url }}">
+                  <input type="hidden" name="is_legal_hold" value="{% if t.is_legal_hold %}0{% else %}1{% endif %}">
+                  <button class="btn btn-sm {% if t.is_legal_hold %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                    {% if t.is_legal_hold %}Снять hold{% else %}Legal hold{% endif %}
+                  </button>
+                </form>
+              {% endif %}
+              {% if can_delete and t.status.value != "ARCHIVED" %}
                 <form method="post"
                       action="/web/tickets/{{ t.id }}/delete"
                       onsubmit="return confirm('Удалить заявку?');">
-                  <input type="hidden" name="next" value="/web">
+                  <input type="hidden" name="next" value="{{ next_url }}">
                   <button class="btn btn-sm btn-outline-danger">Удалить</button>
                 </form>
               {% endif %}
@@ -374,11 +411,15 @@
               {% endif %}
             </div>
 
-            <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
-  <input type="hidden" name="next" value="/web/tickets/{{ t.id }}">
-  <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
-  <button class="btn btn-outline-secondary">Отправить</button>
-</form>
+            {% if t.status.value == "ARCHIVED" %}
+              <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
+            {% else %}
+              <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
+                <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
+                <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
+                <button class="btn btn-outline-secondary">Отправить</button>
+              </form>
+            {% endif %}
 
           </div>
 
@@ -420,12 +461,14 @@
 </div>
 
 
-        <form method="post" action="/web/tickets/{{ t.id }}/attachments"
-      enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
-  <input type="hidden" name="next" value="/web/tickets/{{ t.id }}">
-  <input type="file" name="file" class="form-control" required />
-  <button class="btn btn-outline-secondary">Загрузить</button>
-</form>
+        {% if t.status.value != "ARCHIVED" %}
+          <form method="post" action="/web/tickets/{{ t.id }}/attachments"
+                enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
+            <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
+            <input type="file" name="file" class="form-control" required />
+            <button class="btn btn-outline-secondary">Загрузить</button>
+          </form>
+        {% endif %}
 
 
           </div>
@@ -447,6 +490,8 @@
                   <option value="изменение исполнителя">Изменение исполнителя</option>
                   <option value="изменение проекта">Изменение проекта</option>
                   <option value="добавление файла">Добавление файла</option>
+                  <option value="архивирование">Архивирование</option>
+                  <option value="восстановление">Восстановление</option>
                 </select>
               </div>
               <div class="col-12 col-md-8">
@@ -479,7 +524,7 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  const STATUS_LABELS = { NEW:"Новая", IN_PROGRESS:"В работе", DONE:"Выполнена", CANCELED:"Отменена" };
+  const STATUS_LABELS = { NEW:"Новая", IN_PROGRESS:"В работе", DONE:"Выполнена", CANCELED:"Отменена", ARCHIVED:"В архиве" };
 
   function closeAllMenus(exceptId) {
     document.querySelectorAll(".status-menu").forEach(m => {
