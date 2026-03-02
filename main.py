@@ -3931,7 +3931,8 @@ def web_notifications(
         setattr(item, "kind", item_kind)
         if kind_value != "all" and item_kind != kind_value:
             continue
-        haystack = f"{(item.title or '').lower()} {(item.body or '').lower()}"
+        searchable_url = (item.url or '').lower()
+        haystack = f"{(item.title or '').lower()} {(item.body or '').lower()} {searchable_url}"
         if q_value and q_value not in haystack:
             continue
         items.append(item)
