@@ -3310,6 +3310,7 @@ def _render_web_tickets_page(
     open_create: str | None = None,
     create_error: str | None = None,
     page: int = 1,
+    page_size: str | None = None,
     archive_mode: bool = False,
 ):
     if is_platform_admin(user):
@@ -3590,16 +3591,22 @@ def _render_web_tickets_page(
     )
     create_form_open = create_enabled and (open_create == "1")
     create_error_value = (create_error or "") if create_enabled else ""
+    page_size_options = (10, 20, 30, 50, 100)
+    try:
+        per_page = int((page_size or "").strip()) if page_size is not None else 10
+    except ValueError:
+        per_page = 10
+    if per_page not in page_size_options:
+        per_page = 10
     reset_filters_url = list_path
     if is_manager(user):
-        reset_filters_url = f"{list_path}?view_mode={view_mode_value}"
+        reset_filters_url = f"{list_path}?view_mode={view_mode_value}&page_size={per_page}"
     current_list_url = request.url.path
     if request.url.query:
         current_list_url = f"{current_list_url}?{request.url.query}"
     current_list_url_encoded = quote(current_list_url, safe="")
 
     # РџР°РіРёРЅР°С†РёСЏ
-    per_page = 10
     total_pages = max(1, (total_count + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     start = (page - 1) * per_page
@@ -3641,6 +3648,8 @@ def _render_web_tickets_page(
             "only_overdue": "1" if overdue_enabled else "",
             "sort": sort_value,
             "view_mode": view_mode_value,
+            "page_size": per_page,
+            "page_size_options": page_size_options,
             "status_labels": status_labels,
             "total_count": total_count,
             "legal_hold_count": legal_hold_count,
@@ -3682,6 +3691,7 @@ def web_tickets(
     open_create: str | None = None,
     create_error: str | None = None,
     page: int = 1,
+    page_size: str | None = None,
 ):
     return _render_web_tickets_page(
         request=request,
@@ -3700,6 +3710,7 @@ def web_tickets(
         open_create=open_create,
         create_error=create_error,
         page=page,
+        page_size=page_size,
         archive_mode=False,
     )
 
@@ -3720,6 +3731,7 @@ def web_archive_tickets(
     sort: str | None = None,
     view_mode: str | None = None,
     page: int = 1,
+    page_size: str | None = None,
 ):
     return _render_web_tickets_page(
         request=request,
@@ -3738,6 +3750,7 @@ def web_archive_tickets(
         open_create=None,
         create_error=None,
         page=page,
+        page_size=page_size,
         archive_mode=True,
     )
 

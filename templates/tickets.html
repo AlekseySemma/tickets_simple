@@ -603,6 +603,7 @@
           </summary>
           <form method="get" action="{{ list_path }}" class="row g-2 align-items-end mt-1">
             <input type="hidden" name="view_mode" value="{{ view_mode }}">
+            <input type="hidden" name="page_size" value="{{ page_size }}">
             <div class="col-12 col-md-4">
               <label class="form-label mb-1">Поиск</label>
               <input name="q" class="form-control" placeholder="Название или описание..." value="{{ q }}" />
@@ -704,6 +705,7 @@
     <div class="d-flex justify-content-end mb-3">
       <form method="get" action="{{ list_path }}" class="view-switch">
         <input type="hidden" name="page" value="{{ page }}">
+        <input type="hidden" name="page_size" value="{{ page_size }}">
         <input type="hidden" name="q" value="{{ q }}">
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
         <input type="hidden" name="project_id" value="{{ project_id_filter }}">
@@ -733,7 +735,8 @@
      data-executor-id="{{ executor_id_filter }}"
      data-q="{{ q }}"
      data-sort="{{ sort }}"
-     data-view-mode="{{ view_mode }}">
+     data-view-mode="{{ view_mode }}"
+     data-page-size="{{ page_size }}">
   {% if is_archive_page %}
     <div class="col-6 col-lg-4">
       <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
@@ -1034,6 +1037,7 @@
         <div class="d-flex gap-2">
           <form method="get" action="{{ list_path }}" class="m-0">
             <input type="hidden" name="page" value="{{ prev_page }}">
+            <input type="hidden" name="page_size" value="{{ page_size }}">
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
@@ -1048,6 +1052,7 @@
           </form>
           <form method="get" action="{{ list_path }}" class="m-0">
             <input type="hidden" name="page" value="{{ next_page }}">
+            <input type="hidden" name="page_size" value="{{ page_size }}">
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
@@ -1061,6 +1066,30 @@
             <button class="btn btn-sm btn-outline-secondary" {% if not has_next %}disabled{% endif %}>Вперёд →</button>
           </form>
         </div>
+      </div>
+    {% endif %}
+    {% if user.role in ["ADMIN", "CURATOR"] and view_mode == "table" %}
+      <div class="d-flex justify-content-end mt-2 mb-2">
+        <form method="get" action="{{ list_path }}" class="d-flex align-items-center gap-2">
+          <input type="hidden" name="page" value="1">
+          <input type="hidden" name="q" value="{{ q }}">
+          <input type="hidden" name="status_filter" value="{{ status_filter }}">
+          <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+          <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+          <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
+          <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
+          <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
+          <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
+          <input type="hidden" name="sort" value="{{ sort }}">
+          <input type="hidden" name="view_mode" value="{{ view_mode }}">
+          <label for="page-size-select" class="small text-muted mb-0">Показывать:</label>
+          <select id="page-size-select" name="page_size" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for size in page_size_options %}
+              <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+          <span class="small text-muted">заявок</span>
+        </form>
       </div>
     {% endif %}
     {% if tickets|length == 0 %}
@@ -1480,6 +1509,7 @@ document.addEventListener("DOMContentLoaded", function () {
       q: dash.dataset.q || "",
       sort: dash.dataset.sort || "id_desc",
       view_mode: dash.dataset.viewMode || "table",
+      page_size: dash.dataset.pageSize || "10",
     };
   }
 
@@ -1495,6 +1525,7 @@ document.addEventListener("DOMContentLoaded", function () {
     p.set("only_overdue", next.only_overdue || "");
     p.set("sort", next.sort || "id_desc");
     p.set("view_mode", next.view_mode || "table");
+    p.set("page_size", next.page_size || "10");
     return "{{ list_path }}?" + p.toString();
   }
 
