@@ -21,7 +21,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint, func, or_
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint, func, or_, cast
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -3495,7 +3495,11 @@ def _render_web_tickets_page(
         if q_value:
             pattern = f"%{q_value}%"
             filtered_query = filtered_query.filter(
-                or_(Ticket.title.ilike(pattern), Ticket.description.ilike(pattern))
+                or_(
+                    Ticket.title.ilike(pattern),
+                    Ticket.description.ilike(pattern),
+                    cast(Ticket.id, String).ilike(pattern),
+                )
             )
 
     now = local_now()
