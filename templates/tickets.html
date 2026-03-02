@@ -263,12 +263,15 @@
       font-weight: 700;
       border-bottom: 1px solid #d9e8df;
       white-space: nowrap;
-      font-size: 13px;
+      font-size: 12px;
+      padding: 0.35rem 0.5rem;
     }
     .tickets-table tbody td {
       vertical-align: middle;
-      font-size: 14px;
+      font-size: 13px;
       border-color: #e1ece7;
+      padding: 0.3rem 0.5rem;
+      line-height: 1.15;
     }
     .tickets-table tbody tr.overdue td {
       --bs-table-bg: #ffdce2;
@@ -317,6 +320,21 @@
       display: inline-block;
       width: 100%;
       overflow-wrap: anywhere;
+    }
+    .tickets-table .badge-status {
+      font-size: 11px;
+      padding: 0.28rem 0.45rem;
+      line-height: 1.05;
+    }
+    .tickets-table .btn.btn-sm {
+      --bs-btn-padding-y: 0.2rem;
+      --bs-btn-padding-x: 0.42rem;
+      --bs-btn-font-size: 0.76rem;
+      --bs-btn-border-radius: 0.35rem;
+      line-height: 1.1;
+    }
+    .tickets-table .d-flex.gap-1 {
+      gap: 0.2rem !important;
     }
     .view-switch .btn {
       min-width: 120px;
