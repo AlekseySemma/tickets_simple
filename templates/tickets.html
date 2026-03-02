@@ -456,12 +456,17 @@
   <div class="container-fluid py-4 tickets-shell service-shell">
     <div class="page-head mb-3">
       <div>
-        <h3 class="mb-0">Заявки</h3>
+        <h3 class="mb-0">{{ page_title }}</h3>
         <div class="muted">Вы вошли как: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="page-actions">
   {% if user.role in ["ADMIN", "CURATOR"] %}
   <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны</a>
+  {% endif %}
+  {% if is_archive_page %}
+  <a class="btn btn-outline-secondary" href="{{ active_list_path }}">Активные заявки</a>
+  {% else %}
+  <a class="btn btn-outline-secondary" href="{{ archive_list_path }}">Архив заявок</a>
   {% endif %}
   <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
   <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
@@ -489,7 +494,7 @@
       Выберите узел оргструктуры для создания заявки.
     </div>
     {% endif %}
-    {% if user.role in ["ADMIN", "CURATOR", "EXECUTOR"] %}
+    {% if create_enabled %}
     <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">
         <details class="panel-toggle" {% if create_form_open %}open{% endif %}>
@@ -625,7 +630,7 @@
             <span>Фильтры и поиск</span>
             <span class="panel-chevron">▼</span>
           </summary>
-          <form method="get" action="/web" class="row g-2 align-items-end mt-1">
+          <form method="get" action="{{ list_path }}" class="row g-2 align-items-end mt-1">
             <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <div class="col-12 col-md-4">
               <label class="form-label mb-1">Поиск</label>
@@ -636,10 +641,9 @@
               <label class="form-label mb-1">Статус</label>
               <select name="status_filter" class="form-select">
                 <option value="" {% if not status_filter %}selected{% endif %}>Все</option>
-                <option value="NEW" {% if status_filter == "NEW" %}selected{% endif %}>NEW</option>
-                <option value="IN_PROGRESS" {% if status_filter == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
-                <option value="DONE" {% if status_filter == "DONE" %}selected{% endif %}>DONE</option>
-                <option value="CANCELED" {% if status_filter == "CANCELED" %}selected{% endif %}>CANCELED</option>
+                {% for status_code in status_filter_options %}
+                <option value="{{ status_code }}" {% if status_filter == status_code %}selected{% endif %}>{{ status_code }}</option>
+                {% endfor %}
               </select>
             </div>
 
@@ -695,6 +699,7 @@
                 </select>
               </div>
 
+              {% if not is_archive_page %}
               <div class="col-12 col-md-3">
                 <div class="form-check mt-4">
                   <input class="form-check-input" type="checkbox" id="only_overdue" name="only_overdue" value="1"
@@ -702,6 +707,7 @@
                   <label class="form-check-label" for="only_overdue">Только просроченные</label>
                 </div>
               </div>
+              {% endif %}
             {% endif %}
 
             <div class="col-6 col-md-3">
@@ -716,7 +722,7 @@
               </div>
 
             <div class="col-6 col-md-3 d-flex align-items-end">
-              <a class="small" href="/web{% if user.role in ['ADMIN', 'CURATOR'] %}?view_mode={{ view_mode }}{% endif %}">Сбросить фильтры</a>
+              <a class="small" href="{{ reset_filters_url }}">Сбросить фильтры</a>
             </div>
           </form>
         </details>
@@ -725,7 +731,7 @@
 
     {% if user.role in ["ADMIN", "CURATOR"] %}
     <div class="d-flex justify-content-end mb-3">
-      <form method="get" action="/web" class="view-switch">
+      <form method="get" action="{{ list_path }}" class="view-switch">
         <input type="hidden" name="page" value="{{ page }}">
         <input type="hidden" name="q" value="{{ q }}">
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
@@ -867,7 +873,7 @@
                   <div class="d-flex gap-1">
                     <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
                     <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
-                      <input type="hidden" name="next" value="/web">
+                      <input type="hidden" name="next" value="{{ list_path }}">
                       <button class="btn btn-sm btn-outline-danger">Удалить</button>
                     </form>
                   </div>
@@ -946,7 +952,7 @@
             {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
             <form method="post" action="/web/tickets/{{ t.id }}/delete" class="mt-2"
               onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
-            <input type="hidden" name="next" value="/web">
+            <input type="hidden" name="next" value="{{ list_path }}">
               <button class="btn btn-sm btn-outline-danger w-100">Удалить</button>
             </form>
             {% endif %}
@@ -963,7 +969,7 @@
       <div class="d-flex align-items-center justify-content-between mt-3 mb-2">
         <div class="small muted">Страница {{ page }} из {{ total_pages }}</div>
         <div class="d-flex gap-2">
-          <form method="get" action="/web" class="m-0">
+          <form method="get" action="{{ list_path }}" class="m-0">
             <input type="hidden" name="page" value="{{ prev_page }}">
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
@@ -977,7 +983,7 @@
             <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <button class="btn btn-sm btn-outline-secondary" {% if not has_prev %}disabled{% endif %}>← Назад</button>
           </form>
-          <form method="get" action="/web" class="m-0">
+          <form method="get" action="{{ list_path }}" class="m-0">
             <input type="hidden" name="page" value="{{ next_page }}">
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
@@ -995,7 +1001,7 @@
       </div>
     {% endif %}
     {% if tickets|length == 0 %}
-      <div class="alert alert-info">Заявок пока нет.</div>
+      <div class="alert alert-info">{{ empty_text }}</div>
     {% endif %}
   </div>
 
@@ -1271,7 +1277,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const isManager = ["ADMIN", "CURATOR"].includes("{{ user.role }}");
   if (!isManager) return;
 
-  const KEY = "tickets_view_mode";
+  const KEY = "{{ view_mode_storage_key }}";
   const isValidMode = (v) => v === "table" || v === "cards";
 
   const url = new URL(window.location.href);
@@ -1425,7 +1431,7 @@ document.addEventListener("DOMContentLoaded", function () {
     p.set("only_overdue", next.only_overdue || "");
     p.set("sort", next.sort || "id_desc");
     p.set("view_mode", next.view_mode || "table");
-    return "/web?" + p.toString();
+    return "{{ list_path }}?" + p.toString();
   }
 
   function applyActiveClasses() {

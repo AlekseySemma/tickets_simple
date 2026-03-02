@@ -2985,8 +2985,7 @@ def web_logout():
     resp.delete_cookie("access_token")
     return resp
 
-@app.get("/web")
-def web_tickets(
+def _render_web_tickets_page(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -3003,16 +3002,25 @@ def web_tickets(
     open_create: str | None = None,
     create_error: str | None = None,
     page: int = 1,
+    archive_mode: bool = False,
 ):
     if is_platform_admin(user):
         return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
     ensure_company_user(user)
     company = db.get(Company, user.company_id) if user.company_id is not None else None
     deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
+    list_path = "/web/archive" if archive_mode else "/web"
+    page_title = "Архив заявок" if archive_mode else "Заявки"
+    empty_text = "В архиве пока нет заявок." if archive_mode else "Заявок пока нет."
+    status_filter_options = ["DONE", "CANCELED"] if archive_mode else ["NEW", "IN_PROGRESS", "DONE", "CANCELED"]
+    create_enabled = (not archive_mode) and user.role in (Role.admin, Role.curator, Role.executor)
+    view_mode_storage_key = "tickets_view_mode_archive" if archive_mode else "tickets_view_mode"
     # 1) tickets СЃ СѓС‡РµС‚РѕРј СЂРѕР»Рё
     base_query = db.query(Ticket).filter(Ticket.company_id == user.company_id)
     if user.role == Role.executor:
         base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
+    if archive_mode:
+        base_query = base_query.filter(Ticket.status.in_([TicketStatus.done, TicketStatus.canceled]))
 
     # 2) РґР°РЅРЅС‹Рµ РґР»СЏ UI
     projects = (
@@ -3131,7 +3139,10 @@ def web_tickets(
     if status_filter:
         try:
             status_enum = TicketStatus(status_filter)
-            filtered_query = filtered_query.filter(Ticket.status == status_enum)
+            if archive_mode and status_enum not in (TicketStatus.done, TicketStatus.canceled):
+                filtered_query = filtered_query.filter(Ticket.id == -1)
+            else:
+                filtered_query = filtered_query.filter(Ticket.status == status_enum)
         except ValueError:
             filtered_query = filtered_query.filter(Ticket.id == -1)
 
@@ -3183,6 +3194,8 @@ def web_tickets(
 
         # С‚РѕР»СЊРєРѕ РїСЂРѕСЃСЂРѕС‡РµРЅРЅС‹Рµ
     overdue_enabled = (only_overdue == "1")
+    if archive_mode:
+        overdue_enabled = False
     if overdue_enabled:
         filtered_query = filtered_query.filter(
             Ticket.deadline.is_not(None),
@@ -3263,7 +3276,11 @@ def web_tickets(
         or overdue_enabled
         or sort_value != "id_desc"
     )
-    create_form_open = (open_create == "1")
+    create_form_open = create_enabled and (open_create == "1")
+    create_error_value = (create_error or "") if create_enabled else ""
+    reset_filters_url = list_path
+    if is_manager(user):
+        reset_filters_url = f"{list_path}?view_mode={view_mode_value}"
     current_list_url = request.url.path
     if request.url.query:
         current_list_url = f"{current_list_url}?{request.url.query}"
@@ -3282,6 +3299,16 @@ def web_tickets(
             "request": request,
             "user": user,
             "tickets": tickets,
+            "list_path": list_path,
+            "page_title": page_title,
+            "empty_text": empty_text,
+            "is_archive_page": archive_mode,
+            "create_enabled": create_enabled,
+            "status_filter_options": status_filter_options,
+            "reset_filters_url": reset_filters_url,
+            "active_list_path": "/web",
+            "archive_list_path": "/web/archive",
+            "view_mode_storage_key": view_mode_storage_key,
             "projects": projects,
             "executors": executors,
             "ticket_types": ticket_types,
@@ -3308,7 +3335,7 @@ def web_tickets(
             "overdue_count": overdue_count,
             "filters_form_open": filters_form_open,
             "create_form_open": create_form_open,
-            "create_error": create_error or "",
+            "create_error": create_error_value,
             "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
             "current_list_url": current_list_url,
             "current_list_url_encoded": current_list_url_encoded,
@@ -3321,6 +3348,84 @@ def web_tickets(
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
 
         },
+    )
+
+
+@app.get("/web")
+def web_tickets(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    status_filter: str | None = None,
+    project_id: str | None = None,
+    ticket_type_id: str | None = None,
+    executor_id: str | None = None,
+    target_unit_id: str | None = None,
+    unit_executor_id: str | None = None,
+    q: str | None = None,
+    only_overdue: str | None = None,
+    sort: str | None = None,
+    view_mode: str | None = None,
+    open_create: str | None = None,
+    create_error: str | None = None,
+    page: int = 1,
+):
+    return _render_web_tickets_page(
+        request=request,
+        db=db,
+        user=user,
+        status_filter=status_filter,
+        project_id=project_id,
+        ticket_type_id=ticket_type_id,
+        executor_id=executor_id,
+        target_unit_id=target_unit_id,
+        unit_executor_id=unit_executor_id,
+        q=q,
+        only_overdue=only_overdue,
+        sort=sort,
+        view_mode=view_mode,
+        open_create=open_create,
+        create_error=create_error,
+        page=page,
+        archive_mode=False,
+    )
+
+
+@app.get("/web/archive")
+def web_archive_tickets(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    status_filter: str | None = None,
+    project_id: str | None = None,
+    ticket_type_id: str | None = None,
+    executor_id: str | None = None,
+    target_unit_id: str | None = None,
+    unit_executor_id: str | None = None,
+    q: str | None = None,
+    only_overdue: str | None = None,
+    sort: str | None = None,
+    view_mode: str | None = None,
+    page: int = 1,
+):
+    return _render_web_tickets_page(
+        request=request,
+        db=db,
+        user=user,
+        status_filter=status_filter,
+        project_id=project_id,
+        ticket_type_id=ticket_type_id,
+        executor_id=executor_id,
+        target_unit_id=target_unit_id,
+        unit_executor_id=unit_executor_id,
+        q=q,
+        only_overdue=only_overdue,
+        sort=sort,
+        view_mode=view_mode,
+        open_create=None,
+        create_error=None,
+        page=page,
+        archive_mode=True,
     )
 
 
@@ -4484,7 +4589,12 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
 
 
 @app.post("/web/tickets/{ticket_id}/delete")
-def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def web_delete_ticket(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
     # РїСЂР°РІР°
@@ -4507,7 +4617,9 @@ def web_delete_ticket(ticket_id: int, db: Session = Depends(get_db), user: User 
     db.delete(t)
     db.commit()
 
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web")
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/tickets/{ticket_id}/status")
