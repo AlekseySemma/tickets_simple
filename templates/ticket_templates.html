@@ -147,9 +147,6 @@
         Создание из шаблона завершено: создано {{ request.query_params.get("run_created") or 0 }}, пропущено {{ request.query_params.get("run_skipped") or 0 }}, период {{ request.query_params.get("run_period") or "" }}.
       </div>
     {% endif %}
-    {% if request.query_params.get("run_error") == "inactive" %}
-      <div class="alert alert-warning">Шаблон неактивен, запуск невозможен.</div>
-    {% endif %}
     {% if request.query_params.get("run_error") == "bad_period" %}
       <div class="alert alert-warning">Некорректный период. Используйте формат YYYY-MM.</div>
     {% endif %}
@@ -202,9 +199,10 @@
           <div class="col-12 col-md-2 d-flex align-items-center">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_active" value="1" id="tmpl_active_new" checked>
-              <label class="form-check-label" for="tmpl_active_new">Активен</label>
+              <label class="form-check-label" for="tmpl_active_new">Автогенерация включена</label>
             </div>
           </div>
+          <div class="col-12"><small class="text-muted">Ручной запуск доступен всегда. Этот флаг влияет только на автоматическую генерацию по расписанию.</small></div>
           <div class="col-12"><button class="btn btn-primary">Создать</button></div>
         </form>
       </div>
@@ -216,9 +214,9 @@
           <div class="tmpl-item-head">
             <div class="tmpl-id">Шаблон #{{ t.id }}</div>
             {% if t.is_active %}
-              <span class="badge text-bg-success">Активен</span>
+              <span class="badge text-bg-success">Автогенерация: Вкл</span>
             {% else %}
-              <span class="badge text-bg-secondary">Неактивен</span>
+              <span class="badge text-bg-secondary">Автогенерация: Выкл</span>
             {% endif %}
           </div>
           <form method="post" action="/web/ticket-templates/{{ t.id }}/update" class="row g-2">
@@ -254,15 +252,17 @@
             <div class="col-12 col-md-2 d-flex align-items-center">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="tmpl_active_{{ t.id }}" {% if t.is_active %}checked{% endif %}>
-                <label class="form-check-label" for="tmpl_active_{{ t.id }}">Активен</label>
+                <label class="form-check-label" for="tmpl_active_{{ t.id }}">Автогенерация включена</label>
               </div>
             </div>
+            <div class="col-12"><small class="text-muted">Ручной запуск ниже доступен независимо от автогенерации.</small></div>
             <div class="col-12 d-flex gap-2">
               <button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button>
             </div>
           </form>
 
           <div class="tmpl-actions mt-2">
+            <div class="small text-muted mb-1">Ручной запуск</div>
             <form class="row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run">
               <div class="col-12 col-md-4">
                 <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
@@ -271,6 +271,7 @@
                 <button class="btn btn-sm btn-success" type="submit">Запустить шаблон</button>
               </div>
             </form>
+            <div class="small text-muted mt-2 mb-1">Управление автогенерацией</div>
             <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/clear-keys" onsubmit="return confirm('Очистить ключи генерации по периоду для этого шаблона?');">
               <div class="col-12 col-md-4">
                 <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />

@@ -2868,8 +2868,6 @@ def run_ticket_template(
     item = db.get(TicketTemplate, template_id)
     if not item or item.company_id != manager.company_id:
         raise HTTPException(404, "Ticket template not found")
-    if not item.is_active:
-        raise HTTPException(400, "Ticket template is inactive")
     normalized_period = normalize_period_key(payload.period_key)
     if payload.period_key and normalized_period is None:
         raise HTTPException(422, "Invalid period_key format, expected YYYY-MM")
@@ -5707,8 +5705,6 @@ async def web_ticket_templates_run(
     item = db.get(TicketTemplate, template_id)
     if not item or item.company_id != user.company_id:
         raise HTTPException(404, "Ticket template not found")
-    if not item.is_active:
-        return RedirectResponse(url="/web/ticket-templates?run_error=inactive", status_code=HTTP_303_SEE_OTHER)
 
     form = await request.form()
     raw_period_key = (form.get("period_key") or "").strip() or None
