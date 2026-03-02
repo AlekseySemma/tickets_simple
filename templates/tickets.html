@@ -191,6 +191,26 @@
       pointer-events: auto;
     }
     .dash-card { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+    .dash-body { padding: 0.42rem 0.62rem !important; }
+    .dash-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      white-space: nowrap;
+      line-height: 1.1;
+    }
+    .dash-label {
+      font-size: 12px;
+      color: #4e7076;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dash-value {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #1f5558;
+    }
   .dash-card:hover { transform: translateY(-1px); }
   .dash-card:active { transform: translateY(0); }
   /* Цветные рамки + лёгкий фон (взято по смыслу из цветов бейджей) */
@@ -717,79 +737,70 @@
   {% if is_archive_page %}
     <div class="col-6 col-lg-4">
       <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
-        <div class="card-body py-2">
-          <div class="small muted">Всего</div>
-          <div class="fs-5 fw-semibold">{{ total_count }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Всего</span><span class="dash-value">{{ total_count }}</span></div>
         </div>
       </div>
     </div>
     <div class="col-6 col-lg-4">
       <div class="card shadow-sm dash-card dashboard-card" data-dash="status" data-status="ARCHIVED">
-        <div class="card-body py-2">
-          <div class="small muted">В архиве</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["ARCHIVED"] }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">В архиве</span><span class="dash-value">{{ counts_by_status["ARCHIVED"] }}</span></div>
         </div>
       </div>
     </div>
     <div class="col-6 col-lg-4">
       <div class="card shadow-sm dash-card">
-        <div class="card-body py-2">
-          <div class="small muted">Legal hold</div>
-          <div class="fs-5 fw-semibold">{{ legal_hold_count }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Legal hold</span><span class="dash-value">{{ legal_hold_count }}</span></div>
         </div>
       </div>
     </div>
   {% else %}
     <div class="col-6 col-lg-2">
       <div class="card shadow-sm dash-card dashboard-card" data-dash="all">
-        <div class="card-body py-2">
-          <div class="small muted">Всего</div>
-          <div class="fs-5 fw-semibold">{{ total_count }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Всего</span><span class="dash-value">{{ total_count }}</span></div>
         </div>
       </div>
     </div>
 
     <div class="col-6 col-lg-2">
       <div class="card shadow-sm dash-card dash-OVERDUE dashboard-card" data-dash="overdue">
-        <div class="card-body py-2">
-          <div class="small muted">Просрочено</div>
-          <div class="fs-5 fw-semibold">{{ overdue_count }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Просрочено</span><span class="dash-value">{{ overdue_count }}</span></div>
         </div>
       </div>
     </div>
 
     <div class="col-6 col-lg-2">
       <div class="card shadow-sm dash-card dash-NEW dashboard-card" data-dash="status" data-status="NEW">
-        <div class="card-body py-2">
-          <div class="small muted">Новые</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["NEW"] }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Новые</span><span class="dash-value">{{ counts_by_status["NEW"] }}</span></div>
         </div>
       </div>
     </div>
 
     <div class="col-6 col-lg-2">
       <div class="card shadow-sm dash-card dash-IN_PROGRESS dashboard-card" data-dash="status" data-status="IN_PROGRESS">
-        <div class="card-body py-2">
-          <div class="small muted">В работе</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["IN_PROGRESS"] }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">В работе</span><span class="dash-value">{{ counts_by_status["IN_PROGRESS"] }}</span></div>
         </div>
       </div>
     </div>
 
     <div class="col-6 col-lg-2">
       <div class="card shadow-sm dash-card dash-DONE dashboard-card" data-dash="status" data-status="DONE">
-        <div class="card-body py-2">
-          <div class="small muted">Выполнены</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["DONE"] }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Выполнены</span><span class="dash-value">{{ counts_by_status["DONE"] }}</span></div>
         </div>
       </div>
     </div>
 
     <div class="col-6 col-lg-2">
       <div class="card shadow-sm dash-card dash-CANCELED dashboard-card" data-dash="status" data-status="CANCELED">
-        <div class="card-body py-2">
-          <div class="small muted">Отменены</div>
-          <div class="fs-5 fw-semibold">{{ counts_by_status["CANCELED"] }}</div>
+        <div class="card-body dash-body">
+          <div class="dash-line"><span class="dash-label">Отменены</span><span class="dash-value">{{ counts_by_status["CANCELED"] }}</span></div>
         </div>
       </div>
     </div>
