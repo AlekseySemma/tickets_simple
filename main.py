@@ -3590,8 +3590,11 @@ def _render_web_tickets_page(
     create_form_open = create_enabled and (open_create == "1")
     create_error_value = (create_error or "") if create_enabled else ""
     page_size_options = (10, 20, 30, 50, 100)
+    page_size_raw = (page_size or "").strip() if page_size is not None else ""
+    if not page_size_raw:
+        page_size_raw = (request.cookies.get("tickets_page_size") or "").strip()
     try:
-        per_page = int((page_size or "").strip()) if page_size is not None else 10
+        per_page = int(page_size_raw) if page_size_raw else 10
     except ValueError:
         per_page = 10
     if per_page not in page_size_options:
@@ -3610,7 +3613,7 @@ def _render_web_tickets_page(
     start = (page - 1) * per_page
     tickets = tickets_query.offset(start).limit(per_page).all()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "tickets.html",
         {
             "request": request,
@@ -3669,6 +3672,15 @@ def _render_web_tickets_page(
 
         },
     )
+    response.set_cookie(
+        "tickets_page_size",
+        str(per_page),
+        max_age=60 * 60 * 24 * 365,
+        httponly=False,
+        samesite="lax",
+        path="/",
+    )
+    return response
 
 
 @app.get("/web")
