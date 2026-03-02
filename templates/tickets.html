@@ -575,7 +575,7 @@
               <select name="status_filter" class="form-select">
                 <option value="" {% if not status_filter %}selected{% endif %}>Все</option>
                 {% for status_code in status_filter_options %}
-                <option value="{{ status_code }}" {% if status_filter == status_code %}selected{% endif %}>{{ status_code }}</option>
+                <option value="{{ status_code }}" {% if status_filter == status_code %}selected{% endif %}>{{ status_labels.get(status_code, status_code) }}</option>
                 {% endfor %}
               </select>
             </div>
