@@ -137,6 +137,7 @@ STATUS_LABELS_RU = {
 }
 
 FINAL_TICKET_STATUSES = (TicketStatus.done, TicketStatus.canceled, TicketStatus.archived)
+FINAL_TICKET_STATUS_VALUES = tuple(status.value for status in FINAL_TICKET_STATUSES)
 ARCHIVE_SOURCE_STATUSES = (TicketStatus.done, TicketStatus.canceled)
 
 
@@ -850,7 +851,7 @@ def run_archive_cleanup_once() -> None:
         candidates = (
             db.query(Ticket)
             .filter(
-                Ticket.status == TicketStatus.archived,
+                Ticket.status == TicketStatus.archived.value,
                 Ticket.delete_at.is_not(None),
                 Ticket.delete_at <= local_now(),
                 Ticket.is_legal_hold.is_(False),
@@ -1956,7 +1957,7 @@ def run_deadline_reminders_forever() -> None:
                     .filter(
                         Ticket.executor_id.is_not(None),
                         Ticket.deadline.is_not(None),
-                        Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
+                        Ticket.status.notin_(list(FINAL_TICKET_STATUS_VALUES)),
                         Ticket.deadline >= deadline_from,
                         Ticket.deadline <= deadline_to,
                     )
@@ -3328,9 +3329,9 @@ def _render_web_tickets_page(
     if user.role == Role.executor:
         base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
     if archive_mode:
-        base_query = base_query.filter(Ticket.status == TicketStatus.archived)
+        base_query = base_query.filter(Ticket.status == TicketStatus.archived.value)
     else:
-        base_query = base_query.filter(Ticket.status != TicketStatus.archived)
+        base_query = base_query.filter(Ticket.status != TicketStatus.archived.value)
 
     # 2) РґР°РЅРЅС‹Рµ РґР»СЏ UI
     projects = (
@@ -3452,7 +3453,7 @@ def _render_web_tickets_page(
             if archive_mode and status_enum != TicketStatus.archived:
                 filtered_query = filtered_query.filter(Ticket.id == -1)
             else:
-                filtered_query = filtered_query.filter(Ticket.status == status_enum)
+                filtered_query = filtered_query.filter(Ticket.status == status_enum.value)
         except ValueError:
             filtered_query = filtered_query.filter(Ticket.id == -1)
 
@@ -3510,7 +3511,7 @@ def _render_web_tickets_page(
         filtered_query = filtered_query.filter(
             Ticket.deadline.is_not(None),
             Ticket.deadline < now,
-            Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
+            Ticket.status.notin_(list(FINAL_TICKET_STATUS_VALUES)),
         )
 
         # СЃРѕСЂС‚РёСЂРѕРІРєР°
@@ -3539,7 +3540,7 @@ def _render_web_tickets_page(
         filtered_query.filter(
             Ticket.deadline.is_not(None),
             Ticket.deadline < now,
-            Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
+            Ticket.status.notin_(list(FINAL_TICKET_STATUS_VALUES)),
         ).count()
     )
 
