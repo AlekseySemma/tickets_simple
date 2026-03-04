@@ -134,9 +134,12 @@
               </div>
               <div class="small text-muted">Создана: {{ format_dt(c.created_at) }}</div>
             </div>
-            <form method="post" action="/web/admin/companies/{{ c.id }}/delete" onsubmit="return confirm('Удалить компанию {{ c.name }} и все связанные данные?');">
-              <button class="btn btn-outline-danger btn-sm">Удалить компанию</button>
-            </form>
+            <div class="d-flex gap-2">
+              <a class="btn btn-outline-secondary btn-sm" href="/web/admin/companies/{{ c.id }}/settings">Настройки</a>
+              <form method="post" action="/web/admin/companies/{{ c.id }}/delete" onsubmit="return confirm('Удалить компанию {{ c.name }} и все связанные данные?');">
+                <button class="btn btn-outline-danger btn-sm">Удалить компанию</button>
+              </form>
+            </div>
           </div>
         </div>
       </div>

@@ -4938,6 +4938,235 @@ async def web_admin_company_delete(
     return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
 
 
+def platform_manageable_roles() -> tuple[Role, ...]:
+    return (Role.admin, Role.curator, Role.executor)
+
+
+@app.get("/web/admin/companies/{company_id}/settings")
+def web_admin_company_settings(
+    company_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ok: str | None = None,
+    err: str | None = None,
+):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    users = (
+        db.query(User.id, User.name, User.email, User.role, User.created_at)
+        .filter(
+            User.company_id == company_id,
+            User.role.in_(platform_manageable_roles()),
+        )
+        .order_by(User.id.desc())
+        .all()
+    )
+    role_options = [r.value for r in platform_manageable_roles()]
+    return templates.TemplateResponse(
+        "admin_company_settings.html",
+        {
+            "request": request,
+            "user": user,
+            "company": company,
+            "users": users,
+            "role_options": role_options,
+            "ok": (ok or "").strip(),
+            "err": (err or "").strip(),
+            "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
+            "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
+            "min_archive_retention_days": MIN_ARCHIVE_RETENTION_DAYS,
+            "max_archive_retention_days": MAX_ARCHIVE_RETENTION_DAYS,
+        },
+    )
+
+
+@app.post("/web/admin/companies/{company_id}/update")
+async def web_admin_company_settings_update(
+    company_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_company_name",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    warning_parsed = parse_deadline_soon_warning_minutes(form.get("deadline_soon_warning_minutes"))
+    retention_parsed = parse_archive_retention_days(form.get("archive_retention_days_default"))
+    if warning_parsed is None:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_deadline_warning",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    if retention_parsed is None:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_archive_retention",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    duplicate = db.query(Company.id).filter(Company.name == name, Company.id != company_id).first()
+    if duplicate:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=company_name_exists",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    company.name = name
+    company.deadline_soon_warning_minutes = warning_parsed
+    company.archive_retention_days_default = retention_parsed
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=f"/web/admin/companies/{company_id}/settings?ok=company_updated",
+        status_code=HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post("/web/admin/companies/{company_id}/users/create")
+async def web_admin_company_user_create(
+    company_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    password = (form.get("password") or "").strip()
+    role_raw = (form.get("role") or "").strip().upper()
+
+    if not (name and email and password):
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_input",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    if role_raw not in {r.value for r in platform_manageable_roles()}:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_role",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    role_value = Role(role_raw)
+    if db.query(User.id).filter(User.email == email).first():
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=email_exists",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    item = User(
+        email=email,
+        name=name,
+        password_hash=hash_password(password),
+        role=role_value,
+        company_id=company_id,
+    )
+    try:
+        db.add(item)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=f"/web/admin/companies/{company_id}/settings?ok=user_created",
+        status_code=HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post("/web/admin/companies/{company_id}/users/{managed_user_id}/update")
+async def web_admin_company_user_update(
+    company_id: int,
+    managed_user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    item = db.get(User, managed_user_id)
+    if (
+        not item
+        or item.company_id != company_id
+        or item.role not in platform_manageable_roles()
+    ):
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=user_not_found",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    password = (form.get("password") or "").strip()
+    role_raw = (form.get("role") or "").strip().upper()
+    if not (name and email):
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_input",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    if role_raw not in {r.value for r in platform_manageable_roles()}:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=bad_role",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    email_owner = db.query(User.id).filter(User.email == email, User.id != item.id).first()
+    if email_owner:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=email_exists",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    item.name = name
+    item.email = email
+    item.role = Role(role_raw)
+    if password:
+        item.password_hash = hash_password(password)
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=f"/web/admin/companies/{company_id}/settings?ok=user_updated",
+        status_code=HTTP_303_SEE_OTHER,
+    )
+
+
 @app.get("/web/pwa-check")
 def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
     return templates.TemplateResponse(
