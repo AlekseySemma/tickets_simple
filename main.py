@@ -4958,7 +4958,7 @@ def web_admin_company_settings(
         raise HTTPException(404, "Company not found")
 
     users = (
-        db.query(User.id, User.name, User.email, User.role, User.created_at)
+        db.query(User.id, User.name, User.email, User.role)
         .filter(
             User.company_id == company_id,
             User.role.in_(platform_manageable_roles()),
