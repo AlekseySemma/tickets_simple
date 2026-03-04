@@ -3407,7 +3407,7 @@ def _render_web_tickets_page(
         .all()
     )
     users = (
-        db.query(User.id, User.name)
+        db.query(User.id, User.name, User.email)
         .filter(User.company_id == user.company_id)
         .order_by(User.id.desc())
         .all()
@@ -3703,6 +3703,7 @@ def _render_web_tickets_page(
             "view_mode_storage_key": view_mode_storage_key,
             "projects": projects,
             "executors": executors,
+            "watcher_candidates": users,
             "ticket_types": ticket_types,
             "org_units": org_units,
             "users_by_id": users_by_id,
@@ -4990,6 +4991,33 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     if not ORG_STRUCTURE_V2_ENABLED and project_id is None:
         return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
 
+    watcher_id_values = form.getlist("watcher_user_ids")
+    selected_watcher_ids: list[int] = []
+    seen_watcher_ids: set[int] = set()
+    for raw_value in watcher_id_values:
+        value = (raw_value or "").strip()
+        if not value:
+            continue
+        try:
+            watcher_id = int(value)
+        except ValueError:
+            return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+        if watcher_id in seen_watcher_ids:
+            continue
+        seen_watcher_ids.add(watcher_id)
+        selected_watcher_ids.append(watcher_id)
+    if selected_watcher_ids:
+        valid_watcher_ids = {
+            int(row[0])
+            for row in (
+                db.query(User.id)
+                .filter(User.company_id == user.company_id, User.id.in_(selected_watcher_ids))
+                .all()
+            )
+        }
+        if len(valid_watcher_ids) != len(selected_watcher_ids):
+            return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+
     # Р•СЃР»Рё СЃРѕР·РґР°С‘С‚ РёСЃРїРѕР»РЅРёС‚РµР»СЊ Рё РЅРµ РІС‹Р±СЂР°Р» РёСЃРїРѕР»РЅРёС‚РµР»СЏ вЂ” РЅР°Р·РЅР°С‡Р°РµРј РЅР° РЅРµРіРѕ
     if user.role == Role.executor and executor_id is None:
         executor_id = user.id
@@ -5023,6 +5051,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 db.add(t)
                 db.flush()
                 ensure_default_ticket_watchers(db, t)
+                for watcher_id in selected_watcher_ids:
+                    add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
                 add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
                 created_tickets.append(t)
         else:
@@ -5040,6 +5070,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             db.add(t)
             db.flush()
             ensure_default_ticket_watchers(db, t)
+            for watcher_id in selected_watcher_ids:
+                add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
             add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
             created_tickets.append(t)
         db.commit()

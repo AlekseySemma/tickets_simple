@@ -555,6 +555,15 @@
                 <div class="form-control bg-light">Исполнитель: вы сами</div>
               {% endif %}
             </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label mb-1">Наблюдатели</label>
+              <select name="watcher_user_ids" class="form-select" multiple size="5">
+                {% for u in watcher_candidates %}
+                  <option value="{{ u.id }}">{{ u.name }}{% if u.email %} ({{ u.email }}){% endif %}</option>
+                {% endfor %}
+              </select>
+              <div class="muted small mt-1">Можно выбрать нескольких пользователей. Создатель и исполнитель добавляются автоматически.</div>
+            </div>
             <div class="col-12">
               <textarea name="description" class="form-control" placeholder="Описание"></textarea>
             </div>
