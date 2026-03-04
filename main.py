@@ -3408,7 +3408,10 @@ def _render_web_tickets_page(
     )
     users = (
         db.query(User.id, User.name, User.email)
-        .filter(User.company_id == user.company_id)
+        .filter(
+            User.company_id == user.company_id,
+            User.role.in_([Role.admin, Role.curator, Role.executor]),
+        )
         .order_by(User.id.desc())
         .all()
     )
@@ -5011,7 +5014,11 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             int(row[0])
             for row in (
                 db.query(User.id)
-                .filter(User.company_id == user.company_id, User.id.in_(selected_watcher_ids))
+                .filter(
+                    User.company_id == user.company_id,
+                    User.role.in_([Role.admin, Role.curator, Role.executor]),
+                    User.id.in_(selected_watcher_ids),
+                )
                 .all()
             )
         }
