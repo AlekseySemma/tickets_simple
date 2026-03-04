@@ -26,10 +26,10 @@ def upgrade() -> None:
     if "notify_comments_as_watcher" not in user_cols:
         op.add_column(
             "users",
-            sa.Column("notify_comments_as_watcher", sa.Boolean(), nullable=True, server_default=sa.text("1")),
+            sa.Column("notify_comments_as_watcher", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         )
 
-    bind.execute(sa.text("UPDATE users SET notify_comments_as_watcher = 1 WHERE notify_comments_as_watcher IS NULL"))
+    bind.execute(sa.text("UPDATE users SET notify_comments_as_watcher = true WHERE notify_comments_as_watcher IS NULL"))
 
 
 def downgrade() -> None:

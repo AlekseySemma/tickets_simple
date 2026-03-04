@@ -21,7 +21,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint, func, or_, cast
+from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint, func, or_, cast, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -160,7 +160,7 @@ class User(Base):
     notify_comments_as_watcher: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
-        server_default="1",
+        server_default=text("true"),
     )
 
 class Company(Base):
