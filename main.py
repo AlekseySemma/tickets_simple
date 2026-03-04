@@ -4967,6 +4967,28 @@ def web_admin_company_settings(
         .all()
     )
     role_options = [r.value for r in platform_manageable_roles()]
+
+    ok_code = (ok or "").strip().lower()
+    err_code = (err or "").strip().lower()
+    ok_messages = {
+        "company_updated": "Данные компании успешно обновлены.",
+        "user_created": "Пользователь успешно создан.",
+        "user_updated": "Данные пользователя успешно обновлены.",
+        "user_deleted": "Пользователь успешно удален.",
+    }
+    err_messages = {
+        "bad_company_name": "Укажите корректное название компании.",
+        "bad_deadline_warning": "Некорректное значение предупреждения о дедлайне.",
+        "bad_archive_retention": "Некорректное значение хранения в архиве.",
+        "company_name_exists": "Компания с таким названием уже существует.",
+        "bad_input": "Проверьте заполнение обязательных полей.",
+        "bad_role": "Выбрана недопустимая роль пользователя.",
+        "email_exists": "Пользователь с таким email уже существует.",
+        "user_not_found": "Пользователь не найден.",
+        "delete_blocked": "Нельзя удалить пользователя: есть связанные рабочие данные.",
+        "save_failed": "Не удалось сохранить изменения. Повторите попытку.",
+        "delete_failed": "Не удалось удалить пользователя. Повторите попытку.",
+    }
     return templates.TemplateResponse(
         "admin_company_settings.html",
         {
@@ -4975,8 +4997,8 @@ def web_admin_company_settings(
             "company": company,
             "users": users,
             "role_options": role_options,
-            "ok": (ok or "").strip(),
-            "err": (err or "").strip(),
+            "ok": ok_messages.get(ok_code, ""),
+            "err": err_messages.get(err_code, ""),
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
             "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
             "min_archive_retention_days": MIN_ARCHIVE_RETENTION_DAYS,
