@@ -295,6 +295,16 @@ class Ticket(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class TicketWatcher(Base):
+    __tablename__ = "ticket_watchers"
+    __table_args__ = (UniqueConstraint("ticket_id", "user_id", name="uq_ticket_watchers_ticket_user"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    added_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class TicketGenerationKey(Base):
     __tablename__ = "ticket_generation_keys"
     __table_args__ = (
@@ -738,6 +748,54 @@ def can_archive_ticket(user: User, ticket: Ticket) -> bool:
     return bool(user.role == Role.executor and ticket.created_by == user.id)
 
 
+def add_ticket_watcher(
+    db: Session,
+    ticket: Ticket,
+    *,
+    watcher_user_id: int | None,
+    added_by: int | None = None,
+) -> bool:
+    if watcher_user_id is None or ticket.id is None:
+        return False
+    watcher_user = db.get(User, watcher_user_id)
+    if not watcher_user:
+        return False
+    if ticket.company_id is not None and watcher_user.company_id != ticket.company_id:
+        return False
+    exists = (
+        db.query(TicketWatcher.id)
+        .filter(TicketWatcher.ticket_id == ticket.id, TicketWatcher.user_id == watcher_user_id)
+        .first()
+    )
+    if exists is not None:
+        return False
+    db.add(
+        TicketWatcher(
+            ticket_id=ticket.id,
+            user_id=watcher_user_id,
+            added_by=added_by,
+        )
+    )
+    return True
+
+
+def ensure_default_ticket_watchers(db: Session, ticket: Ticket) -> bool:
+    changed = False
+    changed = add_ticket_watcher(
+        db,
+        ticket,
+        watcher_user_id=ticket.created_by,
+        added_by=ticket.created_by,
+    ) or changed
+    changed = add_ticket_watcher(
+        db,
+        ticket,
+        watcher_user_id=ticket.executor_id,
+        added_by=ticket.created_by,
+    ) or changed
+    return changed
+
+
 def can_access_ticket(user: User, ticket: Ticket) -> bool:
     if is_platform_admin(user):
         return True
@@ -845,6 +903,7 @@ def delete_ticket_with_related_data(
     db.query(Comment).filter(Comment.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(Attachment).filter(Attachment.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(TicketLog).filter(TicketLog.ticket_id == ticket.id).delete(synchronize_session=False)
+    db.query(TicketWatcher).filter(TicketWatcher.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(TicketGenerationKey).filter(TicketGenerationKey.ticket_id == ticket.id).update(
         {"ticket_id": None},
@@ -1311,6 +1370,7 @@ def create_tickets_from_template(
                 )
                 db.add(ticket)
                 db.flush()
+                ensure_default_ticket_watchers(db, ticket)
                 generation_key.ticket_id = ticket.id
                 add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="Создание по шаблону")
                 if ticket.executor_id and ticket.executor_id != actor_id:
@@ -2127,6 +2187,7 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
         db.query(Comment).filter(Comment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(TicketLog).filter(TicketLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
+        db.query(TicketWatcher).filter(TicketWatcher.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
 
     db.query(Ticket).filter(Ticket.company_id == company_id).delete(synchronize_session=False)
@@ -2959,6 +3020,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     try:
         db.add(t)
         db.flush()
+        ensure_default_ticket_watchers(db, t)
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
         db.commit()
     except SQLAlchemyError:
@@ -3052,6 +3114,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     if not has_specific_log:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
 
+    ensure_default_ticket_watchers(db, t)
     db.commit(); db.refresh(t)
     notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
     notify_curators_status_changed(db, t, actor=user, old_status=old_status)
@@ -3106,9 +3169,6 @@ def download_attachment(
     if not a:
         raise HTTPException(404, "Attachment not found")
     t = get_api_ticket_or_404(db, user, a.ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-
     disk_path = resolve_attachment_disk_path(a.file_path)
     if not disk_path or not disk_path.exists() or not disk_path.is_file():
         raise HTTPException(404, "Attachment file not found")
@@ -4962,6 +5022,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 )
                 db.add(t)
                 db.flush()
+                ensure_default_ticket_watchers(db, t)
                 add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
                 created_tickets.append(t)
         else:
@@ -4978,6 +5039,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             )
             db.add(t)
             db.flush()
+            ensure_default_ticket_watchers(db, t)
             add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
             created_tickets.append(t)
         db.commit()
@@ -5149,6 +5211,24 @@ async def web_ticket_legal_hold(
         actor_id=user.id,
         action="установлен legal hold" if hold_enabled else "снят legal hold",
     )
+    db.commit()
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/tickets/{ticket_id}/watchers/self")
+async def web_add_self_watcher(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = get_company_ticket_or_404(db, user, ticket_id)
+    if not can_access_ticket(user, t):
+        raise HTTPException(403, "Forbidden")
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
+    add_ticket_watcher(db, t, watcher_user_id=user.id, added_by=user.id)
+    ensure_default_ticket_watchers(db, t)
     db.commit()
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
@@ -5370,6 +5450,7 @@ async def web_ticket_edit_save(
     if not has_specific_log:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
 
+    ensure_default_ticket_watchers(db, t)
     db.commit()          # вњ… Р±РµР· СЌС‚РѕРіРѕ РЅРµ СЃРѕС…СЂР°РЅРёС‚СЃСЏ
     db.refresh(t)
     notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
@@ -6060,6 +6141,11 @@ async def web_users_delete(
             UnitAssignment.company_id == user.company_id,
             UnitAssignment.user_id == item.id,
         ).delete(synchronize_session=False)
+        db.query(TicketWatcher).filter(TicketWatcher.user_id == item.id).delete(synchronize_session=False)
+        db.query(TicketWatcher).filter(TicketWatcher.added_by == item.id).update(
+            {TicketWatcher.added_by: None},
+            synchronize_session=False,
+        )
         db.query(PushSubscription).filter(PushSubscription.user_id == item.id).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id == item.id).delete(synchronize_session=False)
         db.query(Notification).filter(Notification.user_id == item.id).delete(synchronize_session=False)
@@ -6089,6 +6175,19 @@ def web_ticket_detail(
     user: User = Depends(get_current_user),
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
+    if not can_access_ticket(user, t):
+        raise HTTPException(403, "Forbidden")
+    if ensure_default_ticket_watchers(db, t):
+        db.commit()
+
+    watcher_rows = (
+        db.query(TicketWatcher.user_id)
+        .filter(TicketWatcher.ticket_id == t.id)
+        .order_by(TicketWatcher.created_at.asc(), TicketWatcher.id.asc())
+        .all()
+    )
+    watcher_user_ids = [int(row[0]) for row in watcher_rows]
+    is_current_user_watcher = user.id in set(watcher_user_ids)
     default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
     next_url = safe_next(request.query_params.get("next"), fallback=default_next)
     next_url_encoded = quote(next_url, safe="")
@@ -6096,9 +6195,6 @@ def web_ticket_detail(
     can_restore = is_manager(user) and t.status == TicketStatus.archived
 
     # РїСЂР°РІР°
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-
     comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
     attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
     ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.desc()).all()
@@ -6122,6 +6218,7 @@ def web_ticket_detail(
     relevant_user_ids: set[int] = {t.created_by}
     if t.executor_id is not None:
         relevant_user_ids.add(t.executor_id)
+    relevant_user_ids.update(watcher_user_ids)
     relevant_user_ids.update(c.author_id for c in comments if c.author_id is not None)
     relevant_user_ids.update(a.uploader_id for a in attachments if a.uploader_id is not None)
     relevant_user_ids.update(log.actor_id for log in ticket_logs if log.actor_id is not None)
@@ -6174,5 +6271,7 @@ def web_ticket_detail(
             "next_url_encoded": next_url_encoded,
             "can_archive": can_archive,
             "can_restore": can_restore,
+            "watcher_user_ids": watcher_user_ids,
+            "is_current_user_watcher": is_current_user_watcher,
         },
     )

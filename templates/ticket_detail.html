@@ -424,6 +424,30 @@
           </div>
 
           <div class="col-12 col-lg-5">
+            <h5>Ответственные</h5>
+            <div class="mb-3 section-card">
+              <div class="small text-muted mb-2">Создал</div>
+              <div class="mb-2"><b>{{ users_by_id.get(t.created_by, "—") }}</b></div>
+              <div class="small text-muted mb-2">Исполнитель</div>
+              <div class="mb-3"><b>{{ users_by_id.get(t.executor_id, "—") }}</b></div>
+              <div class="small text-muted mb-2">Наблюдатели</div>
+              {% if watcher_user_ids %}
+                <div class="d-flex flex-wrap gap-1 mb-3">
+                  {% for watcher_id in watcher_user_ids %}
+                    <span class="badge text-bg-light">{{ users_by_id.get(watcher_id, "#" ~ watcher_id) }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="small text-muted mb-3">Наблюдателей пока нет.</div>
+              {% endif %}
+              {% if not is_current_user_watcher %}
+                <form method="post" action="/web/tickets/{{ t.id }}/watchers/self">
+                  <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
+                  <button class="btn btn-sm btn-outline-secondary">Добавить себя</button>
+                </form>
+              {% endif %}
+            </div>
+
             <h5>Файлы</h5>
 
             <div class="mb-2 section-card">
