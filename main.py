@@ -1966,24 +1966,28 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
     if len(short_text) > 80:
         short_text = short_text[:77] + "..."
 
-    if ticket.executor_id and ticket.executor_id != author.id:
-        send_push_to_user(
-            db=db,
-            user_id=ticket.executor_id,
-            title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
-            body=short_text or f"{author.name} \u043e\u0441\u0442\u0430\u0432\u0438\u043b \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439",
-            url=f"/web/tickets/{ticket.id}",
-        )
+    recipient_ids: set[int] = set()
+    if ticket.executor_id:
+        recipient_ids.add(int(ticket.executor_id))
 
     curator_ids = [
-        u.id
-        for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
-        if u.id != author.id
+        u.id for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
     ]
-    for curator_id in curator_ids:
+    recipient_ids.update(int(curator_id) for curator_id in curator_ids)
+
+    watcher_rows = (
+        db.query(TicketWatcher.user_id)
+        .filter(TicketWatcher.ticket_id == ticket.id)
+        .all()
+    )
+    recipient_ids.update(int(row[0]) for row in watcher_rows if row and row[0] is not None)
+
+    recipient_ids.discard(author.id)
+
+    for recipient_id in recipient_ids:
         send_push_to_user(
             db=db,
-            user_id=curator_id,
+            user_id=recipient_id,
             title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
             body=short_text or f"{author.name} \u043e\u0441\u0442\u0430\u0432\u0438\u043b \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439",
             url=f"/web/tickets/{ticket.id}",
