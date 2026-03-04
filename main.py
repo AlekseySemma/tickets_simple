@@ -730,6 +730,14 @@ def audit_security_event(
         db.close()
 
 
+def can_archive_ticket(user: User, ticket: Ticket) -> bool:
+    if ticket.status not in ARCHIVE_SOURCE_STATUSES:
+        return False
+    if is_manager(user):
+        return True
+    return bool(user.role == Role.executor and ticket.created_by == user.id)
+
+
 def can_access_ticket(user: User, ticket: Ticket) -> bool:
     if is_platform_admin(user):
         return True
@@ -5076,9 +5084,9 @@ async def web_archive_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
     t = get_company_ticket_or_404(db, user, ticket_id)
+    if not can_archive_ticket(user, t):
+        raise HTTPException(403, "Forbidden")
     form = await request.form()
     next_url = safe_next(form.get("next"), fallback="/web")
     if t.status == TicketStatus.archived:
@@ -6084,7 +6092,7 @@ def web_ticket_detail(
     default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
     next_url = safe_next(request.query_params.get("next"), fallback=default_next)
     next_url_encoded = quote(next_url, safe="")
-    can_archive = is_manager(user) and t.status in ARCHIVE_SOURCE_STATUSES
+    can_archive = can_archive_ticket(user, t)
     can_restore = is_manager(user) and t.status == TicketStatus.archived
 
     # РїСЂР°РІР°

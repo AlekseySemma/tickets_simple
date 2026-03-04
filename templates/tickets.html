@@ -848,7 +848,7 @@
                 <td class="text-nowrap">{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</td>
                 <td class="text-nowrap">{{ users_by_id.get(t.executor_id, "—") }}</td>
                 <td>
-                  {% set can_archive = user.role in ["ADMIN", "CURATOR"] and t.status.value in ["DONE", "CANCELED"] %}
+                  {% set can_archive = (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) and t.status.value in ["DONE", "CANCELED"] %}
                   {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
                   <div class="position-relative d-inline-block">
                     {% if is_overdue %}
@@ -985,7 +985,7 @@
 
 </div>
 
-            {% set can_archive = user.role in ["ADMIN", "CURATOR"] and t.status.value in ["DONE", "CANCELED"] %}
+            {% set can_archive = (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) and t.status.value in ["DONE", "CANCELED"] %}
             {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
 
             {% if not is_archive_page and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id))) %}
