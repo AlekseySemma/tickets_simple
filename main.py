@@ -3411,6 +3411,7 @@ def _render_web_tickets_page(
         .filter(
             User.company_id == user.company_id,
             User.role.in_([Role.admin, Role.curator, Role.executor]),
+            func.lower(User.name) != "adminservora",
         )
         .order_by(User.id.desc())
         .all()
@@ -5017,6 +5018,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 .filter(
                     User.company_id == user.company_id,
                     User.role.in_([Role.admin, Role.curator, Role.executor]),
+                    func.lower(User.name) != "adminservora",
                     User.id.in_(selected_watcher_ids),
                 )
                 .all()
