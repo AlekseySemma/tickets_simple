@@ -128,6 +128,45 @@
       color: #5c6f72;
       font-size: 12px;
     }
+    .watchers-dropdown {
+      border: 1px solid #c9ddd4;
+      border-radius: 10px;
+      background: #fff;
+      padding: 8px 10px;
+    }
+    .watchers-dropdown > summary {
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #2d5f62;
+      font-weight: 600;
+    }
+    .watchers-dropdown > summary::-webkit-details-marker { display: none; }
+    .watchers-dropdown .watchers-chevron {
+      color: #4f7b7f;
+      transition: transform .2s ease;
+      font-size: .9rem;
+      margin-left: 8px;
+    }
+    .watchers-dropdown[open] .watchers-chevron { transform: rotate(180deg); }
+    .watchers-list {
+      max-height: 220px;
+      overflow-y: auto;
+      margin-top: 8px;
+      padding-right: 2px;
+    }
+    .watchers-item {
+      display: block;
+      padding: 4px 2px;
+      color: #2d5f62;
+      font-weight: 500;
+    }
+    .watchers-item input {
+      margin-right: 8px;
+    }
     .ticket {
       border: 1px solid #d9e8df;
       border-radius: 14px;
@@ -555,15 +594,6 @@
                 <div class="form-control bg-light">Исполнитель: вы сами</div>
               {% endif %}
             </div>
-            <div class="col-12 col-md-6">
-              <label class="form-label mb-1">Наблюдатели</label>
-              <select name="watcher_user_ids" class="form-select" multiple size="5">
-                {% for u in watcher_candidates %}
-                  <option value="{{ u.id }}">{{ u.name }}{% if u.email %} ({{ u.email }}){% endif %}</option>
-                {% endfor %}
-              </select>
-              <div class="muted small mt-1">Можно выбрать нескольких пользователей. Создатель и исполнитель добавляются автоматически.</div>
-            </div>
             <div class="col-12">
               <textarea name="description" class="form-control" placeholder="Описание"></textarea>
             </div>
@@ -589,6 +619,24 @@
               <div class="col-12 muted small">
                 Если не заполнять — срок не будет установлен.
               </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label mb-1">Наблюдатели</label>
+              <details class="watchers-dropdown" id="create-watchers-dropdown">
+                <summary>
+                  <span id="create-watchers-caption">Выберите наблюдателей</span>
+                  <span class="watchers-chevron">▼</span>
+                </summary>
+                <div class="watchers-list">
+                  {% for u in watcher_candidates %}
+                    <label class="watchers-item">
+                      <input type="checkbox" name="watcher_user_ids" value="{{ u.id }}">
+                      {{ u.name }}{% if u.email %} ({{ u.email }}){% endif %}
+                    </label>
+                  {% endfor %}
+                </div>
+              </details>
+              <div class="muted small mt-1">Можно выбрать нескольких пользователей. Создатель и исполнитель добавляются автоматически.</div>
             </div>
             <div class="col-12">
               <button class="btn btn-primary">Создать</button>
@@ -1188,6 +1236,25 @@
 
     render();
   })();
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const dropdown = document.getElementById("create-watchers-dropdown");
+    const caption = document.getElementById("create-watchers-caption");
+    if (!dropdown || !caption) return;
+
+    const checkboxes = dropdown.querySelectorAll('input[name="watcher_user_ids"]');
+    if (!checkboxes.length) return;
+
+    const updateCaption = () => {
+      const selected = Array.from(checkboxes).filter((cb) => cb.checked).length;
+      caption.textContent = selected > 0 ? `Выбрано наблюдателей: ${selected}` : "Выберите наблюдателей";
+    };
+
+    checkboxes.forEach((cb) => cb.addEventListener("change", updateCaption));
+    updateCaption();
+  });
 </script>
 
 <script src="/static/notifications-widget.js"></script>
