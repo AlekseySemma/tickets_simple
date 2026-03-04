@@ -5167,6 +5167,101 @@ async def web_admin_company_user_update(
     )
 
 
+@app.post("/web/admin/companies/{company_id}/users/{managed_user_id}/delete")
+async def web_admin_company_user_delete(
+    company_id: int,
+    managed_user_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_platform_admin(user):
+        raise HTTPException(403, "Only platform admin")
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    item = db.get(User, managed_user_id)
+    if (
+        not item
+        or item.company_id != company_id
+        or item.role not in platform_manageable_roles()
+    ):
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=user_not_found",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    # Keep same protection as /web/users: do not delete users with business history.
+    has_ticket_refs = db.query(Ticket.id).filter(
+        Ticket.company_id == company_id,
+        or_(Ticket.created_by == item.id, Ticket.executor_id == item.id, Ticket.archived_by == item.id),
+    ).first()
+    has_comment_refs = (
+        db.query(Comment.id)
+        .join(Ticket, Ticket.id == Comment.ticket_id)
+        .filter(Ticket.company_id == company_id, Comment.author_id == item.id)
+        .first()
+    )
+    has_attachment_refs = (
+        db.query(Attachment.id)
+        .join(Ticket, Ticket.id == Attachment.ticket_id)
+        .filter(Ticket.company_id == company_id, Attachment.uploader_id == item.id)
+        .first()
+    )
+    has_log_refs = (
+        db.query(TicketLog.id)
+        .join(Ticket, Ticket.id == TicketLog.ticket_id)
+        .filter(Ticket.company_id == company_id, TicketLog.actor_id == item.id)
+        .first()
+    )
+    has_template_refs = db.query(TicketTemplate.id).filter(
+        TicketTemplate.company_id == company_id,
+        TicketTemplate.default_executor_id == item.id,
+    ).first()
+    if has_ticket_refs or has_comment_refs or has_attachment_refs or has_log_refs or has_template_refs:
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=delete_blocked",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        db.query(UnitAssignment).filter(
+            UnitAssignment.company_id == company_id,
+            UnitAssignment.user_id == item.id,
+        ).delete(synchronize_session=False)
+        db.query(TicketWatcher).filter(TicketWatcher.user_id == item.id).delete(synchronize_session=False)
+        db.query(TicketWatcher).filter(TicketWatcher.added_by == item.id).update(
+            {TicketWatcher.added_by: None},
+            synchronize_session=False,
+        )
+        db.query(PushSubscription).filter(PushSubscription.user_id == item.id).delete(synchronize_session=False)
+        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id == item.id).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.user_id == item.id).delete(synchronize_session=False)
+        db.query(RegistrationInvite).filter(
+            RegistrationInvite.company_id == company_id,
+            RegistrationInvite.used_by == item.id,
+        ).update(
+            {RegistrationInvite.used_by: None, RegistrationInvite.used_at: None},
+            synchronize_session=False,
+        )
+        db.query(RegistrationInvite).filter(
+            RegistrationInvite.company_id == company_id,
+            RegistrationInvite.created_by == item.id,
+        ).delete(synchronize_session=False)
+        db.delete(item)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/web/admin/companies/{company_id}/settings?err=delete_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=f"/web/admin/companies/{company_id}/settings?ok=user_deleted",
+        status_code=HTTP_303_SEE_OTHER,
+    )
+
+
 @app.get("/web/pwa-check")
 def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
     return templates.TemplateResponse(
