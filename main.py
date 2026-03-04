@@ -157,6 +157,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+    notify_comments_as_watcher: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="1",
+    )
 
 class Company(Base):
     __tablename__ = "companies"
@@ -1977,7 +1982,11 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
 
     watcher_rows = (
         db.query(TicketWatcher.user_id)
-        .filter(TicketWatcher.ticket_id == ticket.id)
+        .join(User, User.id == TicketWatcher.user_id)
+        .filter(
+            TicketWatcher.ticket_id == ticket.id,
+            User.notify_comments_as_watcher.is_(True),
+        )
         .all()
     )
     recipient_ids.update(int(row[0]) for row in watcher_rows if row and row[0] is not None)
@@ -3867,6 +3876,10 @@ def web_settings(
     archive_retention_error = (request.query_params.get("archive_retention_error") or "").strip().lower()
     if archive_retention_error not in {"bad_value", "save_failed"}:
         archive_retention_error = ""
+    watcher_comments_saved = (request.query_params.get("watcher_comments_saved") or "").strip() == "1"
+    watcher_comments_error = (request.query_params.get("watcher_comments_error") or "").strip().lower()
+    if watcher_comments_error not in {"save_failed"}:
+        watcher_comments_error = ""
     can_manage_deadline_warning = user.role in (Role.admin, Role.curator)
     can_manage_archive_retention = user.role in (Role.admin, Role.curator)
     return templates.TemplateResponse(
@@ -3881,6 +3894,8 @@ def web_settings(
             "archive_retention_days_default": archive_retention_days_default,
             "archive_retention_saved": archive_retention_saved,
             "archive_retention_error": archive_retention_error,
+            "watcher_comments_saved": watcher_comments_saved,
+            "watcher_comments_error": watcher_comments_error,
             "can_manage_deadline_warning": can_manage_deadline_warning,
             "can_manage_archive_retention": can_manage_archive_retention,
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
@@ -3949,6 +3964,28 @@ async def web_settings_archive_retention(
             status_code=HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(url="/web/settings?archive_retention_saved=1", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/settings/watcher-comments")
+async def web_settings_watcher_comments(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    form = await request.form()
+    # Unchecked checkbox is absent from form payload.
+    enabled = (form.get("notify_comments_as_watcher") or "").strip() in {"1", "true", "on"}
+    try:
+        user.notify_comments_as_watcher = enabled
+        db.add(user)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url="/web/settings?watcher_comments_error=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url="/web/settings?watcher_comments_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/notifications")

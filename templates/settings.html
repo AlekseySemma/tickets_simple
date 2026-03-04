@@ -124,6 +124,11 @@
     {% elif archive_retention_error == "save_failed" %}
       <div class="alert alert-danger py-2">Не удалось сохранить срок хранения. Попробуйте еще раз.</div>
     {% endif %}
+    {% if watcher_comments_saved %}
+      <div class="alert alert-success py-2">Настройка уведомлений наблюдателя сохранена.</div>
+    {% elif watcher_comments_error == "save_failed" %}
+      <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений наблюдателя. Попробуйте еще раз.</div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
@@ -186,6 +191,26 @@
             Изменять могут администратор и куратор.
           </div>
         {% endif %}
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3 settings-card">
+      <div class="card-body">
+        <h5 class="mb-2">Уведомления наблюдателя</h5>
+        <div class="settings-note mt-0">Если вы добавлены в наблюдатели заявки, будете получать уведомления о новых комментариях.</div>
+        <form method="post" action="/web/settings/watcher-comments" class="mt-2">
+          <label class="form-check">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              name="notify_comments_as_watcher"
+              value="1"
+              {% if user.notify_comments_as_watcher %}checked{% endif %}
+            />
+            <span class="form-check-label">Получать комментарии по наблюдаемым заявкам</span>
+          </label>
+          <button class="btn btn-outline-primary mt-2">Сохранить</button>
+        </form>
       </div>
     </div>
 
