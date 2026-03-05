@@ -6523,7 +6523,7 @@ async def web_receipt_edit(
     receipt = get_company_receipt_or_404(db, user, receipt_id)
     if not can_access_receipt(user, receipt):
         raise HTTPException(403, "Forbidden")
-    if user.role == Role.executor and receipt.created_by != user.id:
+    if receipt.created_by != user.id:
         raise HTTPException(403, "Forbidden")
 
     form = await request.form()
@@ -6590,7 +6590,7 @@ async def web_receipt_delete(
     receipt = get_company_receipt_or_404(db, user, receipt_id)
     if not can_access_receipt(user, receipt):
         raise HTTPException(403, "Forbidden")
-    if user.role == Role.executor and receipt.created_by != user.id:
+    if receipt.created_by != user.id:
         raise HTTPException(403, "Forbidden")
 
     form = await request.form()
@@ -6608,6 +6608,57 @@ async def web_receipt_delete(
             pass
     db.query(ReceiptFile).filter(ReceiptFile.receipt_id == receipt.id).delete(synchronize_session=False)
     db.delete(receipt)
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=success_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/receipts/delete/bulk")
+async def web_receipt_bulk_delete(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/receipts?mode=accounting")
+    success_url = f"{next_url}&ok=deleted" if "?" in next_url else f"{next_url}?ok=deleted"
+
+    receipt_ids: list[int] = []
+    for raw_id in form.getlist("receipt_ids"):
+        try:
+            receipt_ids.append(int((raw_id or "").strip()))
+        except (TypeError, ValueError):
+            continue
+    if not receipt_ids:
+        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+    receipts = (
+        db.query(Receipt)
+        .filter(Receipt.company_id == user.company_id, Receipt.id.in_(receipt_ids))
+        .all()
+    )
+    if not receipts:
+        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+    found_ids = [r.id for r in receipts]
+    files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(found_ids)).all()
+    for file_row in files:
+        path = resolve_attachment_disk_path(file_row.file_path)
+        if not path:
+            continue
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            pass
+    db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(found_ids)).delete(synchronize_session=False)
+    db.query(Receipt).filter(Receipt.id.in_(found_ids)).delete(synchronize_session=False)
     try:
         db.commit()
     except SQLAlchemyError:

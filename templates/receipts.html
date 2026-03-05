@@ -215,6 +215,14 @@
             <option value="NEW">Новый</option>
           </select>
           <button class="btn btn-outline-primary">Изменить статус выбранных</button>
+          <button
+            class="btn btn-outline-danger"
+            formaction="/web/receipts/delete/bulk"
+            formmethod="post"
+            onclick="return confirm('Удалить выбранные чеки? Действие необратимо.');"
+          >
+            Удалить выбранные
+          </button>
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle">
@@ -300,7 +308,7 @@
                   <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать {{ loop.index }}</a>
                 {% endfor %}
               </div>
-              {% if user.role == "EXECUTOR" and r.created_by == user.id %}
+              {% if user.role in ["EXECUTOR", "ADMIN", "CURATOR"] and r.created_by == user.id %}
                 <div class="d-flex gap-2 flex-wrap mt-2">
                   <a class="btn btn-sm btn-outline-primary" href="/web/receipts?mode={{ mode }}&edit_id={{ r.id }}">Изменить</a>
                   <form method="post" action="/web/receipts/{{ r.id }}/delete" class="m-0" onsubmit="return confirm('Удалить чек #{{ r.id }}?');">
