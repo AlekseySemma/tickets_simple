@@ -49,6 +49,35 @@ h3.mb-0 {
   font-size: clamp(1.45rem, 1.8vw, 2rem);
 }
 
+.company-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.company-logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--srv-border);
+  background: #ffffff;
+  box-shadow: 0 4px 10px rgba(20, 68, 70, 0.12);
+  flex-shrink: 0;
+}
+
+.company-logo-link:hover {
+  transform: translateY(-1px);
+}
+
+.company-logo-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 a {
   color: var(--srv-primary-deep);
 }
