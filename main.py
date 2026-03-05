@@ -2356,13 +2356,20 @@ def resolve_preferred_card_id(cards, bk_last4: str | None) -> int | None:
     digits = normalize_bk_last4(bk_last4)
     if not digits:
         return None
+    fallback_match_id: int | None = None
     for card in cards:
         if not getattr(card, "is_active", True):
             continue
         card_name_digits = re.sub(r"\D+", "", str(getattr(card, "name", "")))
+        if not card_name_digits:
+            continue
+        # Primary match: the card name ends with the configured 4 digits.
         if card_name_digits.endswith(digits):
             return int(getattr(card, "id"))
-    return None
+        # Fallback: card name contains these 4 digits somewhere in the number.
+        if fallback_match_id is None and digits in card_name_digits:
+            fallback_match_id = int(getattr(card, "id"))
+    return fallback_match_id
 
 
 def delete_company_with_data(db: Session, company_id: int) -> None:
