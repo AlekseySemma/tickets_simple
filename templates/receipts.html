@@ -10,7 +10,7 @@
   <link href="/static/service-theme.css" rel="stylesheet">
   <style>
     .receipt-card { border: 1px solid #d7e8e1; border-radius: 14px; background: #fff; box-shadow: 0 8px 18px rgba(22,64,67,.06); }
-    .receipt-thumb { width: 100%; max-height: 240px; object-fit: cover; border-radius: 10px; border: 1px solid #deede7; }
+    .receipt-thumb { width: 100%; max-height: 240px; object-fit: cover; border-radius: 10px; border: 1px solid #deede7; cursor: zoom-in; }
     .meta-chip { display: inline-flex; border-radius: 999px; border: 1px solid #d3e4dc; padding: 4px 10px; margin: 2px; font-size: 12px; background: #f8fcfa; }
     .status-badge { border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
     .st-NEW { background: #eef2f3; color: #42585e; border: 1px solid #ced7da; }
@@ -264,7 +264,13 @@
               {% if first_file %}
                 {% set lower_name = (first_file.original_name or "")|lower %}
                 {% if lower_name.endswith(".jpg") or lower_name.endswith(".jpeg") or lower_name.endswith(".png") or lower_name.endswith(".gif") or lower_name.endswith(".webp") %}
-                  <img src="/web/receipt-files/{{ first_file.id }}" class="receipt-thumb" alt="Чек #{{ r.id }}" />
+                  <img
+                    src="/web/receipt-files/{{ first_file.id }}"
+                    class="receipt-thumb"
+                    alt="Чек #{{ r.id }}"
+                    data-preview-src="/web/receipt-files/{{ first_file.id }}"
+                    data-preview-alt="Чек #{{ r.id }}"
+                  />
                 {% else %}
                   <div class="p-3 border rounded bg-light">Файл: <a href="/web/receipt-files/{{ first_file.id }}?download=1">{{ first_file.original_name or ("file_" ~ first_file.id) }}</a></div>
                 {% endif %}
@@ -372,6 +378,20 @@
   </div>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
+  <div class="modal fade" id="receiptPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Превью чека</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body text-center bg-light">
+          <img id="receiptPreviewImage" src="" alt="" style="max-width:100%; max-height:75vh; border-radius:10px;" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     (function() {
       const shortRadio = document.getElementById('receipt-form-short');
@@ -387,6 +407,22 @@
         shortRadio.addEventListener('change', syncFormVariant);
         fullRadio.addEventListener('change', syncFormVariant);
         syncFormVariant();
+      }
+
+      const modalEl = document.getElementById('receiptPreviewModal');
+      const previewImg = document.getElementById('receiptPreviewImage');
+      if (modalEl && previewImg && window.bootstrap) {
+        const previewModal = new window.bootstrap.Modal(modalEl);
+        document.querySelectorAll('img[data-preview-src]').forEach((img) => {
+          img.addEventListener('click', () => {
+            const src = img.getAttribute('data-preview-src') || '';
+            const alt = img.getAttribute('data-preview-alt') || '';
+            if (!src) return;
+            previewImg.src = src;
+            previewImg.alt = alt;
+            previewModal.show();
+          });
+        });
       }
     })();
   </script>
