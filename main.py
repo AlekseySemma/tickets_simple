@@ -229,9 +229,10 @@ class Project(Base):
 
 class PaymentCard(Base):
     __tablename__ = "payment_cards"
-    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_payment_cards_company_name"),)
+    __table_args__ = (UniqueConstraint("company_id", "owner_user_id", "name", name="uq_payment_cards_company_owner_name"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -2757,15 +2758,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
     bk_last4 = normalize_bk_last4(payload.bk_last4)
     if payload.bk_last4 and bk_last4 is None:
         raise HTTPException(422, "bk_last4 must contain exactly 4 digits")
-    preferred_card_id = payload.preferred_payment_card_id
-    if preferred_card_id is not None:
-        exists = (
-            db.query(PaymentCard.id)
-            .filter(PaymentCard.id == preferred_card_id, PaymentCard.company_id == _admin.company_id, PaymentCard.is_active.is_(True))
-            .first()
-        )
-        if not exists:
-            raise HTTPException(422, "preferred_payment_card_id is invalid")
+    preferred_card_id = None
     u = User(
         email=payload.email,
         name=payload.name,
@@ -4118,7 +4111,7 @@ def web_settings(
         card_delete_error = ""
     cards = (
         db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
-        .filter(PaymentCard.company_id == user.company_id)
+        .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
         .order_by(PaymentCard.name.asc())
         .all()
     ) if user.company_id is not None else []
@@ -4148,7 +4141,7 @@ def web_settings(
             "preferred_payment_card_id": user.preferred_payment_card_id,
             "can_manage_deadline_warning": can_manage_deadline_warning,
             "can_manage_archive_retention": can_manage_archive_retention,
-            "can_manage_cards": user.role in (Role.admin, Role.curator),
+            "can_manage_cards": not is_platform_admin(user),
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
             "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
             "min_archive_retention_days": MIN_ARCHIVE_RETENTION_DAYS,
@@ -4265,6 +4258,7 @@ async def web_settings_preferred_card(
             .filter(
                 PaymentCard.id == preferred_card_id,
                 PaymentCard.company_id == user.company_id,
+                PaymentCard.owner_user_id == user.id,
                 PaymentCard.is_active.is_(True),
             )
             .first()
@@ -6238,7 +6232,7 @@ def web_receipts(
     )
     cards = (
         db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
-        .filter(PaymentCard.company_id == user.company_id)
+        .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
         .order_by(PaymentCard.name.asc())
         .all()
     )
@@ -6329,8 +6323,8 @@ def web_receipts(
 
 @app.post("/web/payment-cards/create")
 async def web_payment_cards_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
     form = await request.form()
     name = (form.get("name") or "").strip()
@@ -6338,12 +6332,16 @@ async def web_payment_cards_create(request: Request, db: Session = Depends(get_d
         return RedirectResponse(url="/web/settings?card_create_error=missing_required", status_code=HTTP_303_SEE_OTHER)
     exists = (
         db.query(PaymentCard.id)
-        .filter(PaymentCard.company_id == user.company_id, func.lower(PaymentCard.name) == name.lower())
+        .filter(
+            PaymentCard.company_id == user.company_id,
+            PaymentCard.owner_user_id == user.id,
+            func.lower(PaymentCard.name) == name.lower(),
+        )
         .first()
     )
     if exists:
         return RedirectResponse(url="/web/settings?card_create_error=card_exists", status_code=HTTP_303_SEE_OTHER)
-    db.add(PaymentCard(company_id=user.company_id, name=name, is_active=True))
+    db.add(PaymentCard(company_id=user.company_id, owner_user_id=user.id, name=name, is_active=True))
     try:
         db.commit()
     except SQLAlchemyError:
@@ -6358,11 +6356,11 @@ async def web_payment_cards_delete(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
     card = db.get(PaymentCard, card_id)
-    if not card or card.company_id != user.company_id:
+    if not card or card.company_id != user.company_id or card.owner_user_id != user.id:
         return RedirectResponse(url="/web/settings?card_delete_error=not_found", status_code=HTTP_303_SEE_OTHER)
 
     used_in_receipts = (
@@ -6419,7 +6417,16 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
         return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
 
     project_exists = db.query(Project.id).filter(Project.id == project_id, Project.company_id == user.company_id).first()
-    card_exists = db.query(PaymentCard.id).filter(PaymentCard.id == card_id, PaymentCard.company_id == user.company_id).first()
+    card_exists = (
+        db.query(PaymentCard.id)
+        .filter(
+            PaymentCard.id == card_id,
+            PaymentCard.company_id == user.company_id,
+            PaymentCard.owner_user_id == user.id,
+            PaymentCard.is_active.is_(True),
+        )
+        .first()
+    )
     if not project_exists or not card_exists:
         return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
 
@@ -6541,7 +6548,16 @@ async def web_receipt_edit(
         return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
 
     project_exists = db.query(Project.id).filter(Project.id == project_id, Project.company_id == user.company_id).first()
-    card_exists = db.query(PaymentCard.id).filter(PaymentCard.id == card_id, PaymentCard.company_id == user.company_id).first()
+    card_exists = (
+        db.query(PaymentCard.id)
+        .filter(
+            PaymentCard.id == card_id,
+            PaymentCard.company_id == user.company_id,
+            PaymentCard.owner_user_id == user.id,
+            PaymentCard.is_active.is_(True),
+        )
+        .first()
+    )
     if not project_exists or not card_exists:
         return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
 
@@ -6713,7 +6729,14 @@ def web_receipts_export_xlsx(
         for file_row in db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(ids)).order_by(ReceiptFile.id.asc()).all():
             first_files.setdefault(file_row.receipt_id, file_row.id)
     projects = {int(row[0]): row[1] for row in db.query(Project.id, Project.name).filter(Project.company_id == user.company_id).all()}
-    cards = {int(row[0]): row[1] for row in db.query(PaymentCard.id, PaymentCard.name).filter(PaymentCard.company_id == user.company_id).all()}
+    cards = {
+        int(row[0]): row[1]
+        for row in (
+            db.query(PaymentCard.id, PaymentCard.name)
+            .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
+            .all()
+        )
+    }
     users = {int(row[0]): row[1] for row in db.query(User.id, User.name).filter(User.company_id == user.company_id).all()}
     base_url = str(request.base_url).rstrip("/")
 
@@ -6822,7 +6845,14 @@ def web_receipts_export_zip(
     if not files:
         raise HTTPException(400, "No files for selected receipts")
 
-    cards = {int(row[0]): row[1] for row in db.query(PaymentCard.id, PaymentCard.name).filter(PaymentCard.company_id == user.company_id).all()}
+    cards = {
+        int(row[0]): row[1]
+        for row in (
+            db.query(PaymentCard.id, PaymentCard.name)
+            .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
+            .all()
+        )
+    }
     receipts_by_id = {r.id: r for r in receipts}
     output = io.BytesIO()
     with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
