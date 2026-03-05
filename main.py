@@ -4112,6 +4112,10 @@ def web_settings(
     card_create_error = (request.query_params.get("card_create_error") or "").strip().lower()
     if card_create_error not in {"missing_required", "card_exists", "save_failed"}:
         card_create_error = ""
+    card_deleted = (request.query_params.get("card_deleted") or "").strip() == "1"
+    card_delete_error = (request.query_params.get("card_delete_error") or "").strip().lower()
+    if card_delete_error not in {"not_found", "in_use", "save_failed"}:
+        card_delete_error = ""
     cards = (
         db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
         .filter(PaymentCard.company_id == user.company_id)
@@ -4138,6 +4142,8 @@ def web_settings(
             "preferred_card_error": preferred_card_error,
             "card_created": card_created,
             "card_create_error": card_create_error,
+            "card_deleted": card_deleted,
+            "card_delete_error": card_delete_error,
             "cards": cards,
             "preferred_payment_card_id": user.preferred_payment_card_id,
             "can_manage_deadline_warning": can_manage_deadline_warning,
@@ -6339,6 +6345,40 @@ async def web_payment_cards_create(request: Request, db: Session = Depends(get_d
         db.rollback()
         return RedirectResponse(url="/web/settings?card_create_error=save_failed", status_code=HTTP_303_SEE_OTHER)
     return RedirectResponse(url="/web/settings?card_created=1", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/payment-cards/{card_id}/delete")
+async def web_payment_cards_delete(
+    card_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    card = db.get(PaymentCard, card_id)
+    if not card or card.company_id != user.company_id:
+        return RedirectResponse(url="/web/settings?card_delete_error=not_found", status_code=HTTP_303_SEE_OTHER)
+
+    used_in_receipts = (
+        db.query(Receipt.id)
+        .filter(Receipt.company_id == user.company_id, Receipt.card_id == card_id)
+        .first()
+    )
+    used_in_user_defaults = (
+        db.query(User.id)
+        .filter(User.company_id == user.company_id, User.preferred_payment_card_id == card_id)
+        .first()
+    )
+    if used_in_receipts or used_in_user_defaults:
+        return RedirectResponse(url="/web/settings?card_delete_error=in_use", status_code=HTTP_303_SEE_OTHER)
+    try:
+        db.delete(card)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/settings?card_delete_error=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/settings?card_deleted=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/receipts/create")
