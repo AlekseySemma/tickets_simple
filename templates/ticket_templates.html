@@ -1,7 +1,7 @@
-п»ї<html>
+<html>
 <head>
   <meta charset="utf-8" />
-  <title>РЁР°Р±Р»РѕРЅС‹ Р·Р°СЏРІРѕРє</title>
+  <title>Шаблоны заявок</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -109,34 +109,35 @@
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1400px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h3 class="mb-0">РЁР°Р±Р»РѕРЅС‹ Р·Р°СЏРІРѕРє</h3>
+      <h3 class="mb-0">Шаблоны заявок</h3>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">РЈРІРµРґРѕРјР»РµРЅРёСЏ<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web">Р—Р°СЏРІРєРё</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Р’С‹Р№С‚Рё</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
     {% set active_templates = items|selectattr("is_active")|list|length %}
     <div class="tmpl-hero mb-3">
       <div>
-        <span class="tmpl-kicker">РЁР°Р±Р»РѕРЅРёР·Р°С†РёСЏ РїРѕС‚РѕРєР°</span>
-        <p class="tmpl-title">РЈРїСЂР°РІР»СЏР№С‚Рµ РїРѕРІС‚РѕСЂСЏСЋС‰РёРјРёСЃСЏ Р·Р°РґР°С‡Р°РјРё С‡РµСЂРµР· С€Р°Р±Р»РѕРЅС‹, РїРµСЂРёРѕРґС‹ Р·Р°РїСѓСЃРєР° Рё РєРѕРЅС‚СЂРѕР»СЊ РєР»СЋС‡РµР№ РіРµРЅРµСЂР°С†РёРё.</p>
+        <span class="tmpl-kicker">Шаблонизация потока</span>
+        <p class="tmpl-title">Управляйте повторяющимися задачами через шаблоны, периоды запуска и контроль ключей генерации.</p>
       </div>
       <div class="tmpl-kpi">
         <div class="tmpl-kpi-card">
-          <span>Р’СЃРµРіРѕ С€Р°Р±Р»РѕРЅРѕРІ</span>
+          <span>Всего шаблонов</span>
           <strong>{{ items|length }}</strong>
         </div>
         <div class="tmpl-kpi-card">
-          <span>РђРєС‚РёРІРЅС‹Рµ</span>
+          <span>Активные</span>
           <strong>{{ active_templates }}</strong>
         </div>
         <div class="tmpl-kpi-card">
-          <span>РўРёРїС‹ Р·Р°СЏРІРѕРє</span>
+          <span>Типы заявок</span>
           <strong>{{ ticket_types|length }}</strong>
         </div>
         <div class="tmpl-kpi-card">
-          <span>РСЃРїРѕР»РЅРёС‚РµР»Рё</span>
+          <span>Исполнители</span>
           <strong>{{ executors|length }}</strong>
         </div>
       </div>
@@ -144,66 +145,66 @@
 
     {% if request.query_params.get("run_ok") == "1" %}
       <div class="alert alert-success">
-        РЎРѕР·РґР°РЅРёРµ РёР· С€Р°Р±Р»РѕРЅР° Р·Р°РІРµСЂС€РµРЅРѕ: СЃРѕР·РґР°РЅРѕ {{ request.query_params.get("run_created") or 0 }}, РїСЂРѕРїСѓС‰РµРЅРѕ {{ request.query_params.get("run_skipped") or 0 }}, РїРµСЂРёРѕРґ {{ request.query_params.get("run_period") or "" }}.
+        Создание из шаблона завершено: создано {{ request.query_params.get("run_created") or 0 }}, пропущено {{ request.query_params.get("run_skipped") or 0 }}, период {{ request.query_params.get("run_period") or "" }}.
       </div>
     {% endif %}
     {% if request.query_params.get("run_error") == "bad_period" %}
-      <div class="alert alert-warning">РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РїРµСЂРёРѕРґ. РСЃРїРѕР»СЊР·СѓР№С‚Рµ С„РѕСЂРјР°С‚ YYYY-MM.</div>
+      <div class="alert alert-warning">Некорректный период. Используйте формат YYYY-MM.</div>
     {% endif %}
     {% if request.query_params.get("keys_cleared") == "1" %}
       <div class="alert alert-info">
-        РљР»СЋС‡Рё РѕС‡РёС‰РµРЅС‹: {{ request.query_params.get("keys_deleted") or 0 }}, РїРµСЂРёРѕРґ {{ request.query_params.get("keys_period") or "" }}.
+        Ключи очищены: {{ request.query_params.get("keys_deleted") or 0 }}, период {{ request.query_params.get("keys_period") or "" }}.
       </div>
     {% endif %}
     {% if request.query_params.get("keys_error") == "bad_period" %}
-      <div class="alert alert-warning">РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РїРµСЂРёРѕРґ РґР»СЏ РѕС‡РёСЃС‚РєРё РєР»СЋС‡РµР№. РСЃРїРѕР»СЊР·СѓР№С‚Рµ С„РѕСЂРјР°С‚ YYYY-MM.</div>
+      <div class="alert alert-warning">Некорректный период для очистки ключей. Используйте формат YYYY-MM.</div>
     {% endif %}
     {% if request.query_params.get("delete_error") == "1" %}
-      <div class="alert alert-danger">РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ С€Р°Р±Р»РѕРЅ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ.</div>
+      <div class="alert alert-danger">Не удалось удалить шаблон. Попробуйте позже.</div>
     {% endif %}
 
     <div class="card shadow-sm mb-3 tmpl-card">
       <div class="card-body">
-        <h5 class="mb-3">Р”РѕР±Р°РІРёС‚СЊ С€Р°Р±Р»РѕРЅ</h5>
+        <h5 class="mb-3">Добавить шаблон</h5>
         <form method="post" action="/web/ticket-templates/create" class="row g-2">
-          <div class="col-12 col-md-4"><input class="form-control" name="name" placeholder="РќР°Р·РІР°РЅРёРµ" required /></div>
+          <div class="col-12 col-md-4"><input class="form-control" name="name" placeholder="Название" required /></div>
           <div class="col-12 col-md-4">
             <select class="form-select" name="ticket_type_id" required>
-              <option value="" selected disabled>РўРёРї Р·Р°СЏРІРєРё</option>
+              <option value="" selected disabled>Тип заявки</option>
               {% for tt in ticket_types %}<option value="{{ tt.id }}">{{ tt.name }}</option>{% endfor %}
             </select>
           </div>
-          <div class="col-12 col-md-4"><input class="form-control" name="title_template" placeholder="РЁР°Р±Р»РѕРЅ РЅР°Р·РІР°РЅРёСЏ" /></div>
-          <div class="col-12 col-md-6"><input class="form-control" name="description_template" placeholder="РЁР°Р±Р»РѕРЅ РѕРїРёСЃР°РЅРёСЏ" /></div>
+          <div class="col-12 col-md-4"><input class="form-control" name="title_template" placeholder="Шаблон названия" /></div>
+          <div class="col-12 col-md-6"><input class="form-control" name="description_template" placeholder="Шаблон описания" /></div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="deadline_mode">
-              <option value="none" selected>Р‘РµР· СЃСЂРѕРєР°</option>
-              <option value="date">РўРѕС‡РЅР°СЏ РґР°С‚Р°</option>
-              <option value="dom">Р”РµРЅСЊ РјРµСЃСЏС†Р°</option>
+              <option value="none" selected>Без срока</option>
+              <option value="date">Точная дата</option>
+              <option value="dom">День месяца</option>
             </select>
           </div>
           <div class="col-12 col-md-2"><input class="form-control" type="date" name="deadline_date" /></div>
-          <div class="col-12 col-md-2"><input class="form-control" type="number" min="1" max="31" name="deadline_dom" placeholder="Р”РµРЅСЊ (1-31)" /></div>
+          <div class="col-12 col-md-2"><input class="form-control" type="number" min="1" max="31" name="deadline_dom" placeholder="День (1-31)" /></div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="scope_unit_id">
-              <option value="">Scope-СѓР·РµР»</option>
+              <option value="">Scope-узел</option>
               {% for u in org_units %}<option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>{% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="default_executor_id">
-              <option value="">РСЃРїРѕР»РЅРёС‚РµР»СЊ</option>
+              <option value="">Исполнитель</option>
               {% for e in executors %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-2 d-flex align-items-center">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_active" value="1" id="tmpl_active_new" checked>
-              <label class="form-check-label" for="tmpl_active_new">РђРІС‚РѕРіРµРЅРµСЂР°С†РёСЏ РІРєР»СЋС‡РµРЅР°</label>
+              <label class="form-check-label" for="tmpl_active_new">Автогенерация включена</label>
             </div>
           </div>
-          <div class="col-12"><small class="text-muted">Р СѓС‡РЅРѕР№ Р·Р°РїСѓСЃРє РґРѕСЃС‚СѓРїРµРЅ РІСЃРµРіРґР°. Р­С‚РѕС‚ С„Р»Р°Рі РІР»РёСЏРµС‚ С‚РѕР»СЊРєРѕ РЅР° Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєСѓСЋ РіРµРЅРµСЂР°С†РёСЋ РїРѕ СЂР°СЃРїРёСЃР°РЅРёСЋ.</small></div>
-          <div class="col-12"><button class="btn btn-primary">РЎРѕР·РґР°С‚СЊ</button></div>
+          <div class="col-12"><small class="text-muted">Ручной запуск доступен всегда. Этот флаг влияет только на автоматическую генерацию по расписанию.</small></div>
+          <div class="col-12"><button class="btn btn-primary">Создать</button></div>
         </form>
       </div>
     </div>
@@ -212,11 +213,11 @@
       <div class="card shadow-sm mb-2 tmpl-item">
         <div class="card-body">
           <div class="tmpl-item-head">
-            <div class="tmpl-id">РЁР°Р±Р»РѕРЅ #{{ t.id }}</div>
+            <div class="tmpl-id">Шаблон #{{ t.id }}</div>
             {% if t.is_active %}
-              <span class="badge text-bg-success">РђРІС‚РѕРіРµРЅРµСЂР°С†РёСЏ: Р’РєР»</span>
+              <span class="badge text-bg-success">Автогенерация: Вкл</span>
             {% else %}
-              <span class="badge text-bg-secondary">РђРІС‚РѕРіРµРЅРµСЂР°С†РёСЏ: Р’С‹РєР»</span>
+              <span class="badge text-bg-secondary">Автогенерация: Выкл</span>
             {% endif %}
           </div>
           <form method="post" action="/web/ticket-templates/{{ t.id }}/update" class="row g-2">
@@ -230,58 +231,58 @@
             <div class="col-12 col-md-3"><input class="form-control" name="description_template" value="{{ t.description_template or '' }}" /></div>
             <div class="col-12 col-md-2">
               <select class="form-select" name="deadline_mode">
-                <option value="none" {% if template_deadline_mode(t.default_deadline_rule) == "none" %}selected{% endif %}>Р‘РµР· СЃСЂРѕРєР°</option>
-                <option value="date" {% if template_deadline_mode(t.default_deadline_rule) == "date" %}selected{% endif %}>РўРѕС‡РЅР°СЏ РґР°С‚Р°</option>
-                <option value="dom" {% if template_deadline_mode(t.default_deadline_rule) == "dom" %}selected{% endif %}>Р”РµРЅСЊ РјРµСЃСЏС†Р°</option>
+                <option value="none" {% if template_deadline_mode(t.default_deadline_rule) == "none" %}selected{% endif %}>Без срока</option>
+                <option value="date" {% if template_deadline_mode(t.default_deadline_rule) == "date" %}selected{% endif %}>Точная дата</option>
+                <option value="dom" {% if template_deadline_mode(t.default_deadline_rule) == "dom" %}selected{% endif %}>День месяца</option>
               </select>
             </div>
             <div class="col-12 col-md-2"><input class="form-control" type="date" name="deadline_date" value="{{ template_deadline_date_value(t.default_deadline_rule) }}" /></div>
-            <div class="col-12 col-md-2"><input class="form-control" type="number" min="1" max="31" name="deadline_dom" value="{{ template_deadline_dom_value(t.default_deadline_rule) }}" placeholder="Р”РµРЅСЊ (1-31)" /></div>
+            <div class="col-12 col-md-2"><input class="form-control" type="number" min="1" max="31" name="deadline_dom" value="{{ template_deadline_dom_value(t.default_deadline_rule) }}" placeholder="День (1-31)" /></div>
             <div class="col-12 col-md-3">
               <select class="form-select" name="scope_unit_id">
-                <option value="">Scope-СѓР·РµР»</option>
+                <option value="">Scope-узел</option>
                 {% for u in org_units %}<option value="{{ u.id }}" {% if t.scope_unit_id == u.id %}selected{% endif %}>{{ u.name }} (#{{ u.id }})</option>{% endfor %}
               </select>
             </div>
             <div class="col-12 col-md-3">
               <select class="form-select" name="default_executor_id">
-                <option value="">РСЃРїРѕР»РЅРёС‚РµР»СЊ</option>
+                <option value="">Исполнитель</option>
                 {% for e in executors %}<option value="{{ e.id }}" {% if t.default_executor_id == e.id %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-12 col-md-2 d-flex align-items-center">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="tmpl_active_{{ t.id }}" {% if t.is_active %}checked{% endif %}>
-                <label class="form-check-label" for="tmpl_active_{{ t.id }}">РђРІС‚РѕРіРµРЅРµСЂР°С†РёСЏ РІРєР»СЋС‡РµРЅР°</label>
+                <label class="form-check-label" for="tmpl_active_{{ t.id }}">Автогенерация включена</label>
               </div>
             </div>
-            <div class="col-12"><small class="text-muted">Р СѓС‡РЅРѕР№ Р·Р°РїСѓСЃРє РЅРёР¶Рµ РґРѕСЃС‚СѓРїРµРЅ РЅРµР·Р°РІРёСЃРёРјРѕ РѕС‚ Р°РІС‚РѕРіРµРЅРµСЂР°С†РёРё.</small></div>
+            <div class="col-12"><small class="text-muted">Ручной запуск ниже доступен независимо от автогенерации.</small></div>
             <div class="col-12 d-flex gap-2">
-              <button class="btn btn-sm btn-outline-primary" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+              <button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button>
             </div>
           </form>
 
           <div class="tmpl-actions mt-2">
-            <div class="small text-muted mb-1">Р СѓС‡РЅРѕР№ Р·Р°РїСѓСЃРє</div>
+            <div class="small text-muted mb-1">Ручной запуск</div>
             <form class="row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run">
               <div class="col-12 col-md-4">
-                <input class="form-control" name="period_key" placeholder="РџРµСЂРёРѕРґ YYYY-MM (РѕРїС†.)" />
+                <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
               </div>
               <div class="col-12 col-md-4">
-                <button class="btn btn-sm btn-success" type="submit">Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµР№С‡Р°СЃ</button>
+                <button class="btn btn-sm btn-success" type="submit">Запустить сейчас</button>
               </div>
             </form>
-            <div class="small text-muted mt-2 mb-1">РЈРїСЂР°РІР»РµРЅРёРµ Р°РІС‚РѕРіРµРЅРµСЂР°С†РёРµР№</div>
-            <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/clear-keys" onsubmit="return confirm('РћС‡РёСЃС‚РёС‚СЊ РєР»СЋС‡Рё РіРµРЅРµСЂР°С†РёРё РїРѕ РїРµСЂРёРѕРґСѓ РґР»СЏ СЌС‚РѕРіРѕ С€Р°Р±Р»РѕРЅР°?');">
+            <div class="small text-muted mt-2 mb-1">Управление автогенерацией</div>
+            <form class="mt-2 row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/clear-keys" onsubmit="return confirm('Очистить ключи генерации по периоду для этого шаблона?');">
               <div class="col-12 col-md-4">
-                <input class="form-control" name="period_key" placeholder="РџРµСЂРёРѕРґ YYYY-MM (РѕРїС†.)" />
+                <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
               </div>
               <div class="col-12 col-md-4">
-                <button class="btn btn-sm btn-outline-warning" type="submit">РћС‡РёСЃС‚РёС‚СЊ РєР»СЋС‡Рё РїРµСЂРёРѕРґР°</button>
+                <button class="btn btn-sm btn-outline-warning" type="submit">Очистить ключи периода</button>
               </div>
             </form>
-            <form class="mt-2" method="post" action="/web/ticket-templates/{{ t.id }}/delete" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ С€Р°Р±Р»РѕРЅ {{ t.name }}?');">
-              <button class="btn btn-sm btn-outline-danger" type="submit">РЈРґР°Р»РёС‚СЊ</button>
+            <form class="mt-2" method="post" action="/web/ticket-templates/{{ t.id }}/delete" onsubmit="return confirm('Удалить шаблон {{ t.name }}?');">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
             </form>
           </div>
         </div>
@@ -289,13 +290,15 @@
     {% endfor %}
 
     {% if items|length == 0 %}
-      <div class="alert alert-info">РЁР°Р±Р»РѕРЅРѕРІ РїРѕРєР° РЅРµС‚.</div>
+      <div class="alert alert-info">Шаблонов пока нет.</div>
     {% endif %}
   </div>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+
+
 
 
 

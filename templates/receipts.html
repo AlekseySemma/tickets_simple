@@ -81,7 +81,7 @@
               <option value="" selected disabled>Выберите карту</option>
               {% for c in cards %}
                 {% if c.is_active %}
-                  <option value="{{ c.id }}">{{ c.name }}</option>
+                  <option value="{{ c.id }}" {% if preferred_card_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                 {% endif %}
               {% endfor %}
             </select>

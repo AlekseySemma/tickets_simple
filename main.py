@@ -182,6 +182,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+    bk_last4: Mapped[Optional[str]] = mapped_column(String(4), default=None)
     notify_comments_as_watcher: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
@@ -504,6 +505,7 @@ class UserCreate(BaseModel):
     name: str
     password: str
     role: Role
+    bk_last4: Optional[str] = None
 
 class UserOut(BaseModel):
     id: int
@@ -511,6 +513,7 @@ class UserOut(BaseModel):
     name: str
     role: Role
     company_id: Optional[int] = None
+    bk_last4: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -2288,6 +2291,15 @@ def parse_receipt_amount(raw: str | None) -> Decimal | None:
     return amount.quantize(Decimal("0.01"))
 
 
+def normalize_bk_last4(raw: str | None) -> str | None:
+    digits = re.sub(r"\D+", "", (raw or "").strip())
+    if not digits:
+        return None
+    if len(digits) != 4:
+        return None
+    return digits
+
+
 def sanitize_export_token(raw: str | None, max_len: int = 40) -> str:
     value = re.sub(r"[^0-9A-Za-z._-]+", "_", (raw or "").strip())
     value = value.strip("._-")
@@ -2338,6 +2350,19 @@ def build_receipts_query(
         )
 
     return query.order_by(Receipt.id.desc())
+
+
+def resolve_preferred_card_id(cards, bk_last4: str | None) -> int | None:
+    digits = normalize_bk_last4(bk_last4)
+    if not digits:
+        return None
+    for card in cards:
+        if not getattr(card, "is_active", True):
+            continue
+        card_name_digits = re.sub(r"\D+", "", str(getattr(card, "name", "")))
+        if card_name_digits.endswith(digits):
+            return int(getattr(card, "id"))
+    return None
 
 
 def delete_company_with_data(db: Session, company_id: int) -> None:
@@ -2719,12 +2744,16 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
         raise HTTPException(400, "Email already exists")
     if payload.role not in (Role.curator, Role.executor):
         raise HTTPException(400, "Only CURATOR or EXECUTOR can be created")
+    bk_last4 = normalize_bk_last4(payload.bk_last4)
+    if payload.bk_last4 and bk_last4 is None:
+        raise HTTPException(422, "bk_last4 must contain exactly 4 digits")
     u = User(
         email=payload.email,
         name=payload.name,
         password_hash=hash_password(payload.password),
         role=payload.role,
         company_id=_admin.company_id,
+        bk_last4=bk_last4,
     )
     db.add(u); db.commit(); db.refresh(u)
     return u
@@ -6114,6 +6143,7 @@ def web_receipts(
         .order_by(PaymentCard.name.asc())
         .all()
     )
+    preferred_card_id = resolve_preferred_card_id(cards, user.bk_last4)
     employees = (
         db.query(User.id, User.name)
         .filter(User.company_id == user.company_id, User.role != Role.platform_admin)
@@ -6187,6 +6217,7 @@ def web_receipts(
             "err": err,
             "can_manage_cards": is_manager(user),
             "can_manage_status": is_manager(user),
+            "preferred_card_id": preferred_card_id,
         },
     )
 
@@ -7041,7 +7072,7 @@ def web_users(
         raise HTTPException(403, "Forbidden")
 
     users = (
-        db.query(User.id, User.name, User.email, User.role)
+        db.query(User.id, User.name, User.email, User.role, User.bk_last4)
         .filter(
             User.company_id == user.company_id,
             User.role.in_(allowed_roles),
@@ -7146,12 +7177,15 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
+    bk_last4 = normalize_bk_last4(form.get("bk_last4"))
     role_raw = (form.get("role") or "").strip().upper()
     allowed_roles = manageable_roles_for_web_user_management(user)
     if not allowed_roles:
         raise HTTPException(403, "Forbidden")
 
     if not (name and email and password):
+        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
+    if (form.get("bk_last4") or "").strip() and bk_last4 is None:
         return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
     if db.query(User.id).filter(User.email == email).first():
         return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
@@ -7165,7 +7199,14 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
         if role_value not in allowed_roles:
             return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
 
-    u = User(email=email, name=name, password_hash=hash_password(password), role=role_value, company_id=user.company_id)
+    u = User(
+        email=email,
+        name=name,
+        password_hash=hash_password(password),
+        role=role_value,
+        company_id=user.company_id,
+        bk_last4=bk_last4,
+    )
     try:
         db.add(u)
         db.commit()
@@ -7189,7 +7230,11 @@ async def web_users_update(
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
+    bk_last4_raw = (form.get("bk_last4") or "").strip()
+    bk_last4 = normalize_bk_last4(bk_last4_raw)
     if not (name and email):
+        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
+    if bk_last4_raw and bk_last4 is None:
         return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
 
     item = db.get(User, managed_user_id)
@@ -7202,6 +7247,7 @@ async def web_users_update(
 
     item.name = name
     item.email = email
+    item.bk_last4 = bk_last4
     if password:
         item.password_hash = hash_password(password)
     try:
