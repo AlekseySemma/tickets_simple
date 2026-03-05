@@ -64,17 +64,18 @@
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="mb-3">Добавить чек</h5>
-        <div class="mb-3">
-          <div class="btn-group" role="group" aria-label="Вариант формы чека">
-            <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-short" autocomplete="off" checked>
-            <label class="btn btn-outline-primary" for="receipt-form-short">Короткий</label>
-            <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-full" autocomplete="off">
-            <label class="btn btn-outline-primary" for="receipt-form-full">Полный</label>
+        <details {% if mode == "field" %}open{% endif %}>
+          <summary class="h5 mb-3" style="cursor:pointer; user-select:none;">Добавить чек</summary>
+          <div class="mb-3">
+            <div class="btn-group" role="group" aria-label="Вариант формы чека">
+              <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-short" autocomplete="off" checked>
+              <label class="btn btn-outline-primary" for="receipt-form-short">Короткий</label>
+              <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-full" autocomplete="off">
+              <label class="btn btn-outline-primary" for="receipt-form-full">Полный</label>
+            </div>
+            <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
           </div>
-          <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
-        </div>
-        <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
+          <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
           <div class="col-12 col-md-4">
             <label class="form-label">Объект</label>
             <select name="project_id" class="form-select" required>
@@ -121,10 +122,11 @@
             <label class="form-label">Фото/файлы (1+)</label>
             <input type="file" name="files" class="form-control" accept="image/*,.pdf" capture="environment" multiple required />
           </div>
-          <div class="col-12">
-            <button class="btn btn-primary">Отправить чек</button>
-          </div>
-        </form>
+            <div class="col-12">
+              <button class="btn btn-primary">Отправить чек</button>
+            </div>
+          </form>
+        </details>
       </div>
     </div>
 
