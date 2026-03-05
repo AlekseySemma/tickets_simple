@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Исполнители</title>
+  <title>РСЃРїРѕР»РЅРёС‚РµР»Рё</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -85,69 +85,69 @@
   <div class="container py-4 service-shell" style="max-width: 1280px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-        <h3 class="mb-0">Исполнители</h3>
-        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ user.role }})</div>
+        <h3 class="mb-0">РСЃРїРѕР»РЅРёС‚РµР»Рё</h3>
+        <div class="text-muted">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
-        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Р§РµРєРё</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">РЈРІРµРґРѕРјР»РµРЅРёСЏ<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web/settings">РќР°СЃС‚СЂРѕР№РєРё</a>
+        <a class="btn btn-outline-secondary" href="/web">Р—Р°СЏРІРєРё</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Р’С‹Р№С‚Рё</a>
       </div>
     </div>
     <div class="exec-hero mb-3">
       <div>
-        <span class="exec-kicker">Исполнительский контур</span>
-        <p class="exec-title">Поддерживайте актуальную команду: быстро добавляйте исполнителей и обновляйте доступы.</p>
+        <span class="exec-kicker">РСЃРїРѕР»РЅРёС‚РµР»СЊСЃРєРёР№ РєРѕРЅС‚СѓСЂ</span>
+        <p class="exec-title">РџРѕРґРґРµСЂР¶РёРІР°Р№С‚Рµ Р°РєС‚СѓР°Р»СЊРЅСѓСЋ РєРѕРјР°РЅРґСѓ: Р±С‹СЃС‚СЂРѕ РґРѕР±Р°РІР»СЏР№С‚Рµ РёСЃРїРѕР»РЅРёС‚РµР»РµР№ Рё РѕР±РЅРѕРІР»СЏР№С‚Рµ РґРѕСЃС‚СѓРїС‹.</p>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-card">
-          <span>Всего исполнителей</span>
+          <span>Р’СЃРµРіРѕ РёСЃРїРѕР»РЅРёС‚РµР»РµР№</span>
           <strong>{{ executors|length }}</strong>
         </div>
         <div class="exec-kpi-card">
-          <span>Роль</span>
+          <span>Р РѕР»СЊ</span>
           <strong>EXECUTOR</strong>
         </div>
         <div class="exec-kpi-card">
-          <span>Управление</span>
-          <strong>Централизовано</strong>
+          <span>РЈРїСЂР°РІР»РµРЅРёРµ</span>
+          <strong>Р¦РµРЅС‚СЂР°Р»РёР·РѕРІР°РЅРѕ</strong>
         </div>
       </div>
     </div>
 
     {% if ok == "created" %}
-      <div class="alert alert-success">Исполнитель создан.</div>
+      <div class="alert alert-success">РСЃРїРѕР»РЅРёС‚РµР»СЊ СЃРѕР·РґР°РЅ.</div>
     {% elif ok == "updated" %}
-      <div class="alert alert-success">Данные исполнителя обновлены.</div>
+      <div class="alert alert-success">Р”Р°РЅРЅС‹Рµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ РѕР±РЅРѕРІР»РµРЅС‹.</div>
     {% endif %}
 
     {% if err == "bad_input" %}
-      <div class="alert alert-danger">Заполните обязательные поля.</div>
+      <div class="alert alert-danger">Р—Р°РїРѕР»РЅРёС‚Рµ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ РїРѕР»СЏ.</div>
     {% elif err == "email_exists" %}
-      <div class="alert alert-danger">Пользователь с таким email уже существует.</div>
+      <div class="alert alert-danger">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚.</div>
     {% elif err == "executor_not_found" %}
-      <div class="alert alert-danger">Исполнитель не найден.</div>
+      <div class="alert alert-danger">РСЃРїРѕР»РЅРёС‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.</div>
     {% elif err == "save_failed" %}
-      <div class="alert alert-danger">Не удалось сохранить изменения.</div>
+      <div class="alert alert-danger">РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ.</div>
     {% endif %}
 
     <div class="card shadow-sm mb-3 exec-card">
       <div class="card-body">
-        <h5 class="mb-3">Добавить исполнителя</h5>
+        <h5 class="mb-3">Р”РѕР±Р°РІРёС‚СЊ РёСЃРїРѕР»РЅРёС‚РµР»СЏ</h5>
         <form method="post" action="/web/executors/create" class="row g-2">
           <div class="col-12 col-md-4">
-            <input name="name" class="form-control" placeholder="Имя" required />
+            <input name="name" class="form-control" placeholder="РРјСЏ" required />
           </div>
           <div class="col-12 col-md-4">
             <input name="email" type="email" class="form-control" placeholder="Email" required />
           </div>
           <div class="col-12 col-md-4">
-            <input name="password" type="password" class="form-control" placeholder="Пароль" required />
+            <input name="password" type="password" class="form-control" placeholder="РџР°СЂРѕР»СЊ" required />
           </div>
           <div class="col-12">
-            <button class="btn btn-primary">Создать исполнителя</button>
+            <button class="btn btn-primary">РЎРѕР·РґР°С‚СЊ РёСЃРїРѕР»РЅРёС‚РµР»СЏ</button>
           </div>
         </form>
       </div>
@@ -159,7 +159,7 @@
           <div class="small text-muted mb-2">#{{ e.id }}</div>
           <form method="post" action="/web/executors/{{ e.id }}/update" class="row g-2 align-items-end">
             <div class="col-12 col-md-4">
-              <label class="form-label mb-1">Имя</label>
+              <label class="form-label mb-1">РРјСЏ</label>
               <input name="name" class="form-control" value="{{ e.name }}" required />
             </div>
             <div class="col-12 col-md-4">
@@ -167,11 +167,11 @@
               <input name="email" type="email" class="form-control" value="{{ e.email }}" required />
             </div>
             <div class="col-12 col-md-3">
-              <label class="form-label mb-1">Новый пароль</label>
-              <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
+              <label class="form-label mb-1">РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ</label>
+              <input name="password" type="password" class="form-control" placeholder="РћСЃС‚Р°РІСЊС‚Рµ РїСѓСЃС‚С‹Рј" />
             </div>
             <div class="col-12 col-md-1 d-grid">
-              <button class="btn btn-outline-primary">Сохранить</button>
+              <button class="btn btn-outline-primary">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
             </div>
           </form>
         </div>
@@ -179,7 +179,7 @@
     {% endfor %}
 
     {% if executors|length == 0 %}
-      <div class="alert alert-info">Исполнителей пока нет.</div>
+      <div class="alert alert-info">РСЃРїРѕР»РЅРёС‚РµР»РµР№ РїРѕРєР° РЅРµС‚.</div>
     {% endif %}
   </div>
 

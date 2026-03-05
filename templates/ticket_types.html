@@ -1,7 +1,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Типы заявок</title>
+  <title>РўРёРїС‹ Р·Р°СЏРІРѕРє</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -98,31 +98,31 @@
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1200px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h3 class="mb-0">Типы заявок</h3>
+      <h3 class="mb-0">РўРёРїС‹ Р·Р°СЏРІРѕРє</h3>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Р§РµРєРё</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">РЈРІРµРґРѕРјР»РµРЅРёСЏ<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web">Р—Р°СЏРІРєРё</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Р’С‹Р№С‚Рё</a>
       </div>
     </div>
     {% set active_types = ticket_types|selectattr("is_active")|list|length %}
     <div class="types-hero mb-3">
       <div>
-        <span class="types-kicker">Каталог обращений</span>
-        <p class="types-title">Типы заявок задают единый язык классификации и облегчают фильтрацию в операционном потоке.</p>
+        <span class="types-kicker">РљР°С‚Р°Р»РѕРі РѕР±СЂР°С‰РµРЅРёР№</span>
+        <p class="types-title">РўРёРїС‹ Р·Р°СЏРІРѕРє Р·Р°РґР°СЋС‚ РµРґРёРЅС‹Р№ СЏР·С‹Рє РєР»Р°СЃСЃРёС„РёРєР°С†РёРё Рё РѕР±Р»РµРіС‡Р°СЋС‚ С„РёР»СЊС‚СЂР°С†РёСЋ РІ РѕРїРµСЂР°С†РёРѕРЅРЅРѕРј РїРѕС‚РѕРєРµ.</p>
       </div>
       <div class="types-kpi">
         <div class="types-kpi-card">
-          <span>Всего типов</span>
+          <span>Р’СЃРµРіРѕ С‚РёРїРѕРІ</span>
           <strong>{{ ticket_types|length }}</strong>
         </div>
         <div class="types-kpi-card">
-          <span>Активные</span>
+          <span>РђРєС‚РёРІРЅС‹Рµ</span>
           <strong>{{ active_types }}</strong>
         </div>
         <div class="types-kpi-card">
-          <span>Неактивные</span>
+          <span>РќРµР°РєС‚РёРІРЅС‹Рµ</span>
           <strong>{{ ticket_types|length - active_types }}</strong>
         </div>
       </div>
@@ -130,25 +130,25 @@
 
     <div class="card shadow-sm mb-3 types-card">
       <div class="card-body">
-        <h5 class="mb-3">Добавить тип заявки</h5>
+        <h5 class="mb-3">Р”РѕР±Р°РІРёС‚СЊ С‚РёРї Р·Р°СЏРІРєРё</h5>
         <form method="post" action="/web/ticket-types/create" class="row g-2">
           <div class="col-12 col-md-4">
-            <input name="name" class="form-control" placeholder="Название" required />
+            <input name="name" class="form-control" placeholder="РќР°Р·РІР°РЅРёРµ" required />
           </div>
           <div class="col-12 col-md-4">
-            <input name="description" class="form-control" placeholder="Описание (необязательно)" />
+            <input name="description" class="form-control" placeholder="РћРїРёСЃР°РЅРёРµ (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)" />
           </div>
           <div class="col-12 col-md-2">
-            <input name="archive_retention_days" type="number" min="1" max="3650" class="form-control" placeholder="Хранение, дн." />
+            <input name="archive_retention_days" type="number" min="1" max="3650" class="form-control" placeholder="РҐСЂР°РЅРµРЅРёРµ, РґРЅ." />
           </div>
           <div class="col-12 col-md-2 d-flex align-items-center">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_active" value="1" id="is_active_new" checked>
-              <label class="form-check-label" for="is_active_new">Активен</label>
+              <label class="form-check-label" for="is_active_new">РђРєС‚РёРІРµРЅ</label>
             </div>
           </div>
           <div class="col-12">
-            <button class="btn btn-primary">Создать</button>
+            <button class="btn btn-primary">РЎРѕР·РґР°С‚СЊ</button>
           </div>
         </form>
       </div>
@@ -158,24 +158,24 @@
       <div class="card shadow-sm mb-2 type-item">
         <div class="card-body">
           <div class="type-item-head">
-            <div class="type-id">Тип #{{ tt.id }}</div>
+            <div class="type-id">РўРёРї #{{ tt.id }}</div>
             {% if tt.is_active %}
-              <span class="badge text-bg-success">Активен</span>
+              <span class="badge text-bg-success">РђРєС‚РёРІРµРЅ</span>
             {% else %}
-              <span class="badge text-bg-secondary">Неактивен</span>
+              <span class="badge text-bg-secondary">РќРµР°РєС‚РёРІРµРЅ</span>
             {% endif %}
           </div>
           <form method="post" action="/web/ticket-types/{{ tt.id }}/update" class="row g-2">
             <div class="col-12 col-md-3">
-              <label class="form-label">Название</label>
+              <label class="form-label">РќР°Р·РІР°РЅРёРµ</label>
               <input name="name" class="form-control" value="{{ tt.name }}" required />
             </div>
             <div class="col-12 col-md-4">
-              <label class="form-label">Описание</label>
+              <label class="form-label">РћРїРёСЃР°РЅРёРµ</label>
               <input name="description" class="form-control" value="{{ tt.description or '' }}" />
             </div>
             <div class="col-12 col-md-3">
-              <label class="form-label">Хранение в архиве (дни)</label>
+              <label class="form-label">РҐСЂР°РЅРµРЅРёРµ РІ Р°СЂС…РёРІРµ (РґРЅРё)</label>
               <input
                 name="archive_retention_days"
                 type="number"
@@ -183,28 +183,28 @@
                 max="3650"
                 class="form-control"
                 value="{{ tt.archive_retention_days or '' }}"
-                placeholder="По умолчанию компании"
+                placeholder="РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РєРѕРјРїР°РЅРёРё"
               />
             </div>
             <div class="col-12 col-md-2 d-flex align-items-end">
               <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="active_{{ tt.id }}" {% if tt.is_active %}checked{% endif %}>
-                <label class="form-check-label" for="active_{{ tt.id }}">Активен</label>
+                <label class="form-check-label" for="active_{{ tt.id }}">РђРєС‚РёРІРµРЅ</label>
               </div>
             </div>
             <div class="col-12 d-flex gap-2">
-              <button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button>
+              <button class="btn btn-sm btn-outline-primary" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
             </div>
           </form>
-          <form class="mt-2" method="post" action="/web/ticket-types/{{ tt.id }}/delete" onsubmit="return confirm('Удалить тип заявки {{ tt.name }}?');">
-                <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+          <form class="mt-2" method="post" action="/web/ticket-types/{{ tt.id }}/delete" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ С‚РёРї Р·Р°СЏРІРєРё {{ tt.name }}?');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">РЈРґР°Р»РёС‚СЊ</button>
           </form>
         </div>
       </div>
     {% endfor %}
 
     {% if ticket_types|length == 0 %}
-      <div class="alert alert-info">Типов заявок пока нет.</div>
+      <div class="alert alert-info">РўРёРїРѕРІ Р·Р°СЏРІРѕРє РїРѕРєР° РЅРµС‚.</div>
     {% endif %}
   </div>
   <script src="/static/sw-register.js"></script>

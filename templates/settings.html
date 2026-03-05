@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Настройки</title>
+  <title>РќР°СЃС‚СЂРѕР№РєРё</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -90,55 +90,55 @@
   <div class="container py-4 service-shell" style="max-width: 1200px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-        <h3 class="mb-0">Настройки</h3>
-        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ user.role }})</div>
+        <h3 class="mb-0">РќР°СЃС‚СЂРѕР№РєРё</h3>
+        <div class="text-muted">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Р§РµРєРё</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">РЈРІРµРґРѕРјР»РµРЅРёСЏ<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web">Р—Р°СЏРІРєРё</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Р’С‹Р№С‚Рё</a>
       </div>
     </div>
     <div class="settings-hero mb-3">
       <div>
-        <span class="settings-kicker">Центр управления</span>
-        <p class="settings-title">Настройка уведомлений и доступ к административным разделам в едином рабочем контуре.</p>
+        <span class="settings-kicker">Р¦РµРЅС‚СЂ СѓРїСЂР°РІР»РµРЅРёСЏ</span>
+        <p class="settings-title">РќР°СЃС‚СЂРѕР№РєР° СѓРІРµРґРѕРјР»РµРЅРёР№ Рё РґРѕСЃС‚СѓРї Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅС‹Рј СЂР°Р·РґРµР»Р°Рј РІ РµРґРёРЅРѕРј СЂР°Р±РѕС‡РµРј РєРѕРЅС‚СѓСЂРµ.</p>
       </div>
       <div class="settings-chips">
-        <span class="settings-chip">Роль: {{ user.role }}</span>
-        <span class="settings-chip">Push: браузерные уведомления</span>
-        <span class="settings-chip">Оргструктура: {% if org_v2_enabled %}включена{% else %}выключена{% endif %}</span>
+        <span class="settings-chip">Р РѕР»СЊ: {{ user.role }}</span>
+        <span class="settings-chip">Push: Р±СЂР°СѓР·РµСЂРЅС‹Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ</span>
+        <span class="settings-chip">РћСЂРіСЃС‚СЂСѓРєС‚СѓСЂР°: {% if org_v2_enabled %}РІРєР»СЋС‡РµРЅР°{% else %}РІС‹РєР»СЋС‡РµРЅР°{% endif %}</span>
       </div>
     </div>
     {% if deadline_warning_saved %}
-      <div class="alert alert-success py-2">Порог желтой подсветки дедлайна сохранен.</div>
+      <div class="alert alert-success py-2">РџРѕСЂРѕРі Р¶РµР»С‚РѕР№ РїРѕРґСЃРІРµС‚РєРё РґРµРґР»Р°Р№РЅР° СЃРѕС…СЂР°РЅРµРЅ.</div>
     {% elif deadline_warning_error == "bad_value" %}
-      <div class="alert alert-danger py-2">Укажите число от {{ min_deadline_soon_warning_minutes }} до {{ max_deadline_soon_warning_minutes }} минут.</div>
+      <div class="alert alert-danger py-2">РЈРєР°Р¶РёС‚Рµ С‡РёСЃР»Рѕ РѕС‚ {{ min_deadline_soon_warning_minutes }} РґРѕ {{ max_deadline_soon_warning_minutes }} РјРёРЅСѓС‚.</div>
     {% elif deadline_warning_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить настройку. Попробуйте еще раз.</div>
+      <div class="alert alert-danger py-2">РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєСѓ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰Рµ СЂР°Р·.</div>
     {% endif %}
     {% if archive_retention_saved %}
-      <div class="alert alert-success py-2">Срок хранения архивных заявок сохранен.</div>
+      <div class="alert alert-success py-2">РЎСЂРѕРє С…СЂР°РЅРµРЅРёСЏ Р°СЂС…РёРІРЅС‹С… Р·Р°СЏРІРѕРє СЃРѕС…СЂР°РЅРµРЅ.</div>
     {% elif archive_retention_error == "bad_value" %}
-      <div class="alert alert-danger py-2">Укажите срок хранения от {{ min_archive_retention_days }} до {{ max_archive_retention_days }} дней.</div>
+      <div class="alert alert-danger py-2">РЈРєР°Р¶РёС‚Рµ СЃСЂРѕРє С…СЂР°РЅРµРЅРёСЏ РѕС‚ {{ min_archive_retention_days }} РґРѕ {{ max_archive_retention_days }} РґРЅРµР№.</div>
     {% elif archive_retention_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить срок хранения. Попробуйте еще раз.</div>
+      <div class="alert alert-danger py-2">РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЃСЂРѕРє С…СЂР°РЅРµРЅРёСЏ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰Рµ СЂР°Р·.</div>
     {% endif %}
     {% if watcher_comments_saved %}
-      <div class="alert alert-success py-2">Настройка уведомлений наблюдателя сохранена.</div>
+      <div class="alert alert-success py-2">РќР°СЃС‚СЂРѕР№РєР° СѓРІРµРґРѕРјР»РµРЅРёР№ РЅР°Р±Р»СЋРґР°С‚РµР»СЏ СЃРѕС…СЂР°РЅРµРЅР°.</div>
     {% elif watcher_comments_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений наблюдателя. Попробуйте еще раз.</div>
+      <div class="alert alert-danger py-2">РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєСѓ СѓРІРµРґРѕРјР»РµРЅРёР№ РЅР°Р±Р»СЋРґР°С‚РµР»СЏ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰Рµ СЂР°Р·.</div>
     {% endif %}
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
-        <h5 class="mb-2">Подсветка срока</h5>
-        <div class="settings-note mt-0">Желтым выделяются заявки, у которых до дедлайна осталось не больше указанного времени.</div>
+        <h5 class="mb-2">РџРѕРґСЃРІРµС‚РєР° СЃСЂРѕРєР°</h5>
+        <div class="settings-note mt-0">Р–РµР»С‚С‹Рј РІС‹РґРµР»СЏСЋС‚СЃСЏ Р·Р°СЏРІРєРё, Сѓ РєРѕС‚РѕСЂС‹С… РґРѕ РґРµРґР»Р°Р№РЅР° РѕСЃС‚Р°Р»РѕСЃСЊ РЅРµ Р±РѕР»СЊС€Рµ СѓРєР°Р·Р°РЅРЅРѕРіРѕ РІСЂРµРјРµРЅРё.</div>
         {% if can_manage_deadline_warning %}
           <form method="post" action="/web/settings/deadline-warning" class="row g-2 align-items-end mt-1">
             <div class="col-12 col-sm-6 col-md-4">
-              <label class="form-label mb-1">Порог (минут)</label>
+              <label class="form-label mb-1">РџРѕСЂРѕРі (РјРёРЅСѓС‚)</label>
               <input
                 type="number"
                 class="form-control"
@@ -151,13 +151,13 @@
               />
             </div>
             <div class="col-12 col-sm-auto">
-              <button class="btn btn-outline-primary">Сохранить</button>
+              <button class="btn btn-outline-primary">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
             </div>
           </form>
         {% else %}
           <div class="small text-muted mt-2">
-            Текущий порог: <b>{{ deadline_soon_warning_minutes }} мин.</b>
-            Изменять могут администратор и куратор.
+            РўРµРєСѓС‰РёР№ РїРѕСЂРѕРі: <b>{{ deadline_soon_warning_minutes }} РјРёРЅ.</b>
+            РР·РјРµРЅСЏС‚СЊ РјРѕРіСѓС‚ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Рё РєСѓСЂР°С‚РѕСЂ.
           </div>
         {% endif %}
       </div>
@@ -165,12 +165,12 @@
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
-        <h5 class="mb-2">Архив заявок</h5>
-        <div class="settings-note mt-0">Через этот срок архивная заявка и связанные данные удаляются фоновым процессом.</div>
+        <h5 class="mb-2">РђСЂС…РёРІ Р·Р°СЏРІРѕРє</h5>
+        <div class="settings-note mt-0">Р§РµСЂРµР· СЌС‚РѕС‚ СЃСЂРѕРє Р°СЂС…РёРІРЅР°СЏ Р·Р°СЏРІРєР° Рё СЃРІСЏР·Р°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ СѓРґР°Р»СЏСЋС‚СЃСЏ С„РѕРЅРѕРІС‹Рј РїСЂРѕС†РµСЃСЃРѕРј.</div>
         {% if can_manage_archive_retention %}
           <form method="post" action="/web/settings/archive-retention" class="row g-2 align-items-end mt-1">
             <div class="col-12 col-sm-6 col-md-4">
-              <label class="form-label mb-1">Срок хранения (дней)</label>
+              <label class="form-label mb-1">РЎСЂРѕРє С…СЂР°РЅРµРЅРёСЏ (РґРЅРµР№)</label>
               <input
                 type="number"
                 class="form-control"
@@ -183,13 +183,13 @@
               />
             </div>
             <div class="col-12 col-sm-auto">
-              <button class="btn btn-outline-primary">Сохранить</button>
+              <button class="btn btn-outline-primary">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
             </div>
           </form>
         {% else %}
           <div class="small text-muted mt-2">
-            Текущий срок хранения: <b>{{ archive_retention_days_default }} дн.</b>
-            Изменять могут администратор и куратор.
+            РўРµРєСѓС‰РёР№ СЃСЂРѕРє С…СЂР°РЅРµРЅРёСЏ: <b>{{ archive_retention_days_default }} РґРЅ.</b>
+            РР·РјРµРЅСЏС‚СЊ РјРѕРіСѓС‚ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Рё РєСѓСЂР°С‚РѕСЂ.
           </div>
         {% endif %}
       </div>
@@ -197,8 +197,8 @@
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
-        <h5 class="mb-2">Уведомления наблюдателя</h5>
-        <div class="settings-note mt-0">Если вы добавлены в наблюдатели заявки, будете получать уведомления о новых комментариях.</div>
+        <h5 class="mb-2">РЈРІРµРґРѕРјР»РµРЅРёСЏ РЅР°Р±Р»СЋРґР°С‚РµР»СЏ</h5>
+        <div class="settings-note mt-0">Р•СЃР»Рё РІС‹ РґРѕР±Р°РІР»РµРЅС‹ РІ РЅР°Р±Р»СЋРґР°С‚РµР»Рё Р·Р°СЏРІРєРё, Р±СѓРґРµС‚Рµ РїРѕР»СѓС‡Р°С‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ Рѕ РЅРѕРІС‹С… РєРѕРјРјРµРЅС‚Р°СЂРёСЏС….</div>
         <form method="post" action="/web/settings/watcher-comments" class="mt-2">
           <label class="form-check">
             <input
@@ -208,48 +208,48 @@
               value="1"
               {% if user.notify_comments_as_watcher %}checked{% endif %}
             />
-            <span class="form-check-label">Получать комментарии по наблюдаемым заявкам</span>
+            <span class="form-check-label">РџРѕР»СѓС‡Р°С‚СЊ РєРѕРјРјРµРЅС‚Р°СЂРёРё РїРѕ РЅР°Р±Р»СЋРґР°РµРјС‹Рј Р·Р°СЏРІРєР°Рј</span>
           </label>
-          <button class="btn btn-outline-primary mt-2">Сохранить</button>
+          <button class="btn btn-outline-primary mt-2">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
         </form>
       </div>
     </div>
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
-        <h5 class="mb-3">Push уведомления</h5>
+        <h5 class="mb-3">Push СѓРІРµРґРѕРјР»РµРЅРёСЏ</h5>
         <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button id="enable-push-btn" class="btn btn-outline-primary" type="button">Уведомления</button>
-          <button id="test-push-btn" class="btn btn-outline-success" type="button">Тест push</button>
+          <button id="enable-push-btn" class="btn btn-outline-primary" type="button">РЈРІРµРґРѕРјР»РµРЅРёСЏ</button>
+          <button id="test-push-btn" class="btn btn-outline-success" type="button">РўРµСЃС‚ push</button>
           <span id="test-push-result" class="small text-muted align-self-center"></span>
         </div>
-        <div class="settings-note">Включите push один раз в браузере, чтобы получать напоминания и события по заявкам.</div>
+        <div class="settings-note">Р’РєР»СЋС‡РёС‚Рµ push РѕРґРёРЅ СЂР°Р· РІ Р±СЂР°СѓР·РµСЂРµ, С‡С‚РѕР±С‹ РїРѕР»СѓС‡Р°С‚СЊ РЅР°РїРѕРјРёРЅР°РЅРёСЏ Рё СЃРѕР±С‹С‚РёСЏ РїРѕ Р·Р°СЏРІРєР°Рј.</div>
       </div>
     </div>
 
     <div class="card shadow-sm settings-card">
       <div class="card-body">
-        <h5 class="mb-3">Система</h5>
+        <h5 class="mb-3">РЎРёСЃС‚РµРјР°</h5>
         <div class="mb-3">
           <a class="btn btn-outline-primary" href="/web/pwa-check">PWA diagnostic</a>
         </div>
 
         {% if user.role == "PLATFORM_ADMIN" %}
           <div class="settings-links">
-            <a class="btn btn-outline-secondary" href="/web/admin/companies">Компании</a>
+            <a class="btn btn-outline-secondary" href="/web/admin/companies">РљРѕРјРїР°РЅРёРё</a>
           </div>
         {% elif user.role in ["ADMIN", "CURATOR"] %}
           <div class="settings-links">
-            <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
-            <a class="btn btn-outline-secondary" href="/web/ticket-types">Типы заявок</a>
-            <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны заявок</a>
-            <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
+            <a class="btn btn-outline-secondary" href="/web/projects">РџСЂРѕРµРєС‚С‹</a>
+            <a class="btn btn-outline-secondary" href="/web/ticket-types">РўРёРїС‹ Р·Р°СЏРІРѕРє</a>
+            <a class="btn btn-outline-secondary" href="/web/ticket-templates">РЁР°Р±Р»РѕРЅС‹ Р·Р°СЏРІРѕРє</a>
+            <a class="btn btn-outline-secondary" href="/web/users">РџРѕР»СЊР·РѕРІР°С‚РµР»Рё</a>
             {% if org_v2_enabled %}
-              <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
+              <a class="btn btn-outline-secondary" href="/web/org-structure">РћСЂРіСЃС‚СЂСѓРєС‚СѓСЂР°</a>
             {% endif %}
           </div>
         {% else %}
-          <div class="text-muted">Разделы управления доступны владельцу компании, куратору или администратору платформы.</div>
+          <div class="text-muted">Р Р°Р·РґРµР»С‹ СѓРїСЂР°РІР»РµРЅРёСЏ РґРѕСЃС‚СѓРїРЅС‹ РІР»Р°РґРµР»СЊС†Сѓ РєРѕРјРїР°РЅРёРё, РєСѓСЂР°С‚РѕСЂСѓ РёР»Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ РїР»Р°С‚С„РѕСЂРјС‹.</div>
         {% endif %}
       </div>
     </div>
