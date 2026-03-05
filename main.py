@@ -6201,6 +6201,7 @@ def web_receipts(
     date_from: str | None = None,
     date_to: str | None = None,
     q: str | None = None,
+    edit_id: str | None = None,
 ):
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
@@ -6227,6 +6228,7 @@ def web_receipts(
     date_from_value = parse_receipt_date(date_from)
     date_to_value = parse_receipt_date(date_to)
     q_value = (q or "").strip()
+    edit_id_int = parse_int(edit_id)
 
     projects = (
         db.query(Project.id, Project.name)
@@ -6288,7 +6290,7 @@ def web_receipts(
 
     ok = (request.query_params.get("ok") or "").strip().lower()
     err = (request.query_params.get("err") or "").strip().lower()
-    if ok not in {"created", "card_created", "status_updated", "bulk_updated"}:
+    if ok not in {"created", "card_created", "status_updated", "bulk_updated", "updated", "deleted"}:
         ok = ""
     if err not in {"missing_required", "bad_links", "bad_amount", "missing_files", "save_failed", "card_exists", "bad_status"}:
         err = ""
@@ -6315,6 +6317,7 @@ def web_receipts(
             "date_from_filter": date_from_value.isoformat() if date_from_value else "",
             "date_to_filter": date_to_value.isoformat() if date_to_value else "",
             "q_filter": q_value,
+            "edit_id": edit_id_int if edit_id_int is not None else 0,
             "ok": ok,
             "err": err,
             "can_manage_cards": is_manager(user),
@@ -6498,6 +6501,103 @@ async def web_receipt_update_status(
         db.rollback()
         return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
     return RedirectResponse(url=f"{next_url}", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/receipts/{receipt_id}/edit")
+async def web_receipt_edit(
+    receipt_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+    receipt = get_company_receipt_or_404(db, user, receipt_id)
+    if not can_access_receipt(user, receipt):
+        raise HTTPException(403, "Forbidden")
+    if user.role == Role.executor and receipt.created_by != user.id:
+        raise HTTPException(403, "Forbidden")
+
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/receipts?mode=field")
+    success_url = f"{next_url}&ok=updated" if "?" in next_url else f"{next_url}?ok=updated"
+    project_id_raw = (form.get("project_id") or "").strip()
+    card_id_raw = (form.get("card_id") or "").strip()
+    comment = (form.get("comment") or "").strip()
+    category = (form.get("category") or "").strip() or None
+    supplier = (form.get("supplier") or "").strip() or None
+    amount = parse_receipt_amount(form.get("amount"))
+    receipt_date = parse_receipt_date(form.get("receipt_date"))
+
+    if not project_id_raw or not card_id_raw:
+        return RedirectResponse(url="/web/receipts?err=missing_required", status_code=HTTP_303_SEE_OTHER)
+    if (form.get("amount") or "").strip() and amount is None:
+        return RedirectResponse(url="/web/receipts?err=bad_amount", status_code=HTTP_303_SEE_OTHER)
+    try:
+        project_id = int(project_id_raw)
+        card_id = int(card_id_raw)
+    except ValueError:
+        return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
+
+    project_exists = db.query(Project.id).filter(Project.id == project_id, Project.company_id == user.company_id).first()
+    card_exists = db.query(PaymentCard.id).filter(PaymentCard.id == card_id, PaymentCard.company_id == user.company_id).first()
+    if not project_exists or not card_exists:
+        return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
+
+    receipt.project_id = project_id
+    receipt.card_id = card_id
+    receipt.comment = comment or ""
+    receipt.amount = amount
+    receipt.receipt_date = receipt_date
+    receipt.category = category
+    receipt.supplier = supplier
+    receipt.updated_at = datetime.utcnow()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=success_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/receipts/{receipt_id}/delete")
+async def web_receipt_delete(
+    receipt_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+    receipt = get_company_receipt_or_404(db, user, receipt_id)
+    if not can_access_receipt(user, receipt):
+        raise HTTPException(403, "Forbidden")
+    if user.role == Role.executor and receipt.created_by != user.id:
+        raise HTTPException(403, "Forbidden")
+
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/receipts?mode=field")
+    success_url = f"{next_url}&ok=deleted" if "?" in next_url else f"{next_url}?ok=deleted"
+    files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id == receipt.id).all()
+    for file_row in files:
+        path = resolve_attachment_disk_path(file_row.file_path)
+        if not path:
+            continue
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            pass
+    db.query(ReceiptFile).filter(ReceiptFile.receipt_id == receipt.id).delete(synchronize_session=False)
+    db.delete(receipt)
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=success_url, status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/receipts/status/bulk")

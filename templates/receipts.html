@@ -36,6 +36,10 @@
 
     {% if ok == "created" %}
       <div class="alert alert-success py-2">Чек добавлен.</div>
+    {% elif ok == "updated" %}
+      <div class="alert alert-success py-2">Чек обновлен.</div>
+    {% elif ok == "deleted" %}
+      <div class="alert alert-success py-2">Чек удален.</div>
     {% elif ok == "card_created" %}
       <div class="alert alert-success py-2">Карта добавлена.</div>
     {% elif ok == "status_updated" or ok == "bulk_updated" %}
@@ -289,6 +293,62 @@
                   <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать {{ loop.index }}</a>
                 {% endfor %}
               </div>
+              {% if user.role == "EXECUTOR" and r.created_by == user.id %}
+                <div class="d-flex gap-2 flex-wrap mt-2">
+                  <a class="btn btn-sm btn-outline-primary" href="/web/receipts?mode={{ mode }}&edit_id={{ r.id }}">Изменить</a>
+                  <form method="post" action="/web/receipts/{{ r.id }}/delete" class="m-0" onsubmit="return confirm('Удалить чек #{{ r.id }}?');">
+                    <input type="hidden" name="next" value="/web/receipts?mode={{ mode }}" />
+                    <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                  </form>
+                </div>
+                {% if edit_id == r.id %}
+                  <form method="post" action="/web/receipts/{{ r.id }}/edit" class="row g-2 mt-2">
+                    <input type="hidden" name="next" value="/web/receipts?mode={{ mode }}" />
+                    <div class="col-12 col-md-6">
+                      <label class="form-label">Объект</label>
+                      <select name="project_id" class="form-select" required>
+                        {% for p in projects %}
+                          <option value="{{ p.id }}" {% if r.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label">Карта</label>
+                      <select name="card_id" class="form-select" required>
+                        {% for c in cards %}
+                          {% if c.is_active %}
+                            <option value="{{ c.id }}" {% if r.card_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                          {% endif %}
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label">Комментарий</label>
+                      <input name="comment" class="form-control" value="{{ r.comment or '' }}" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                      <label class="form-label">Сумма</label>
+                      <input name="amount" class="form-control" value="{% if r.amount is not none %}{{ '%.2f'|format(r.amount|float) }}{% endif %}" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                      <label class="form-label">Дата чека</label>
+                      <input type="date" name="receipt_date" class="form-control" value="{{ r.receipt_date.isoformat() if r.receipt_date else '' }}" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                      <label class="form-label">Категория</label>
+                      <input name="category" class="form-control" value="{{ r.category or '' }}" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                      <label class="form-label">Поставщик</label>
+                      <input name="supplier" class="form-control" value="{{ r.supplier or '' }}" />
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                      <button class="btn btn-sm btn-primary">Сохранить</button>
+                      <a class="btn btn-sm btn-outline-secondary" href="/web/receipts?mode={{ mode }}">Отмена</a>
+                    </div>
+                  </form>
+                {% endif %}
+              {% endif %}
               {% if can_manage_status %}
                 <form method="post" action="/web/receipts/{{ r.id }}/status" class="d-flex gap-2 mt-2">
                   <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
