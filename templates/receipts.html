@@ -71,6 +71,11 @@
         <a class="btn {% if mode == 'accounting' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=accounting">Бухгалтерский режим</a>
       </div>
     {% endif %}
+    <datalist id="receipt-project-options">
+      {% for p in projects %}
+        <option value="{{ p.name }} (#{{ p.id }})"></option>
+      {% endfor %}
+    </datalist>
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
@@ -86,15 +91,10 @@
             <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
           </div>
           <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
-          <div class="col-12 col-md-4" data-project-search>
+          <div class="col-12 col-md-4" data-project-combo>
             <label class="form-label">Объект</label>
-            <input type="text" class="form-control mb-1 project-filter" placeholder="Поиск объекта..." autocomplete="off" />
-            <select name="project_id" class="form-select project-select" required>
-              <option value="" selected disabled>Выберите объект</option>
-              {% for p in projects %}
-                <option value="{{ p.id }}">{{ p.name }}</option>
-              {% endfor %}
-            </select>
+            <input type="text" class="form-control project-combo-input" list="receipt-project-options" placeholder="Выберите или введите объект" autocomplete="off" />
+            <input type="hidden" name="project_id" class="project-id-hidden" required />
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">Карта</label>
@@ -311,14 +311,10 @@
                 {% if edit_id == r.id %}
                   <form method="post" action="/web/receipts/{{ r.id }}/edit" class="row g-2 mt-2">
                     <input type="hidden" name="next" value="/web/receipts?mode={{ mode }}" />
-                    <div class="col-12 col-md-6" data-project-search>
+                    <div class="col-12 col-md-6" data-project-combo>
                       <label class="form-label">Объект</label>
-                      <input type="text" class="form-control mb-1 project-filter" placeholder="Поиск объекта..." autocomplete="off" />
-                      <select name="project_id" class="form-select project-select" required>
-                        {% for p in projects %}
-                          <option value="{{ p.id }}" {% if r.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
-                        {% endfor %}
-                      </select>
+                      <input type="text" class="form-control project-combo-input" list="receipt-project-options" value="{{ projects_by_id.get(r.project_id, '') }} (#{{ r.project_id }})" placeholder="Выберите или введите объект" autocomplete="off" />
+                      <input type="hidden" name="project_id" class="project-id-hidden" value="{{ r.project_id }}" required />
                     </div>
                     <div class="col-12 col-md-6">
                       <label class="form-label">Карта</label>
@@ -411,21 +407,19 @@
         syncFormVariant();
       }
 
-      document.querySelectorAll('[data-project-search]').forEach((block) => {
-        const input = block.querySelector('.project-filter');
-        const select = block.querySelector('.project-select');
-        if (!input || !select) return;
-        input.addEventListener('input', () => {
-          const q = (input.value || '').trim().toLowerCase();
-          Array.from(select.options).forEach((opt, idx) => {
-            if (idx === 0 && !opt.value) {
-              opt.hidden = false;
-              return;
-            }
-            const txt = (opt.textContent || '').toLowerCase();
-            opt.hidden = !!q && !txt.includes(q);
-          });
-        });
+      document.querySelectorAll('[data-project-combo]').forEach((block) => {
+        const input = block.querySelector('.project-combo-input');
+        const hidden = block.querySelector('.project-id-hidden');
+        if (!input || !hidden) return;
+        const syncProjectId = () => {
+          const value = (input.value || '').trim();
+          const match = value.match(/\(#(\d+)\)\s*$/);
+          hidden.value = match ? match[1] : '';
+        };
+        input.addEventListener('input', syncProjectId);
+        input.addEventListener('change', syncProjectId);
+        input.addEventListener('blur', syncProjectId);
+        syncProjectId();
       });
 
       const modalEl = document.getElementById('receiptPreviewModal');
