@@ -1,6 +1,7 @@
 from calendar import monthrange
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import csv
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 import hashlib
 import io
@@ -12,16 +13,17 @@ import secrets
 import shutil
 import threading
 import time
+import zipfile
 from typing import Optional
 import uuid
 from urllib.parse import quote, urlsplit
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, Response, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Enum as SAEnum, Integer, Boolean, UniqueConstraint, func, or_, cast, text
+from sqlalchemy import create_engine, String, Text, DateTime, Date, ForeignKey, Enum as SAEnum, Integer, Boolean, Numeric, UniqueConstraint, func, or_, cast, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -128,6 +130,13 @@ class TicketStatus(str, Enum):
     archived = "ARCHIVED"
 
 
+class ReceiptStatus(str, Enum):
+    new = "NEW"
+    in_processing = "IN_PROCESSING"
+    accepted = "ACCEPTED"
+    rejected = "REJECTED"
+
+
 STATUS_LABELS_RU = {
     TicketStatus.new: "\u041d\u043e\u0432\u0430\u044f",
     TicketStatus.in_progress: "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
@@ -138,6 +147,12 @@ STATUS_LABELS_RU = {
 
 FINAL_TICKET_STATUSES = (TicketStatus.done, TicketStatus.canceled, TicketStatus.archived)
 ARCHIVE_SOURCE_STATUSES = (TicketStatus.done, TicketStatus.canceled)
+RECEIPT_STATUS_LABELS_RU = {
+    ReceiptStatus.new: "Новый",
+    ReceiptStatus.in_processing: "В обработке",
+    ReceiptStatus.accepted: "Принят",
+    ReceiptStatus.rejected: "Отклонён",
+}
 
 
 def status_label_ru(value: TicketStatus | str) -> str:
@@ -148,6 +163,16 @@ def status_label_ru(value: TicketStatus | str) -> str:
     except ValueError:
         return value
     return STATUS_LABELS_RU.get(status_value, status_value.value)
+
+
+def receipt_status_label_ru(value: ReceiptStatus | str) -> str:
+    if isinstance(value, ReceiptStatus):
+        return RECEIPT_STATUS_LABELS_RU.get(value, value.value)
+    try:
+        status_value = ReceiptStatus(value)
+    except ValueError:
+        return value
+    return RECEIPT_STATUS_LABELS_RU.get(status_value, status_value.value)
 
 class User(Base):
     __tablename__ = "users"
@@ -198,6 +223,47 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+
+
+class PaymentCard(Base):
+    __tablename__ = "payment_cards"
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_payment_cards_company_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Receipt(Base):
+    __tablename__ = "receipts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    card_id: Mapped[int] = mapped_column(ForeignKey("payment_cards.id"), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[ReceiptStatus] = mapped_column(SAEnum(ReceiptStatus), default=ReceiptStatus.new, index=True)
+    comment: Mapped[str] = mapped_column(Text)
+    amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), default=None)
+    receipt_date: Mapped[Optional[date]] = mapped_column(Date, default=None)
+    category: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    supplier: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    processed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ReceiptFile(Base):
+    __tablename__ = "receipt_files"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    receipt_id: Mapped[int] = mapped_column(ForeignKey("receipts.id"), index=True)
+    uploader_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    file_path: Mapped[str] = mapped_column(String(500))
+    original_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    file_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class UnitType(Base):
@@ -2181,8 +2247,102 @@ def get_company_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket
     return ticket
 
 
+def can_access_receipt(user: User, receipt: Receipt) -> bool:
+    if is_platform_admin(user):
+        return True
+    if is_manager(user):
+        return True
+    return bool(user.role == Role.executor and receipt.created_by == user.id)
+
+
+def get_company_receipt_or_404(db: Session, user: User, receipt_id: int) -> Receipt:
+    ensure_company_user(user)
+    receipt = db.get(Receipt, receipt_id)
+    if not receipt:
+        raise HTTPException(404, "Receipt not found")
+    if receipt.company_id != user.company_id:
+        raise HTTPException(403, "Forbidden")
+    return receipt
+
+
+def parse_receipt_date(raw: str | None) -> date | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def parse_receipt_amount(raw: str | None) -> Decimal | None:
+    value = (raw or "").strip().replace(",", ".")
+    if not value:
+        return None
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        return None
+    if amount < 0:
+        return None
+    return amount.quantize(Decimal("0.01"))
+
+
+def sanitize_export_token(raw: str | None, max_len: int = 40) -> str:
+    value = re.sub(r"[^0-9A-Za-z._-]+", "_", (raw or "").strip())
+    value = value.strip("._-")
+    if not value:
+        return "item"
+    return value[:max_len]
+
+
+def build_receipts_query(
+    db: Session,
+    user: User,
+    *,
+    status_filter: str | None = None,
+    project_id: int | None = None,
+    card_id: int | None = None,
+    employee_id: int | None = None,
+    date_from_value: date | None = None,
+    date_to_value: date | None = None,
+    q: str | None = None,
+):
+    query = db.query(Receipt).filter(Receipt.company_id == user.company_id)
+    if user.role == Role.executor:
+        query = query.filter(Receipt.created_by == user.id)
+
+    if status_filter:
+        try:
+            query = query.filter(Receipt.status == ReceiptStatus(status_filter))
+        except ValueError:
+            pass
+    if project_id is not None:
+        query = query.filter(Receipt.project_id == project_id)
+    if card_id is not None:
+        query = query.filter(Receipt.card_id == card_id)
+    if employee_id is not None:
+        query = query.filter(Receipt.created_by == employee_id)
+    if date_from_value is not None:
+        query = query.filter(cast(Receipt.created_at, Date) >= date_from_value)
+    if date_to_value is not None:
+        query = query.filter(cast(Receipt.created_at, Date) <= date_to_value)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                Receipt.comment.ilike(like),
+                Receipt.category.ilike(like),
+                Receipt.supplier.ilike(like),
+            )
+        )
+
+    return query.order_by(Receipt.id.desc())
+
+
 def delete_company_with_data(db: Session, company_id: int) -> None:
     ticket_ids = [row[0] for row in db.query(Ticket.id).filter(Ticket.company_id == company_id).all()]
+    receipt_ids = [row[0] for row in db.query(Receipt.id).filter(Receipt.company_id == company_id).all()]
     user_ids = [row[0] for row in db.query(User.id).filter(User.company_id == company_id).all()]
 
     if ticket_ids:
@@ -2202,8 +2362,22 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
         db.query(TicketLog).filter(TicketLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(TicketWatcher).filter(TicketWatcher.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
+    if receipt_ids:
+        receipt_files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).all()
+        for file_row in receipt_files:
+            path = resolve_attachment_disk_path(file_row.file_path)
+            if not path:
+                continue
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                pass
+        db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).delete(synchronize_session=False)
+        db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).delete(synchronize_session=False)
 
     db.query(Ticket).filter(Ticket.company_id == company_id).delete(synchronize_session=False)
+    db.query(PaymentCard).filter(PaymentCard.company_id == company_id).delete(synchronize_session=False)
     db.query(Project).filter(Project.company_id == company_id).delete(synchronize_session=False)
     db.query(RegistrationInvite).filter(RegistrationInvite.company_id == company_id).delete(synchronize_session=False)
     db.query(Notification).filter(Notification.company_id == company_id).delete(synchronize_session=False)
@@ -2283,6 +2457,7 @@ templates.env.globals["template_deadline_date_value"] = template_deadline_date_v
 templates.env.globals["template_deadline_mode"] = template_deadline_mode
 templates.env.globals["template_deadline_dom_value"] = template_deadline_dom_value
 templates.env.globals["fix_mojibake_text"] = fix_mojibake_text
+templates.env.globals["receipt_status_label_ru"] = receipt_status_label_ru
 
 
 @app.on_event("startup")
@@ -5886,6 +6061,522 @@ async def web_ticket_edit_save(
     db.commit()
 
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+# ====== WEB: Receipts ======
+@app.get("/web/receipts")
+def web_receipts(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    mode: str | None = None,
+    status_filter: str | None = None,
+    project_id: str | None = None,
+    card_id: str | None = None,
+    employee_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    q: str | None = None,
+):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+
+    mode_value = (mode or "").strip().lower()
+    if mode_value not in {"field", "accounting"}:
+        mode_value = "accounting" if is_manager(user) else "field"
+
+    def parse_int(raw: str | None) -> int | None:
+        value = (raw or "").strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    project_id_int = parse_int(project_id)
+    card_id_int = parse_int(card_id)
+    employee_id_int = parse_int(employee_id)
+    date_from_value = parse_receipt_date(date_from)
+    date_to_value = parse_receipt_date(date_to)
+    q_value = (q or "").strip()
+
+    projects = (
+        db.query(Project.id, Project.name)
+        .filter(Project.company_id == user.company_id)
+        .order_by(Project.name.asc())
+        .all()
+    )
+    cards = (
+        db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
+        .filter(PaymentCard.company_id == user.company_id)
+        .order_by(PaymentCard.name.asc())
+        .all()
+    )
+    employees = (
+        db.query(User.id, User.name)
+        .filter(User.company_id == user.company_id, User.role != Role.platform_admin)
+        .order_by(User.name.asc())
+        .all()
+    )
+
+    receipts = (
+        build_receipts_query(
+            db,
+            user,
+            status_filter=status_filter,
+            project_id=project_id_int,
+            card_id=card_id_int,
+            employee_id=employee_id_int,
+            date_from_value=date_from_value,
+            date_to_value=date_to_value,
+            q=q_value,
+        )
+        .limit(300)
+        .all()
+    )
+    receipt_ids = [r.id for r in receipts]
+    files = (
+        db.query(ReceiptFile)
+        .filter(ReceiptFile.receipt_id.in_(receipt_ids))
+        .order_by(ReceiptFile.id.asc())
+        .all()
+        if receipt_ids
+        else []
+    )
+    files_by_receipt: dict[int, list[ReceiptFile]] = {}
+    for file_row in files:
+        files_by_receipt.setdefault(file_row.receipt_id, []).append(file_row)
+
+    projects_by_id = {int(row[0]): row[1] for row in projects}
+    cards_by_id = {int(row[0]): row[1] for row in cards}
+    users_by_id = {int(row[0]): row[1] for row in employees}
+    status_options = [s.value for s in ReceiptStatus]
+
+    ok = (request.query_params.get("ok") or "").strip().lower()
+    err = (request.query_params.get("err") or "").strip().lower()
+    if ok not in {"created", "card_created", "status_updated", "bulk_updated"}:
+        ok = ""
+    if err not in {"missing_required", "bad_links", "bad_amount", "missing_files", "save_failed", "card_exists", "bad_status"}:
+        err = ""
+
+    return templates.TemplateResponse(
+        "receipts.html",
+        {
+            "request": request,
+            "user": user,
+            "mode": mode_value,
+            "receipts": receipts,
+            "files_by_receipt": files_by_receipt,
+            "projects": projects,
+            "cards": cards,
+            "employees": employees,
+            "projects_by_id": projects_by_id,
+            "cards_by_id": cards_by_id,
+            "users_by_id": users_by_id,
+            "status_options": status_options,
+            "status_filter": status_filter or "",
+            "project_id_filter": project_id_int if project_id_int is not None else "",
+            "card_id_filter": card_id_int if card_id_int is not None else "",
+            "employee_id_filter": employee_id_int if employee_id_int is not None else "",
+            "date_from_filter": date_from_value.isoformat() if date_from_value else "",
+            "date_to_filter": date_to_value.isoformat() if date_to_value else "",
+            "q_filter": q_value,
+            "ok": ok,
+            "err": err,
+            "can_manage_cards": is_manager(user),
+            "can_manage_status": is_manager(user),
+        },
+    )
+
+
+@app.post("/web/payment-cards/create")
+async def web_payment_cards_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return RedirectResponse(url="/web/receipts?err=missing_required", status_code=HTTP_303_SEE_OTHER)
+    exists = (
+        db.query(PaymentCard.id)
+        .filter(PaymentCard.company_id == user.company_id, func.lower(PaymentCard.name) == name.lower())
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/receipts?err=card_exists", status_code=HTTP_303_SEE_OTHER)
+    db.add(PaymentCard(company_id=user.company_id, name=name, is_active=True))
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/receipts?ok=card_created", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/receipts/create")
+async def web_receipts_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+    form = await request.form()
+    project_id_raw = (form.get("project_id") or "").strip()
+    card_id_raw = (form.get("card_id") or "").strip()
+    comment = (form.get("comment") or "").strip()
+    category = (form.get("category") or "").strip() or None
+    supplier = (form.get("supplier") or "").strip() or None
+    amount = parse_receipt_amount(form.get("amount"))
+    receipt_date = parse_receipt_date(form.get("receipt_date"))
+    uploads = [
+        item
+        for item in form.getlist("files")
+        if hasattr(item, "filename") and ((getattr(item, "filename", "") or "").strip())
+    ]
+
+    if not project_id_raw or not card_id_raw or not comment:
+        return RedirectResponse(url="/web/receipts?err=missing_required", status_code=HTTP_303_SEE_OTHER)
+    if not uploads:
+        return RedirectResponse(url="/web/receipts?err=missing_files&mode=field", status_code=HTTP_303_SEE_OTHER)
+    if (form.get("amount") or "").strip() and amount is None:
+        return RedirectResponse(url="/web/receipts?err=bad_amount&mode=field", status_code=HTTP_303_SEE_OTHER)
+
+    try:
+        project_id = int(project_id_raw)
+        card_id = int(card_id_raw)
+    except ValueError:
+        return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
+
+    project_exists = db.query(Project.id).filter(Project.id == project_id, Project.company_id == user.company_id).first()
+    card_exists = db.query(PaymentCard.id).filter(PaymentCard.id == card_id, PaymentCard.company_id == user.company_id).first()
+    if not project_exists or not card_exists:
+        return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
+
+    written_paths: list[Path] = []
+    try:
+        receipt = Receipt(
+            company_id=user.company_id,
+            project_id=project_id,
+            card_id=card_id,
+            created_by=user.id,
+            status=ReceiptStatus.new,
+            comment=comment,
+            amount=amount,
+            receipt_date=receipt_date,
+            category=category,
+            supplier=supplier,
+        )
+        db.add(receipt)
+        db.flush()
+        for upload in uploads:
+            safe_name = make_safe_upload_name(upload.filename, ticket_id=receipt.id)
+            dest_path = UPLOAD_DIR / safe_name
+            await write_upload_file_async(upload, dest_path)
+            written_paths.append(dest_path)
+            file_hash, file_size = compute_file_sha256_and_size(dest_path)
+            db.add(
+                ReceiptFile(
+                    receipt_id=receipt.id,
+                    uploader_id=user.id,
+                    file_path=f"/uploads/{safe_name}",
+                    original_name=(upload.filename or "")[:255] or None,
+                    file_size_bytes=file_size,
+                    file_sha256=file_hash,
+                )
+            )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        for path in written_paths:
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                pass
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+
+    return RedirectResponse(url="/web/receipts?ok=created&mode=field", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/receipts/{receipt_id}/status")
+async def web_receipt_update_status(
+    receipt_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    receipt = get_company_receipt_or_404(db, user, receipt_id)
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/receipts")
+    status_raw = (form.get("status") or "").strip()
+    try:
+        new_status = ReceiptStatus(status_raw)
+    except ValueError:
+        return RedirectResponse(url="/web/receipts?err=bad_status", status_code=HTTP_303_SEE_OTHER)
+    receipt.status = new_status
+    receipt.updated_at = datetime.utcnow()
+    if new_status in (ReceiptStatus.accepted, ReceiptStatus.rejected):
+        receipt.processed_at = datetime.utcnow()
+        receipt.processed_by = user.id
+    else:
+        receipt.processed_at = None
+        receipt.processed_by = None
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"{next_url}", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/receipts/status/bulk")
+async def web_receipt_bulk_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not is_manager(user):
+        raise HTTPException(403, "Only admin or curator")
+    ensure_company_user(user)
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web/receipts")
+    status_raw = (form.get("status") or "").strip()
+    try:
+        new_status = ReceiptStatus(status_raw)
+    except ValueError:
+        return RedirectResponse(url="/web/receipts?err=bad_status", status_code=HTTP_303_SEE_OTHER)
+
+    receipt_ids: list[int] = []
+    for raw_id in form.getlist("receipt_ids"):
+        try:
+            receipt_ids.append(int((raw_id or "").strip()))
+        except (TypeError, ValueError):
+            continue
+    if not receipt_ids:
+        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+    receipts = (
+        db.query(Receipt)
+        .filter(Receipt.company_id == user.company_id, Receipt.id.in_(receipt_ids))
+        .all()
+    )
+    now = datetime.utcnow()
+    for receipt in receipts:
+        receipt.status = new_status
+        receipt.updated_at = now
+        if new_status in (ReceiptStatus.accepted, ReceiptStatus.rejected):
+            receipt.processed_at = now
+            receipt.processed_by = user.id
+        else:
+            receipt.processed_at = None
+            receipt.processed_by = None
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.get("/web/receipt-files/{file_id}")
+def web_receipt_file_download(
+    file_id: int,
+    download: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    file_row = db.get(ReceiptFile, file_id)
+    if not file_row:
+        raise HTTPException(404, "Receipt file not found")
+    receipt = get_company_receipt_or_404(db, user, file_row.receipt_id)
+    if not can_access_receipt(user, receipt):
+        raise HTTPException(403, "Forbidden")
+    disk_path = resolve_attachment_disk_path(file_row.file_path)
+    if not disk_path or not disk_path.exists() or not disk_path.is_file():
+        raise HTTPException(404, "File not found")
+    display_name = ((file_row.original_name or "").strip() or disk_path.name)[:255]
+    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
+    return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
+
+
+@app.get("/web/receipts/export.xlsx")
+def web_receipts_export_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    status_filter: str | None = None,
+    project_id: str | None = None,
+    card_id: str | None = None,
+    employee_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    q: str | None = None,
+):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+
+    def parse_int(raw: str | None) -> int | None:
+        value = (raw or "").strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    receipts = build_receipts_query(
+        db,
+        user,
+        status_filter=status_filter,
+        project_id=parse_int(project_id),
+        card_id=parse_int(card_id),
+        employee_id=parse_int(employee_id),
+        date_from_value=parse_receipt_date(date_from),
+        date_to_value=parse_receipt_date(date_to),
+        q=(q or "").strip(),
+    ).all()
+    ids = [r.id for r in receipts]
+    first_files = {}
+    if ids:
+        for file_row in db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(ids)).order_by(ReceiptFile.id.asc()).all():
+            first_files.setdefault(file_row.receipt_id, file_row.id)
+    projects = {int(row[0]): row[1] for row in db.query(Project.id, Project.name).filter(Project.company_id == user.company_id).all()}
+    cards = {int(row[0]): row[1] for row in db.query(PaymentCard.id, PaymentCard.name).filter(PaymentCard.company_id == user.company_id).all()}
+    users = {int(row[0]): row[1] for row in db.query(User.id, User.name).filter(User.company_id == user.company_id).all()}
+    base_url = str(request.base_url).rstrip("/")
+
+    try:
+        from openpyxl import Workbook  # type: ignore
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Receipts"
+        ws.append(["Дата", "Объект", "Карта", "Сотрудник", "Сумма", "Комментарий", "Статус", "Ссылка на файл"])
+        for receipt in receipts:
+            file_id = first_files.get(receipt.id)
+            file_url = f"{base_url}/web/receipt-files/{file_id}?download=1" if file_id else ""
+            ws.append(
+                [
+                    receipt.receipt_date.isoformat() if receipt.receipt_date else receipt.created_at.date().isoformat(),
+                    projects.get(receipt.project_id, f"#{receipt.project_id}"),
+                    cards.get(receipt.card_id, f"#{receipt.card_id}"),
+                    users.get(receipt.created_by, f"#{receipt.created_by}"),
+                    float(receipt.amount) if receipt.amount is not None else None,
+                    receipt.comment,
+                    receipt_status_label_ru(receipt.status),
+                    file_url,
+                ]
+            )
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
+        )
+    except Exception:
+        text_buffer = io.StringIO()
+        writer = csv.writer(text_buffer, delimiter=";")
+        writer.writerow(["Дата", "Объект", "Карта", "Сотрудник", "Сумма", "Комментарий", "Статус", "Ссылка на файл"])
+        for receipt in receipts:
+            file_id = first_files.get(receipt.id)
+            file_url = f"{base_url}/web/receipt-files/{file_id}?download=1" if file_id else ""
+            writer.writerow(
+                [
+                    receipt.receipt_date.isoformat() if receipt.receipt_date else receipt.created_at.date().isoformat(),
+                    projects.get(receipt.project_id, f"#{receipt.project_id}"),
+                    cards.get(receipt.card_id, f"#{receipt.card_id}"),
+                    users.get(receipt.created_by, f"#{receipt.created_by}"),
+                    str(receipt.amount or ""),
+                    receipt.comment,
+                    receipt_status_label_ru(receipt.status),
+                    file_url,
+                ]
+            )
+        payload = ("\ufeff" + text_buffer.getvalue()).encode("utf-8")
+        filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        return Response(payload, media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.get("/web/receipts/export.zip")
+def web_receipts_export_zip(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    status_filter: str | None = None,
+    project_id: str | None = None,
+    card_id: str | None = None,
+    employee_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    q: str | None = None,
+):
+    if user.role not in (Role.admin, Role.curator, Role.executor):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+
+    def parse_int(raw: str | None) -> int | None:
+        value = (raw or "").strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    receipts = build_receipts_query(
+        db,
+        user,
+        status_filter=status_filter,
+        project_id=parse_int(project_id),
+        card_id=parse_int(card_id),
+        employee_id=parse_int(employee_id),
+        date_from_value=parse_receipt_date(date_from),
+        date_to_value=parse_receipt_date(date_to),
+        q=(q or "").strip(),
+    ).all()
+    if not receipts:
+        raise HTTPException(400, "No receipts for selected filters")
+    receipt_ids = [r.id for r in receipts]
+    files = (
+        db.query(ReceiptFile)
+        .filter(ReceiptFile.receipt_id.in_(receipt_ids))
+        .order_by(ReceiptFile.receipt_id.asc(), ReceiptFile.id.asc())
+        .all()
+    )
+    if not files:
+        raise HTTPException(400, "No files for selected receipts")
+
+    cards = {int(row[0]): row[1] for row in db.query(PaymentCard.id, PaymentCard.name).filter(PaymentCard.company_id == user.company_id).all()}
+    receipts_by_id = {r.id: r for r in receipts}
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for file_row in files:
+            receipt = receipts_by_id.get(file_row.receipt_id)
+            if not receipt:
+                continue
+            disk_path = resolve_attachment_disk_path(file_row.file_path)
+            if not disk_path or not disk_path.exists() or not disk_path.is_file():
+                continue
+            ext = Path(file_row.original_name or disk_path.name).suffix.lower() or ".bin"
+            dt_str = (receipt.receipt_date or receipt.created_at.date()).isoformat()
+            card_name = sanitize_export_token(cards.get(receipt.card_id, f"card{receipt.card_id}"), max_len=24)
+            comment = sanitize_export_token(receipt.comment, max_len=24)
+            amount_token = sanitize_export_token(str(receipt.amount or ""), max_len=12)
+            arcname = f"{dt_str}_{card_name}_{comment}_{amount_token}_r{receipt.id}_f{file_row.id}{ext}"
+            zf.write(disk_path, arcname=arcname)
+    output.seek(0)
+    filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(output, media_type="application/zip", headers=headers)
 
 
 # ====== WEB: Projects ======
