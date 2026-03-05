@@ -6208,7 +6208,7 @@ def web_receipts(
 
     mode_value = (mode or "").strip().lower()
     if mode_value not in {"field", "accounting"}:
-        mode_value = "accounting" if is_manager(user) else "field"
+        mode_value = "field"
 
     def parse_int(raw: str | None) -> int | None:
         value = (raw or "").strip()

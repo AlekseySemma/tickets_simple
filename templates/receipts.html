@@ -65,6 +65,15 @@
     <div class="card shadow-sm mb-3">
       <div class="card-body">
         <h5 class="mb-3">Добавить чек</h5>
+        <div class="mb-3">
+          <div class="btn-group" role="group" aria-label="Вариант формы чека">
+            <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-short" autocomplete="off" checked>
+            <label class="btn btn-outline-primary" for="receipt-form-short">Короткий</label>
+            <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-full" autocomplete="off">
+            <label class="btn btn-outline-primary" for="receipt-form-full">Полный</label>
+          </div>
+          <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
+        </div>
         <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
           <div class="col-12 col-md-4">
             <label class="form-label">Объект</label>
@@ -88,19 +97,19 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-4" data-full-only>
             <label class="form-label">Сумма (опционально)</label>
             <input name="amount" class="form-control" placeholder="1500.00" />
           </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-4" data-full-only>
             <label class="form-label">Дата чека (опционально)</label>
             <input type="date" name="receipt_date" class="form-control" />
           </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-4" data-full-only>
             <label class="form-label">Категория</label>
             <input name="category" class="form-control" placeholder="Гвозди / топливо" />
           </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-4" data-full-only>
             <label class="form-label">Поставщик</label>
             <input name="supplier" class="form-control" placeholder="Леруа / АЗС" />
           </div>
@@ -295,5 +304,23 @@
   </div>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
+  <script>
+    (function() {
+      const shortRadio = document.getElementById('receipt-form-short');
+      const fullRadio = document.getElementById('receipt-form-full');
+      const fullOnlyBlocks = document.querySelectorAll('[data-full-only]');
+      function syncFormVariant() {
+        const isFull = !!(fullRadio && fullRadio.checked);
+        fullOnlyBlocks.forEach((el) => {
+          el.classList.toggle('d-none', !isFull);
+        });
+      }
+      if (shortRadio && fullRadio) {
+        shortRadio.addEventListener('change', syncFormVariant);
+        fullRadio.addEventListener('change', syncFormVariant);
+        syncFormVariant();
+      }
+    })();
+  </script>
 </body>
 </html>
