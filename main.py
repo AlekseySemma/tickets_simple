@@ -182,6 +182,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+    preferred_payment_card_id: Mapped[Optional[int]] = mapped_column(ForeignKey("payment_cards.id"), index=True, default=None)
     bk_last4: Mapped[Optional[str]] = mapped_column(String(4), default=None)
     notify_comments_as_watcher: Mapped[bool] = mapped_column(
         Boolean,
@@ -506,6 +507,7 @@ class UserCreate(BaseModel):
     password: str
     role: Role
     bk_last4: Optional[str] = None
+    preferred_payment_card_id: Optional[int] = None
 
 class UserOut(BaseModel):
     id: int
@@ -514,6 +516,7 @@ class UserOut(BaseModel):
     role: Role
     company_id: Optional[int] = None
     bk_last4: Optional[str] = None
+    preferred_payment_card_id: Optional[int] = None
     class Config:
         from_attributes = True
 
@@ -2754,6 +2757,15 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
     bk_last4 = normalize_bk_last4(payload.bk_last4)
     if payload.bk_last4 and bk_last4 is None:
         raise HTTPException(422, "bk_last4 must contain exactly 4 digits")
+    preferred_card_id = payload.preferred_payment_card_id
+    if preferred_card_id is not None:
+        exists = (
+            db.query(PaymentCard.id)
+            .filter(PaymentCard.id == preferred_card_id, PaymentCard.company_id == _admin.company_id, PaymentCard.is_active.is_(True))
+            .first()
+        )
+        if not exists:
+            raise HTTPException(422, "preferred_payment_card_id is invalid")
     u = User(
         email=payload.email,
         name=payload.name,
@@ -2761,6 +2773,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
         role=payload.role,
         company_id=_admin.company_id,
         bk_last4=bk_last4,
+        preferred_payment_card_id=preferred_card_id,
     )
     db.add(u); db.commit(); db.refresh(u)
     return u
@@ -4091,10 +4104,20 @@ def web_settings(
     watcher_comments_error = (request.query_params.get("watcher_comments_error") or "").strip().lower()
     if watcher_comments_error not in {"save_failed"}:
         watcher_comments_error = ""
-    bk_last4_saved = (request.query_params.get("bk_last4_saved") or "").strip() == "1"
-    bk_last4_error = (request.query_params.get("bk_last4_error") or "").strip().lower()
-    if bk_last4_error not in {"bad_value", "save_failed"}:
-        bk_last4_error = ""
+    preferred_card_saved = (request.query_params.get("preferred_card_saved") or "").strip() == "1"
+    preferred_card_error = (request.query_params.get("preferred_card_error") or "").strip().lower()
+    if preferred_card_error not in {"bad_value", "save_failed"}:
+        preferred_card_error = ""
+    card_created = (request.query_params.get("card_created") or "").strip() == "1"
+    card_create_error = (request.query_params.get("card_create_error") or "").strip().lower()
+    if card_create_error not in {"missing_required", "card_exists", "save_failed"}:
+        card_create_error = ""
+    cards = (
+        db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
+        .filter(PaymentCard.company_id == user.company_id)
+        .order_by(PaymentCard.name.asc())
+        .all()
+    ) if user.company_id is not None else []
     can_manage_deadline_warning = user.role in (Role.admin, Role.curator)
     can_manage_archive_retention = user.role in (Role.admin, Role.curator)
     return templates.TemplateResponse(
@@ -4111,11 +4134,15 @@ def web_settings(
             "archive_retention_error": archive_retention_error,
             "watcher_comments_saved": watcher_comments_saved,
             "watcher_comments_error": watcher_comments_error,
-            "bk_last4_saved": bk_last4_saved,
-            "bk_last4_error": bk_last4_error,
-            "bk_last4_value": user.bk_last4 or "",
+            "preferred_card_saved": preferred_card_saved,
+            "preferred_card_error": preferred_card_error,
+            "card_created": card_created,
+            "card_create_error": card_create_error,
+            "cards": cards,
+            "preferred_payment_card_id": user.preferred_payment_card_id,
             "can_manage_deadline_warning": can_manage_deadline_warning,
             "can_manage_archive_retention": can_manage_archive_retention,
+            "can_manage_cards": user.role in (Role.admin, Role.curator),
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
             "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
             "min_archive_retention_days": MIN_ARCHIVE_RETENTION_DAYS,
@@ -4206,31 +4233,52 @@ async def web_settings_watcher_comments(
     return RedirectResponse(url="/web/settings?watcher_comments_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
-@app.post("/web/settings/bk-last4")
-async def web_settings_bk_last4(
+@app.post("/web/settings/preferred-card")
+async def web_settings_preferred_card(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    ensure_company_user(user)
     form = await request.form()
-    raw_value = (form.get("bk_last4") or "").strip()
-    parsed = normalize_bk_last4(raw_value)
-    if raw_value and parsed is None:
+    raw_value = (form.get("preferred_payment_card_id") or "").strip()
+    preferred_card_id: int | None = None
+    if raw_value:
+        try:
+            preferred_card_id = int(raw_value)
+        except ValueError:
+            preferred_card_id = None
+    if raw_value and preferred_card_id is None:
         return RedirectResponse(
-            url="/web/settings?bk_last4_error=bad_value",
+            url="/web/settings?preferred_card_error=bad_value",
             status_code=HTTP_303_SEE_OTHER,
         )
+    if preferred_card_id is not None:
+        exists = (
+            db.query(PaymentCard.id)
+            .filter(
+                PaymentCard.id == preferred_card_id,
+                PaymentCard.company_id == user.company_id,
+                PaymentCard.is_active.is_(True),
+            )
+            .first()
+        )
+        if not exists:
+            return RedirectResponse(
+                url="/web/settings?preferred_card_error=bad_value",
+                status_code=HTTP_303_SEE_OTHER,
+            )
     try:
-        user.bk_last4 = parsed
+        user.preferred_payment_card_id = preferred_card_id
         db.add(user)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url="/web/settings?bk_last4_error=save_failed",
+            url="/web/settings?preferred_card_error=save_failed",
             status_code=HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url="/web/settings?bk_last4_saved=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/settings?preferred_card_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/notifications")
@@ -6184,7 +6232,12 @@ def web_receipts(
         .order_by(PaymentCard.name.asc())
         .all()
     )
-    preferred_card_id = resolve_preferred_card_id(cards, user.bk_last4)
+    preferred_card_id = None
+    if user.preferred_payment_card_id is not None:
+        for card in cards:
+            if int(card.id) == int(user.preferred_payment_card_id) and bool(card.is_active):
+                preferred_card_id = int(card.id)
+                break
     employees = (
         db.query(User.id, User.name)
         .filter(User.company_id == user.company_id, User.role != Role.platform_admin)
@@ -6271,21 +6324,21 @@ async def web_payment_cards_create(request: Request, db: Session = Depends(get_d
     form = await request.form()
     name = (form.get("name") or "").strip()
     if not name:
-        return RedirectResponse(url="/web/receipts?err=missing_required", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/web/settings?card_create_error=missing_required", status_code=HTTP_303_SEE_OTHER)
     exists = (
         db.query(PaymentCard.id)
         .filter(PaymentCard.company_id == user.company_id, func.lower(PaymentCard.name) == name.lower())
         .first()
     )
     if exists:
-        return RedirectResponse(url="/web/receipts?err=card_exists", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/web/settings?card_create_error=card_exists", status_code=HTTP_303_SEE_OTHER)
     db.add(PaymentCard(company_id=user.company_id, name=name, is_active=True))
     try:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/receipts?ok=card_created", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/web/settings?card_create_error=save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/settings?card_created=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/receipts/create")
