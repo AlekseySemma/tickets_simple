@@ -57,10 +57,16 @@
       <div class="alert alert-danger py-2">Не удалось сохранить изменения.</div>
     {% endif %}
 
-    <div class="d-flex gap-2 mb-3">
-      <a class="btn {% if mode == 'field' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=field">Полевой режим</a>
-      <a class="btn {% if mode == 'accounting' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=accounting">Бухгалтерский режим</a>
-    </div>
+    {% if user.role == "EXECUTOR" %}
+      <div class="d-flex gap-2 mb-3">
+        <span class="btn btn-primary disabled">Полевой режим</span>
+      </div>
+    {% else %}
+      <div class="d-flex gap-2 mb-3">
+        <a class="btn {% if mode == 'field' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=field">Полевой режим</a>
+        <a class="btn {% if mode == 'accounting' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=accounting">Бухгалтерский режим</a>
+      </div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
