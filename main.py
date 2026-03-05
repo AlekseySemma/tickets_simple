@@ -6400,7 +6400,7 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
         if hasattr(item, "filename") and ((getattr(item, "filename", "") or "").strip())
     ]
 
-    if not project_id_raw or not card_id_raw or not comment:
+    if not project_id_raw or not card_id_raw:
         return RedirectResponse(url="/web/receipts?err=missing_required", status_code=HTTP_303_SEE_OTHER)
     if not uploads:
         return RedirectResponse(url="/web/receipts?err=missing_files&mode=field", status_code=HTTP_303_SEE_OTHER)
@@ -6426,7 +6426,7 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
             card_id=card_id,
             created_by=user.id,
             status=ReceiptStatus.new,
-            comment=comment,
+            comment=comment or "",
             amount=amount,
             receipt_date=receipt_date,
             category=category,
