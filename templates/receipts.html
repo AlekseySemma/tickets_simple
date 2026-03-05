@@ -78,7 +78,9 @@
           <div class="col-12 col-md-4">
             <label class="form-label">Карта</label>
             <select name="card_id" class="form-select" required>
-              <option value="" selected disabled>Выберите карту</option>
+              <option value="" {% if not preferred_card_id %}selected{% endif %} disabled>
+                {% if preferred_card_id %}Выберите карту{% else %}Карта из настроек не найдена{% endif %}
+              </option>
               {% for c in cards %}
                 {% if c.is_active %}
                   <option value="{{ c.id }}" {% if preferred_card_id == c.id %}selected{% endif %}>{{ c.name }}</option>
@@ -116,23 +118,6 @@
         </form>
       </div>
     </div>
-
-    {% if can_manage_cards %}
-      <div class="card shadow-sm mb-3">
-        <div class="card-body">
-          <h5 class="mb-3">Справочник карт</h5>
-          <form method="post" action="/web/payment-cards/create" class="row g-2 align-items-end">
-            <div class="col-12 col-md-6">
-              <label class="form-label">Новая карта</label>
-              <input name="name" class="form-control" placeholder="БК 1234 / Тинькофф 5678" required />
-            </div>
-            <div class="col-12 col-md-3">
-              <button class="btn btn-outline-primary">Добавить карту</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    {% endif %}
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
