@@ -177,9 +177,6 @@
           <div class="col-12 col-md-4">
             <input name="password" type="password" class="form-control" placeholder="Пароль" required />
           </div>
-          <div class="col-12 col-md-4">
-            <input name="bk_last4" class="form-control" placeholder="4 цифры БК (например 1234)" pattern="\d{4}" maxlength="4" />
-          </div>
           {% if user.role == "ADMIN" %}
             <div class="col-12 col-md-4">
               <select name="role" class="form-select" required>
@@ -271,10 +268,6 @@
                     <label class="form-label mb-1">Новый пароль</label>
                     <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
                   </div>
-                  <div class="col-12 col-md-2">
-                    <label class="form-label mb-1">БК (4)</label>
-                    <input name="bk_last4" class="form-control" value="{{ u.bk_last4 or '' }}" pattern="\d{4}" maxlength="4" placeholder="1234" />
-                  </div>
                   <div class="col-12 col-md-2 d-grid">
                     <button class="btn btn-outline-primary">Сохранить</button>
                   </div>
@@ -311,10 +304,6 @@
                 <div class="col-12 col-md-2">
                   <label class="form-label mb-1">Новый пароль</label>
                   <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
-                </div>
-                <div class="col-12 col-md-2">
-                  <label class="form-label mb-1">БК (4)</label>
-                  <input name="bk_last4" class="form-control" value="{{ u.bk_last4 or '' }}" pattern="\d{4}" maxlength="4" placeholder="1234" />
                 </div>
                 <div class="col-12 col-md-2 d-grid">
                   <button class="btn btn-outline-primary">Сохранить</button>

@@ -4084,6 +4084,10 @@ def web_settings(
     watcher_comments_error = (request.query_params.get("watcher_comments_error") or "").strip().lower()
     if watcher_comments_error not in {"save_failed"}:
         watcher_comments_error = ""
+    bk_last4_saved = (request.query_params.get("bk_last4_saved") or "").strip() == "1"
+    bk_last4_error = (request.query_params.get("bk_last4_error") or "").strip().lower()
+    if bk_last4_error not in {"bad_value", "save_failed"}:
+        bk_last4_error = ""
     can_manage_deadline_warning = user.role in (Role.admin, Role.curator)
     can_manage_archive_retention = user.role in (Role.admin, Role.curator)
     return templates.TemplateResponse(
@@ -4100,6 +4104,9 @@ def web_settings(
             "archive_retention_error": archive_retention_error,
             "watcher_comments_saved": watcher_comments_saved,
             "watcher_comments_error": watcher_comments_error,
+            "bk_last4_saved": bk_last4_saved,
+            "bk_last4_error": bk_last4_error,
+            "bk_last4_value": user.bk_last4 or "",
             "can_manage_deadline_warning": can_manage_deadline_warning,
             "can_manage_archive_retention": can_manage_archive_retention,
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
@@ -4190,6 +4197,33 @@ async def web_settings_watcher_comments(
             status_code=HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(url="/web/settings?watcher_comments_saved=1", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/settings/bk-last4")
+async def web_settings_bk_last4(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    form = await request.form()
+    raw_value = (form.get("bk_last4") or "").strip()
+    parsed = normalize_bk_last4(raw_value)
+    if raw_value and parsed is None:
+        return RedirectResponse(
+            url="/web/settings?bk_last4_error=bad_value",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    try:
+        user.bk_last4 = parsed
+        db.add(user)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url="/web/settings?bk_last4_error=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url="/web/settings?bk_last4_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/notifications")
@@ -7072,7 +7106,7 @@ def web_users(
         raise HTTPException(403, "Forbidden")
 
     users = (
-        db.query(User.id, User.name, User.email, User.role, User.bk_last4)
+        db.query(User.id, User.name, User.email, User.role)
         .filter(
             User.company_id == user.company_id,
             User.role.in_(allowed_roles),
@@ -7177,15 +7211,12 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
-    bk_last4 = normalize_bk_last4(form.get("bk_last4"))
     role_raw = (form.get("role") or "").strip().upper()
     allowed_roles = manageable_roles_for_web_user_management(user)
     if not allowed_roles:
         raise HTTPException(403, "Forbidden")
 
     if not (name and email and password):
-        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
-    if (form.get("bk_last4") or "").strip() and bk_last4 is None:
         return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
     if db.query(User.id).filter(User.email == email).first():
         return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
@@ -7205,7 +7236,6 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
         password_hash=hash_password(password),
         role=role_value,
         company_id=user.company_id,
-        bk_last4=bk_last4,
     )
     try:
         db.add(u)
@@ -7230,11 +7260,7 @@ async def web_users_update(
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
-    bk_last4_raw = (form.get("bk_last4") or "").strip()
-    bk_last4 = normalize_bk_last4(bk_last4_raw)
     if not (name and email):
-        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
-    if bk_last4_raw and bk_last4 is None:
         return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
 
     item = db.get(User, managed_user_id)
@@ -7247,7 +7273,6 @@ async def web_users_update(
 
     item.name = name
     item.email = email
-    item.bk_last4 = bk_last4
     if password:
         item.password_hash = hash_password(password)
     try:

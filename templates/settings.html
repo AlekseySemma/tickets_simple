@@ -130,6 +130,13 @@
     {% elif watcher_comments_error == "save_failed" %}
       <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений наблюдателя. Попробуйте еще раз.</div>
     {% endif %}
+    {% if bk_last4_saved %}
+      <div class="alert alert-success py-2">4 цифры БК сохранены.</div>
+    {% elif bk_last4_error == "bad_value" %}
+      <div class="alert alert-danger py-2">Укажите ровно 4 цифры БК или оставьте поле пустым.</div>
+    {% elif bk_last4_error == "save_failed" %}
+      <div class="alert alert-danger py-2">Не удалось сохранить 4 цифры БК. Попробуйте еще раз.</div>
+    {% endif %}
 
     <div class="card shadow-sm mb-3 settings-card">
       <div class="card-body">
@@ -192,6 +199,29 @@
             Изменять могут администратор и куратор.
           </div>
         {% endif %}
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3 settings-card">
+      <div class="card-body">
+        <h5 class="mb-2">Банковская карта (4 цифры)</h5>
+        <div class="settings-note mt-0">Это значение используется для автоподстановки карты при загрузке чека.</div>
+        <form method="post" action="/web/settings/bk-last4" class="row g-2 align-items-end mt-1">
+          <div class="col-12 col-sm-6 col-md-4">
+            <label class="form-label mb-1">4 цифры БК</label>
+            <input
+              class="form-control"
+              name="bk_last4"
+              value="{{ bk_last4_value }}"
+              pattern="\d{4}"
+              maxlength="4"
+              placeholder="1234"
+            />
+          </div>
+          <div class="col-12 col-sm-auto">
+            <button class="btn btn-outline-primary">Сохранить</button>
+          </div>
+        </form>
       </div>
     </div>
 
