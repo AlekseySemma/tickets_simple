@@ -61,7 +61,7 @@
       <div class="alert alert-danger py-2">Не удалось сохранить изменения.</div>
     {% endif %}
 
-    {% if user.role == "EXECUTOR" %}
+    {% if not can_view_accounting_mode %}
       <div class="d-flex gap-2 mb-3">
         <span class="btn btn-primary disabled">Полевой режим</span>
       </div>

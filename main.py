@@ -189,6 +189,11 @@ class User(Base):
         default=True,
         server_default=text("true"),
     )
+    show_receipts_accounting_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
 
 class Company(Base):
     __tablename__ = "companies"
@@ -509,6 +514,7 @@ class UserCreate(BaseModel):
     role: Role
     bk_last4: Optional[str] = None
     preferred_payment_card_id: Optional[int] = None
+    show_receipts_accounting_mode: Optional[bool] = None
 
 class UserOut(BaseModel):
     id: int
@@ -518,6 +524,7 @@ class UserOut(BaseModel):
     company_id: Optional[int] = None
     bk_last4: Optional[str] = None
     preferred_payment_card_id: Optional[int] = None
+    show_receipts_accounting_mode: bool = True
     class Config:
         from_attributes = True
 
@@ -2544,6 +2551,7 @@ def app_startup() -> None:
                     password_hash=hash_password(platform_password),
                     role=Role.platform_admin,
                     company_id=None,
+                    show_receipts_accounting_mode=True,
                 )
                 db.add(user)
                 db.commit()
@@ -2701,6 +2709,7 @@ def bootstrap_platform_admin(payload: BootstrapSetupIn, db: Session = Depends(ge
         password_hash=hash_password(payload.admin_password),
         role=Role.platform_admin,
         company_id=None,
+        show_receipts_accounting_mode=True,
     )
     try:
         db.add(u)
@@ -2742,6 +2751,7 @@ def register_company_and_owner(payload: BootstrapSetupIn, request: Request, db: 
         password_hash=hash_password(payload.admin_password),
         role=Role.admin,
         company_id=company.id,
+        show_receipts_accounting_mode=True,
     )
     db.add(owner)
     db.commit()
@@ -2792,6 +2802,11 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
         company_id=_admin.company_id,
         bk_last4=bk_last4,
         preferred_payment_card_id=preferred_card_id,
+        show_receipts_accounting_mode=(
+            bool(payload.show_receipts_accounting_mode)
+            if payload.show_receipts_accounting_mode is not None
+            else bool(payload.role != Role.executor)
+        ),
     )
     db.add(u); db.commit(); db.refresh(u)
     return u
@@ -3587,6 +3602,7 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
             password_hash=hash_password(password),
             role=invite.role,
             company_id=invite.company_id,
+            show_receipts_accounting_mode=bool(invite.role != Role.executor),
         )
         db.add(user)
         db.flush()
@@ -5317,7 +5333,7 @@ def web_admin_company_settings(
         raise HTTPException(404, "Company not found")
 
     users = (
-        db.query(User.id, User.name, User.email, User.role)
+        db.query(User.id, User.name, User.email, User.role, User.show_receipts_accounting_mode)
         .filter(
             User.company_id == company_id,
             User.role.in_(platform_manageable_roles()),
@@ -5466,6 +5482,7 @@ async def web_admin_company_user_create(
         password_hash=hash_password(password),
         role=role_value,
         company_id=company_id,
+        show_receipts_accounting_mode=bool(role_value != Role.executor),
     )
     try:
         db.add(item)
@@ -6229,7 +6246,8 @@ def web_receipts(
     mode_value = (mode or "").strip().lower()
     if mode_value not in {"field", "accounting"}:
         mode_value = "field"
-    if user.role == Role.executor:
+    can_view_accounting_mode = bool(user.show_receipts_accounting_mode)
+    if not can_view_accounting_mode:
         mode_value = "field"
 
     def parse_int(raw: str | None) -> int | None:
@@ -6348,6 +6366,7 @@ def web_receipts(
             "err": err,
             "can_manage_cards": is_manager(user),
             "can_manage_status": is_manager(user),
+            "can_view_accounting_mode": can_view_accounting_mode,
             "preferred_card_id": preferred_card_id,
         },
     )
@@ -7434,7 +7453,7 @@ def web_users(
         raise HTTPException(403, "Forbidden")
 
     users = (
-        db.query(User.id, User.name, User.email, User.role)
+        db.query(User.id, User.name, User.email, User.role, User.show_receipts_accounting_mode)
         .filter(
             User.company_id == user.company_id,
             User.role.in_(allowed_roles),
@@ -7564,6 +7583,7 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
         password_hash=hash_password(password),
         role=role_value,
         company_id=user.company_id,
+        show_receipts_accounting_mode=bool(role_value != Role.executor),
     )
     try:
         db.add(u)
@@ -7588,6 +7608,7 @@ async def web_users_update(
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
+    show_receipts_accounting_mode = (form.get("show_receipts_accounting_mode") or "").strip() in {"1", "true", "on", "yes"}
     if not (name and email):
         return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
 
@@ -7601,6 +7622,7 @@ async def web_users_update(
 
     item.name = name
     item.email = email
+    item.show_receipts_accounting_mode = show_receipts_accounting_mode
     if password:
         item.password_hash = hash_password(password)
     try:
