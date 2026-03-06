@@ -6407,8 +6407,16 @@ def web_receipts(
 
     projects_by_id = {int(row[0]): row[1] for row in projects}
     cards_by_id = {int(row[0]): row[1] for row in cards}
+    visible_card_ids = {int(r.card_id) for r in receipts if getattr(r, "card_id", None) is not None}
+    cards_for_display = list(cards)
+    if visible_card_ids:
+        cards_for_display = (
+            db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
+            .filter(PaymentCard.company_id == user.company_id, PaymentCard.id.in_(visible_card_ids))
+            .all()
+        )
     cards_last4_by_id: dict[int, str] = {}
-    for row in cards:
+    for row in cards_for_display:
         card_id_value = int(row[0])
         card_name = str(row[1] or "")
         only_digits = re.sub(r"\D+", "", card_name)
