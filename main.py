@@ -180,6 +180,43 @@ def ticket_status_change_log_action(old_status: TicketStatus | str, new_status: 
     new_label = status_label_ru(new_status)
     return f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u0430: {old_label} -> {new_label}"
 
+
+def ticket_field_change_log_action(field_label: str, old_value: str | None, new_value: str | None) -> str:
+    old_text = (old_value or "").strip() or "\u2014"
+    new_text = (new_value or "").strip() or "\u2014"
+    return f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 {field_label}: {old_text} -> {new_text}"
+
+
+def _ticket_user_name(db: Session, user_id: int | None) -> str | None:
+    if not user_id:
+        return None
+    row = db.get(User, user_id)
+    if row and (row.name or "").strip():
+        return row.name
+    return f"#{user_id}"
+
+
+def _ticket_project_name(db: Session, project_id: int | None) -> str | None:
+    if not project_id:
+        return None
+    row = db.get(Project, project_id)
+    if row and (row.name or "").strip():
+        return row.name
+    return f"#{project_id}"
+
+
+def _ticket_type_name(db: Session, ticket_type_id: int | None) -> str | None:
+    if not ticket_type_id:
+        return None
+    row = db.get(TicketType, ticket_type_id)
+    if row and (row.name or "").strip():
+        return row.name
+    return f"#{ticket_type_id}"
+
+
+def _ticket_deadline_text(value: datetime | None) -> str | None:
+    return format_deadline(value) if value else None
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1908,6 +1945,8 @@ def normalize_log_action(action: str | None) -> str:
     }
     if escaped in escaped_map:
         return escaped_map[escaped]
+    if fixed_raw and ("->" in fixed_raw or "\u2192" in fixed_raw):
+        return fixed_raw
 
     k_create = "\u0441\u043e\u0437\u0434"
     k_template = "\u0448\u0430\u0431\u043b"
@@ -3429,17 +3468,53 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
 
     has_specific_log = False
     if t.deadline != old_deadline:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u0441\u0440\u043e\u043a\u0430",
+                _ticket_deadline_text(old_deadline),
+                _ticket_deadline_text(t.deadline),
+            ),
+        )
         has_specific_log = True
     if t.executor_id != old_executor_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f",
+                _ticket_user_name(db, old_executor_id),
+                _ticket_user_name(db, t.executor_id),
+            ),
+        )
         has_specific_log = True
     if t.project_id != old_project_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u043f\u0440\u043e\u0435\u043a\u0442\u0430",
+                _ticket_project_name(db, old_project_id),
+                _ticket_project_name(db, t.project_id),
+            ),
+        )
         has_specific_log = True
 
     if t.ticket_type_id != old_ticket_type_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С‚РёРїР° Р·Р°СЏРІРєРё")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
+                _ticket_type_name(db, old_ticket_type_id),
+                _ticket_type_name(db, t.ticket_type_id),
+            ),
+        )
         has_specific_log = True
     if t.target_unit_id != old_target_unit_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С†РµР»РµРІРѕРіРѕ СѓР·Р»Р°")
@@ -6336,17 +6411,53 @@ async def web_ticket_edit_save(
 
     has_specific_log = False
     if t.deadline != old_deadline:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u0441\u0440\u043e\u043a\u0430",
+                _ticket_deadline_text(old_deadline),
+                _ticket_deadline_text(t.deadline),
+            ),
+        )
         has_specific_log = True
     if t.executor_id != old_executor_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f",
+                _ticket_user_name(db, old_executor_id),
+                _ticket_user_name(db, t.executor_id),
+            ),
+        )
         has_specific_log = True
     if t.project_id != old_project_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u043f\u0440\u043e\u0435\u043a\u0442\u0430",
+                _ticket_project_name(db, old_project_id),
+                _ticket_project_name(db, t.project_id),
+            ),
+        )
         has_specific_log = True
 
     if t.ticket_type_id != old_ticket_type_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С‚РёРїР° Р·Р°СЏРІРєРё")
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
+                _ticket_type_name(db, old_ticket_type_id),
+                _ticket_type_name(db, t.ticket_type_id),
+            ),
+        )
         has_specific_log = True
     if t.status != old_status:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
