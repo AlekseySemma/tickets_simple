@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -264,16 +264,16 @@
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">РЈРІРµРґРѕРјР»РµРЅРёСЏ<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
         <a class="btn btn-outline-secondary" href="/web/settings">РќР°СЃС‚СЂРѕР№РєРё</a>
         <a class="btn btn-outline-secondary" href="{{ next_url }}">< РќР°Р·Р°Рґ Рє СЃРїРёСЃРєСѓ</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Р’С‹Р№С‚Рё</a>
+        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
     <div class="detail-banner mb-3">
       <div>
         <span class="detail-kicker">РљР°СЂС‚РѕС‡РєР° РёСЃРїРѕР»РЅРµРЅРёСЏ</span>
-        <p class="detail-title">Р—Р°СЏРІРєР° РІ СЂР°Р±РѕС‚Рµ: РєРѕРјРјРµРЅС‚Р°СЂРёРё, С„Р°Р№Р»С‹, СЃС‚Р°С‚СѓСЃ Рё РїРѕР»РЅС‹Р№ Р»РѕРі РґРµР№СЃС‚РІРёР№.</p>
+        <p class="detail-title">Заявка в работе: комментарии, файлы, статус и полный лог действий.</p>
       </div>
       <div class="detail-badges">
-        <span class="detail-badge">РЎС‚Р°С‚СѓСЃ <strong>{{ status_labels[t.status.value] }}</strong></span>
+        <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
         <span class="detail-badge">РџСЂРѕРµРєС‚ <strong>{{ projects_by_id.get(t.project_id, "вЂ”") }}</strong></span>
         <span class="detail-badge">РСЃРїРѕР»РЅРёС‚РµР»СЊ <strong>{{ users_by_id.get(t.executor_id, "вЂ”") }}</strong></span>
         {% if t.status.value == "ARCHIVED" %}
@@ -330,11 +330,11 @@
                   <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option"
                           data-ticket-id="{{ t.id }}" data-status="NEW">РќРѕРІР°СЏ</button>
                   <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option"
-                          data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">Р’ СЂР°Р±РѕС‚Рµ</button>
+                          data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">В работе</button>
                   <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option"
-                          data-ticket-id="{{ t.id }}" data-status="DONE">Р’С‹РїРѕР»РЅРµРЅР°</button>
+                          data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
                   <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option"
-                          data-ticket-id="{{ t.id }}" data-status="CANCELED">РћС‚РјРµРЅРµРЅР°</button>
+                          data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
                 </div>
                 {% endif %}
               </div>
@@ -425,13 +425,13 @@
           </div>
 
           <div class="col-12 col-lg-5">
-            <h5>РћС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Рµ</h5>
+            <h5>Ответственные</h5>
             <div class="mb-3 section-card">
               <div class="small text-muted mb-2">РЎРѕР·РґР°Р»</div>
               <div class="mb-2"><b>{{ users_by_id.get(t.created_by, "вЂ”") }}</b></div>
               <div class="small text-muted mb-2">РСЃРїРѕР»РЅРёС‚РµР»СЊ</div>
               <div class="mb-3"><b>{{ users_by_id.get(t.executor_id, "вЂ”") }}</b></div>
-              <div class="small text-muted mb-2">РќР°Р±Р»СЋРґР°С‚РµР»Рё</div>
+              <div class="small text-muted mb-2">Наблюдатели</div>
               {% if watcher_user_ids %}
                 <div class="d-flex flex-wrap gap-1 mb-3">
                   {% for watcher_id in watcher_user_ids %}
@@ -439,7 +439,7 @@
                   {% endfor %}
                 </div>
               {% else %}
-                <div class="small text-muted mb-3">РќР°Р±Р»СЋРґР°С‚РµР»РµР№ РїРѕРєР° РЅРµС‚.</div>
+                <div class="small text-muted mb-3">Наблюдателей пока нет.</div>
               {% endif %}
               {% if not is_current_user_watcher %}
                 <form method="post" action="/web/tickets/{{ t.id }}/watchers/self">
@@ -449,7 +449,7 @@
               {% endif %}
             </div>
 
-            <h5>Р¤Р°Р№Р»С‹</h5>
+            <h5>Файлы</h5>
 
                         <div class="mb-2 section-card">
               {% for a in attachments %}
@@ -533,7 +533,7 @@
                   <option value="РёР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°">РР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°</option>
                   <option value="РёР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ">РР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ</option>
                   <option value="РёР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°">РР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°</option>
-                  <option value="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°">Р”РѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°</option>
+                  <option value="добавление файла">Добавление файла</option>
                   <option value="Р°СЂС…РёРІРёСЂРѕРІР°РЅРёРµ">РђСЂС…РёРІРёСЂРѕРІР°РЅРёРµ</option>
                   <option value="РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ">Р’РѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ</option>
                 </select>
@@ -580,7 +580,7 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  const STATUS_LABELS = { NEW:"РќРѕРІР°СЏ", IN_PROGRESS:"Р’ СЂР°Р±РѕС‚Рµ", DONE:"Р’С‹РїРѕР»РЅРµРЅР°", CANCELED:"РћС‚РјРµРЅРµРЅР°", ARCHIVED:"Р’ Р°СЂС…РёРІРµ" };
+  const STATUS_LABELS = { NEW:"Новая", IN_PROGRESS:"В работе", DONE:"Выполнена", CANCELED:"Отменена", ARCHIVED:"В архиве" };
 
   function closeAllMenus(exceptId) {
     document.querySelectorAll(".status-menu").forEach(m => {
