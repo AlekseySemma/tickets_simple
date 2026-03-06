@@ -402,8 +402,8 @@
           <h5 class="modal-title">Превью чека</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
         </div>
-        <div class="modal-body text-center bg-light" id="receiptPreviewViewport" style="max-height:75vh; overflow:auto;">
-          <img id="receiptPreviewImage" src="" alt="" style="max-width:100%; max-height:75vh; border-radius:10px; cursor: zoom-in; transform-origin: center center; transition: transform .12s ease;" />
+        <div class="modal-body text-center bg-light" id="receiptPreviewViewport" style="max-height:75vh; overflow:auto; display:flex; justify-content:center; align-items:flex-start;">
+          <img id="receiptPreviewImage" src="" alt="" style="max-width:100%; max-height:75vh; width:auto; height:auto; border-radius:10px; cursor: zoom-in; transition: width .12s ease;" />
         </div>
       </div>
     </div>
@@ -449,7 +449,10 @@
         let previewZoom = 1;
         const resetPreviewZoom = () => {
           previewZoom = 1;
-          previewImg.style.transform = 'scale(1)';
+          previewImg.style.width = 'auto';
+          previewImg.style.height = 'auto';
+          previewImg.style.maxWidth = '100%';
+          previewImg.style.maxHeight = '75vh';
           previewImg.style.cursor = 'zoom-in';
           if (previewViewport) {
             previewViewport.scrollTop = 0;
@@ -463,7 +466,17 @@
           } else {
             previewZoom = 1;
           }
-          previewImg.style.transform = `scale(${previewZoom})`;
+          if (previewZoom === 1) {
+            previewImg.style.width = 'auto';
+            previewImg.style.height = 'auto';
+            previewImg.style.maxWidth = '100%';
+            previewImg.style.maxHeight = '75vh';
+          } else {
+            previewImg.style.maxWidth = 'none';
+            previewImg.style.maxHeight = 'none';
+            previewImg.style.width = `${Math.round(100 * previewZoom)}%`;
+            previewImg.style.height = 'auto';
+          }
           previewImg.style.cursor = previewZoom > 1 ? 'zoom-out' : 'zoom-in';
         });
 
