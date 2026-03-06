@@ -303,7 +303,7 @@
                     {% if t.deadline %}
                       {{ format_deadline(t.deadline) }}
                     {% else %}
-                      вЂ”
+                      —
                     {% endif %}
                   </b>
                 </span>
@@ -323,7 +323,7 @@
                 <span id="status-badge-{{ t.id }}"
                       class="badge badge-status st-{{ t.status.value }} status-toggle"
                       data-ticket-id="{{ t.id }}">
-                  {{ status_labels[t.status.value] }} РЋ
+                  {{ status_labels[t.status.value] }} ▾
                 </span>
 
                 <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded">
@@ -428,9 +428,9 @@
             <h5>Ответственные</h5>
             <div class="mb-3 section-card">
               <div class="small text-muted mb-2">Создал</div>
-              <div class="mb-2"><b>{{ users_by_id.get(t.created_by, "вЂ”") }}</b></div>
+              <div class="mb-2"><b>{{ users_by_id.get(t.created_by, "—") }}</b></div>
               <div class="small text-muted mb-2">Исполнитель</div>
-              <div class="mb-3"><b>{{ users_by_id.get(t.executor_id, "вЂ”") }}</b></div>
+              <div class="mb-3"><b>{{ users_by_id.get(t.executor_id, "—") }}</b></div>
               <div class="small text-muted mb-2">Наблюдатели</div>
               {% if watcher_user_ids %}
                 <div class="d-flex flex-wrap gap-1 mb-3">
@@ -546,7 +546,7 @@
 
             <div id="log-list">
               {% for log in ticket_logs %}
-                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ fix_mojibake_text(log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, 'вЂ”') or '')|lower }}" data-text="{{ (fix_mojibake_text(log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, 'вЂ”') or ''))|lower }}">
+                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ fix_mojibake_text(log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ (fix_mojibake_text(log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
                   <div class="small muted">
                     <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
                   </div>
@@ -629,7 +629,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (badge) {
       badge.className = badge.className.replace(/\bst-[A-Z_]+\b/g, "").trim();
       badge.classList.add("st-" + data.status);
-      badge.textContent = (STATUS_LABELS[data.status] || data.status) + " РЋ";
+      badge.textContent = (STATUS_LABELS[data.status] || data.status) + " ▾";
     }
 
     const overdueBadge = document.getElementById("overdue-badge-" + ticketId);
