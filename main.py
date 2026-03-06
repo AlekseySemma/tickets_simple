@@ -189,6 +189,11 @@ class User(Base):
         default=True,
         server_default=text("true"),
     )
+    notify_receipt_created: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
     show_receipts_accounting_mode: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
@@ -514,6 +519,7 @@ class UserCreate(BaseModel):
     role: Role
     bk_last4: Optional[str] = None
     preferred_payment_card_id: Optional[int] = None
+    notify_receipt_created: Optional[bool] = None
     show_receipts_accounting_mode: Optional[bool] = None
 
 class UserOut(BaseModel):
@@ -524,6 +530,7 @@ class UserOut(BaseModel):
     company_id: Optional[int] = None
     bk_last4: Optional[str] = None
     preferred_payment_card_id: Optional[int] = None
+    notify_receipt_created: bool = True
     show_receipts_accounting_mode: bool = True
     class Config:
         from_attributes = True
@@ -2104,6 +2111,52 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
         )
 
 
+def notify_receipt_created(db: Session, receipt: Receipt, actor: User) -> None:
+    recipient_rows = (
+        db.query(User.id)
+        .filter(
+            User.company_id == receipt.company_id,
+            User.id != actor.id,
+            User.show_receipts_accounting_mode.is_(True),
+            User.notify_receipt_created.is_(True),
+            User.role != Role.platform_admin,
+        )
+        .all()
+    )
+    if not recipient_rows:
+        return
+
+    project_name = (
+        db.query(Project.name)
+        .filter(Project.id == receipt.project_id, Project.company_id == receipt.company_id)
+        .scalar()
+    )
+    card_name = (
+        db.query(PaymentCard.name)
+        .filter(PaymentCard.id == receipt.card_id, PaymentCard.company_id == receipt.company_id)
+        .scalar()
+    )
+    body_parts: list[str] = []
+    if project_name:
+        body_parts.append(str(project_name))
+    if card_name:
+        body_parts.append(str(card_name))
+    if receipt.comment:
+        body_parts.append(str(receipt.comment))
+    body = " | ".join(part for part in body_parts if part)[:400] or f"Добавлен чек #{receipt.id}"
+    url = f"/web/receipts?mode=accounting"
+    title = f"Новый чек #{receipt.id}"
+    for row in recipient_rows:
+        recipient_id = int(row[0])
+        send_push_to_user(
+            db=db,
+            user_id=recipient_id,
+            title=title,
+            body=body,
+            url=url,
+        )
+
+
 def run_deadline_reminders_forever() -> None:
     while True:
         try:
@@ -2802,6 +2855,11 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
         company_id=_admin.company_id,
         bk_last4=bk_last4,
         preferred_payment_card_id=preferred_card_id,
+        notify_receipt_created=(
+            bool(payload.notify_receipt_created)
+            if payload.notify_receipt_created is not None
+            else True
+        ),
         show_receipts_accounting_mode=(
             bool(payload.show_receipts_accounting_mode)
             if payload.show_receipts_accounting_mode is not None
@@ -4138,6 +4196,10 @@ def web_settings(
     watcher_comments_error = (request.query_params.get("watcher_comments_error") or "").strip().lower()
     if watcher_comments_error not in {"save_failed"}:
         watcher_comments_error = ""
+    receipt_notifications_saved = (request.query_params.get("receipt_notifications_saved") or "").strip() == "1"
+    receipt_notifications_error = (request.query_params.get("receipt_notifications_error") or "").strip().lower()
+    if receipt_notifications_error not in {"save_failed"}:
+        receipt_notifications_error = ""
     preferred_card_saved = (request.query_params.get("preferred_card_saved") or "").strip() == "1"
     preferred_card_error = (request.query_params.get("preferred_card_error") or "").strip().lower()
     if preferred_card_error not in {"bad_value", "save_failed"}:
@@ -4172,6 +4234,8 @@ def web_settings(
             "archive_retention_error": archive_retention_error,
             "watcher_comments_saved": watcher_comments_saved,
             "watcher_comments_error": watcher_comments_error,
+            "receipt_notifications_saved": receipt_notifications_saved,
+            "receipt_notifications_error": receipt_notifications_error,
             "preferred_card_saved": preferred_card_saved,
             "preferred_card_error": preferred_card_error,
             "card_created": card_created,
@@ -4271,6 +4335,27 @@ async def web_settings_watcher_comments(
             status_code=HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(url="/web/settings?watcher_comments_saved=1", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/settings/receipt-notifications")
+async def web_settings_receipt_notifications(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    form = await request.form()
+    enabled = (form.get("notify_receipt_created") or "").strip() in {"1", "true", "on"}
+    try:
+        user.notify_receipt_created = enabled
+        db.add(user)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url="/web/settings?receipt_notifications_error=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url="/web/settings?receipt_notifications_saved=1", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/settings/preferred-card")
@@ -6526,6 +6611,7 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
                     file_sha256=file_hash,
                 )
             )
+        notify_receipt_created(db=db, receipt=receipt, actor=user)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
