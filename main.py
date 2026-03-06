@@ -2685,6 +2685,11 @@ def pwa_manifest():
     return FileResponse(PWA_STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(PWA_STATIC_DIR / "favicon.ico", media_type="image/x-icon")
+
+
 @app.get("/sw.js")
 def service_worker():
     return FileResponse(PWA_STATIC_DIR / "sw.js", media_type="application/javascript")
