@@ -2682,17 +2682,29 @@ def health():
 
 @app.get("/manifest.webmanifest")
 def pwa_manifest():
-    return FileResponse(PWA_STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+    return FileResponse(
+        PWA_STATIC_DIR / "manifest.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/favicon.ico")
 def favicon():
-    return FileResponse(PWA_STATIC_DIR / "favicon.ico", media_type="image/x-icon")
+    return FileResponse(
+        PWA_STATIC_DIR / "favicon.ico",
+        media_type="image/x-icon",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/sw.js")
 def service_worker():
-    return FileResponse(PWA_STATIC_DIR / "sw.js", media_type="application/javascript")
+    return FileResponse(
+        PWA_STATIC_DIR / "sw.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/api/push/public-key")

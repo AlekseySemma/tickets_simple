@@ -24,8 +24,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: "/static/icon-192.png",
-      badge: "/static/icon-192.png",
+      icon: "/static/servora-app-icon-192.png?v=20260306",
+      badge: "/static/servora-app-icon-192.png?v=20260306",
       data: { url: payload.url || "/web" },
       tag: "servora-ticket-" + Date.now(),
       renotify: false,
