@@ -253,7 +253,7 @@
                   <td>{{ r.comment }}</td>
                   <td>
                     {% for f in files_by_receipt.get(r.id, []) %}
-                      <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать {{ loop.index }}</a>
+                      <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать</a>
                     {% endfor %}
                   </td>
                   <td><span class="status-badge st-{{ r.status.value }}">{{ receipt_status_label_ru(r.status) }}</span></td>
@@ -305,7 +305,7 @@
               {% if r.supplier %}<div class="text-muted small">Поставщик: {{ r.supplier }}</div>{% endif %}
               <div class="mt-2">
                 {% for f in files %}
-                  <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать {{ loop.index }}</a>
+                  <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать</a>
                 {% endfor %}
               </div>
               {% if user.role in ["EXECUTOR", "ADMIN", "CURATOR"] and r.created_by == user.id %}
