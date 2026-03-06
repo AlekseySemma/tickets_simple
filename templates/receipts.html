@@ -446,35 +446,13 @@
       const previewViewport = document.getElementById('receiptPreviewViewport');
       if (modalEl && previewImg && window.bootstrap) {
         const previewModal = new window.bootstrap.Modal(modalEl);
-        let previewZoom = 1;
-        let previewBaseWidth = 0;
-        const calcPreviewBaseWidth = () => {
-          if (!previewImg.naturalWidth || !previewImg.naturalHeight) return 0;
-          const viewportWidth = Math.max(1, (previewViewport ? previewViewport.clientWidth : window.innerWidth) - 16);
-          const viewportHeight = Math.max(1, (previewViewport ? previewViewport.clientHeight : Math.round(window.innerHeight * 0.75)) - 16);
-          const widthScale = viewportWidth / previewImg.naturalWidth;
-          const heightScale = viewportHeight / previewImg.naturalHeight;
-          const fitScale = Math.min(1, widthScale, heightScale);
-          return Math.max(1, Math.floor(previewImg.naturalWidth * fitScale));
-        };
-        const applyPreviewZoom = () => {
-          if (!previewBaseWidth) {
-            previewBaseWidth = calcPreviewBaseWidth();
-          }
-          if (!previewBaseWidth) return;
-          previewImg.style.maxWidth = 'none';
-          previewImg.style.maxHeight = 'none';
-          previewImg.style.width = `${Math.max(1, Math.round(previewBaseWidth * previewZoom))}px`;
-          previewImg.style.height = 'auto';
-          previewImg.style.cursor = previewZoom > 1 ? 'zoom-out' : 'zoom-in';
-        };
+        let previewZoomed = false;
         const resetPreviewZoom = () => {
-          previewZoom = 1;
-          previewBaseWidth = 0;
-          previewImg.style.width = '';
-          previewImg.style.height = '';
-          previewImg.style.maxWidth = '';
-          previewImg.style.maxHeight = '';
+          previewZoomed = false;
+          previewImg.style.width = 'auto';
+          previewImg.style.height = 'auto';
+          previewImg.style.maxWidth = '100%';
+          previewImg.style.maxHeight = '75vh';
           previewImg.style.cursor = 'zoom-in';
           if (previewViewport) {
             previewViewport.scrollTop = 0;
@@ -482,19 +460,21 @@
           }
         };
 
-        previewImg.addEventListener('load', () => {
-          previewBaseWidth = calcPreviewBaseWidth();
-          applyPreviewZoom();
-        });
-
         previewImg.addEventListener('click', () => {
-          if (!previewImg.naturalWidth || !previewImg.naturalHeight) return;
-          if (previewZoom < 3.4) {
-            previewZoom = Math.min(3.4, previewZoom + 0.6);
+          previewZoomed = !previewZoomed;
+          if (previewZoomed) {
+            previewImg.style.maxWidth = 'none';
+            previewImg.style.maxHeight = 'none';
+            previewImg.style.width = '180%';
+            previewImg.style.height = 'auto';
+            previewImg.style.cursor = 'zoom-out';
           } else {
-            previewZoom = 1;
+            previewImg.style.width = 'auto';
+            previewImg.style.height = 'auto';
+            previewImg.style.maxWidth = '100%';
+            previewImg.style.maxHeight = '75vh';
+            previewImg.style.cursor = 'zoom-in';
           }
-          applyPreviewZoom();
         });
 
         document.querySelectorAll('[data-preview-src]').forEach((trigger) => {
@@ -508,13 +488,6 @@
             previewImg.alt = alt;
             previewModal.show();
           });
-        });
-
-        modalEl.addEventListener('shown.bs.modal', () => {
-          if (previewImg.complete && previewImg.naturalWidth) {
-            previewBaseWidth = calcPreviewBaseWidth();
-            applyPreviewZoom();
-          }
         });
 
         modalEl.addEventListener('hidden.bs.modal', () => {
