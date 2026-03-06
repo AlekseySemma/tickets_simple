@@ -35,12 +35,13 @@ def upgrade() -> None:
         )
 
     # Keep prior UX: executors have field mode only by default.
+    role_expr = "LOWER(role::text)" if bind.dialect.name == "postgresql" else "LOWER(CAST(role AS TEXT))"
     bind.execute(
         sa.text(
-            """
+            f"""
             UPDATE users
             SET show_receipts_accounting_mode = CASE
-                WHEN role = 'EXECUTOR' THEN false
+                WHEN {role_expr} = 'executor' THEN false
                 ELSE true
             END
             """
