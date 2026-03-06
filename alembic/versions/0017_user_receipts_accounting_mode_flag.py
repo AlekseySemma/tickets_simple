@@ -1,6 +1,6 @@
 """Add per-user flag for receipts accounting mode visibility.
 
-Revision ID: 0017_user_receipts_accounting_mode_flag
+Revision ID: 0017_user_receipts_mode
 Revises: 0016_payment_cards_owner_user
 Create Date: 2026-03-06
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0017_user_receipts_accounting_mode_flag"
+revision = "0017_user_receipts_mode"
 down_revision = "0016_payment_cards_owner_user"
 branch_labels = None
 depends_on = None
