@@ -402,8 +402,8 @@
           <h5 class="modal-title">Превью чека</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
         </div>
-        <div class="modal-body text-center bg-light">
-          <img id="receiptPreviewImage" src="" alt="" style="max-width:100%; max-height:75vh; border-radius:10px;" />
+        <div class="modal-body text-center bg-light" id="receiptPreviewViewport" style="max-height:75vh; overflow:auto;">
+          <img id="receiptPreviewImage" src="" alt="" style="max-width:100%; max-height:75vh; border-radius:10px; cursor: zoom-in; transform-origin: center center; transition: transform .12s ease;" />
         </div>
       </div>
     </div>
@@ -443,18 +443,47 @@
 
       const modalEl = document.getElementById('receiptPreviewModal');
       const previewImg = document.getElementById('receiptPreviewImage');
+      const previewViewport = document.getElementById('receiptPreviewViewport');
       if (modalEl && previewImg && window.bootstrap) {
         const previewModal = new window.bootstrap.Modal(modalEl);
+        let previewZoom = 1;
+        const resetPreviewZoom = () => {
+          previewZoom = 1;
+          previewImg.style.transform = 'scale(1)';
+          previewImg.style.cursor = 'zoom-in';
+          if (previewViewport) {
+            previewViewport.scrollTop = 0;
+            previewViewport.scrollLeft = 0;
+          }
+        };
+
+        previewImg.addEventListener('click', () => {
+          if (previewZoom < 3.4) {
+            previewZoom = Math.min(3.4, previewZoom + 0.6);
+          } else {
+            previewZoom = 1;
+          }
+          previewImg.style.transform = `scale(${previewZoom})`;
+          previewImg.style.cursor = previewZoom > 1 ? 'zoom-out' : 'zoom-in';
+        });
+
         document.querySelectorAll('[data-preview-src]').forEach((trigger) => {
           trigger.addEventListener('click', (event) => {
             event.preventDefault();
             const src = trigger.getAttribute('data-preview-src') || '';
             const alt = trigger.getAttribute('data-preview-alt') || '';
             if (!src) return;
+            resetPreviewZoom();
             previewImg.src = src;
             previewImg.alt = alt;
             previewModal.show();
           });
+        });
+
+        modalEl.addEventListener('hidden.bs.modal', () => {
+          resetPreviewZoom();
+          previewImg.src = '';
+          previewImg.alt = '';
         });
       }
     })();
