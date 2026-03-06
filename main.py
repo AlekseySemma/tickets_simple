@@ -6279,6 +6279,12 @@ def web_receipts(
 
     projects_by_id = {int(row[0]): row[1] for row in projects}
     cards_by_id = {int(row[0]): row[1] for row in cards}
+    cards_last4_by_id: dict[int, str] = {}
+    for row in cards:
+        card_id_value = int(row[0])
+        card_name = str(row[1] or "")
+        only_digits = re.sub(r"\D+", "", card_name)
+        cards_last4_by_id[card_id_value] = only_digits[-4:] if len(only_digits) >= 4 else card_name or f"#{card_id_value}"
     users_by_id = {int(row[0]): row[1] for row in employees}
     status_options = [s.value for s in ReceiptStatus]
 
@@ -6302,6 +6308,7 @@ def web_receipts(
             "employees": employees,
             "projects_by_id": projects_by_id,
             "cards_by_id": cards_by_id,
+            "cards_last4_by_id": cards_last4_by_id,
             "users_by_id": users_by_id,
             "status_options": status_options,
             "status_filter": status_filter or "",
