@@ -2312,6 +2312,31 @@ def sanitize_export_token(raw: str | None, max_len: int = 40) -> str:
     return value[:max_len]
 
 
+def sanitize_filename_part(raw: str | None, max_len: int = 80) -> str:
+    value = (raw or "").strip()
+    value = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", value)
+    value = re.sub(r"\s+", " ", value).strip(" ._-")
+    if not value:
+        return "Объект"
+    return value[:max_len]
+
+
+def build_receipt_original_name(
+    *,
+    receipt_date_value: date | None,
+    card_name: str | None,
+    project_name: str | None,
+    source_filename: str | None,
+    fallback_card_id: int,
+) -> str:
+    ext = Path(source_filename or "").suffix.lower()[:10] or ".bin"
+    dt_token = (receipt_date_value or datetime.utcnow().date()).isoformat()
+    digits = re.sub(r"\D+", "", (card_name or "").strip())
+    card_last4 = digits[-4:] if len(digits) >= 4 else f"{int(fallback_card_id):04d}"[-4:]
+    project_token = sanitize_filename_part(project_name, max_len=80)
+    return f"{dt_token}_БК{card_last4}_{project_token}{ext}"
+
+
 def build_receipts_query(
     db: Session,
     user: User,
@@ -6423,9 +6448,13 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
     except ValueError:
         return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
 
-    project_exists = db.query(Project.id).filter(Project.id == project_id, Project.company_id == user.company_id).first()
-    card_exists = (
-        db.query(PaymentCard.id)
+    project_row = (
+        db.query(Project.id, Project.name)
+        .filter(Project.id == project_id, Project.company_id == user.company_id)
+        .first()
+    )
+    card_row = (
+        db.query(PaymentCard.id, PaymentCard.name)
         .filter(
             PaymentCard.id == card_id,
             PaymentCard.company_id == user.company_id,
@@ -6434,8 +6463,10 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
         )
         .first()
     )
-    if not project_exists or not card_exists:
+    if not project_row or not card_row:
         return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
+    project_name = str(project_row[1] or "")
+    card_name = str(card_row[1] or "")
 
     written_paths: list[Path] = []
     try:
@@ -6459,12 +6490,19 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
             await write_upload_file_async(upload, dest_path)
             written_paths.append(dest_path)
             file_hash, file_size = compute_file_sha256_and_size(dest_path)
+            display_name = build_receipt_original_name(
+                receipt_date_value=receipt.receipt_date,
+                card_name=card_name,
+                project_name=project_name,
+                source_filename=upload.filename,
+                fallback_card_id=card_id,
+            )
             db.add(
                 ReceiptFile(
                     receipt_id=receipt.id,
                     uploader_id=user.id,
                     file_path=f"/uploads/{safe_name}",
-                    original_name=(upload.filename or "")[:255] or None,
+                    original_name=display_name[:255] or None,
                     file_size_bytes=file_size,
                     file_sha256=file_hash,
                 )
