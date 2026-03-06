@@ -759,7 +759,7 @@
       </div>
     </div>
 
-    {% if user.role in ["ADMIN", "CURATOR"] %}
+    {% if can_switch_view_mode %}
     <div class="d-flex justify-content-end mb-3">
       <form method="get" action="{{ list_path }}" class="view-switch">
         <input type="hidden" name="page" value="{{ page }}">
@@ -871,7 +871,7 @@
 
 
 
-    {% if user.role in ["ADMIN", "CURATOR"] and view_mode == "table" %}
+    {% if can_switch_view_mode and view_mode == "table" %}
       <div class="tickets-table-wrap mb-3">
         <div class="table-responsive">
           <table class="table tickets-table mb-0">
@@ -1126,7 +1126,7 @@
         </div>
       </div>
     {% endif %}
-    {% if user.role in ["ADMIN", "CURATOR"] and view_mode == "table" %}
+    {% if can_switch_view_mode and view_mode == "table" %}
       <div class="d-flex justify-content-end mt-2 mb-2">
         <form method="get" action="{{ list_path }}" class="d-flex align-items-center gap-2">
           <input type="hidden" name="page" value="1">
@@ -1443,10 +1443,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  const isManager = ["ADMIN", "CURATOR"].includes("{{ user.role }}");
-  if (!isManager) return;
+  const canSwitchViewMode = ["ADMIN", "CURATOR", "EXECUTOR"].includes("{{ user.role }}");
+  if (!canSwitchViewMode) return;
 
   const KEY = "{{ view_mode_storage_key }}";
+  const defaultMode = "{{ 'cards' if user.role == 'EXECUTOR' else 'table' }}";
   const isValidMode = (v) => v === "table" || v === "cards";
 
   const url = new URL(window.location.href);
@@ -1460,7 +1461,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.location.replace(url.toString());
     return;
   } else {
-    localStorage.setItem(KEY, "table");
+    localStorage.setItem(KEY, defaultMode);
   }
 
   document.querySelectorAll('button[name="view_mode"]').forEach((btn) => {
@@ -1573,6 +1574,7 @@ document.addEventListener("DOMContentLoaded", function () {
 document.addEventListener("DOMContentLoaded", function () {
   const dash = document.getElementById("dashboard");
   if (!dash) return;
+  const defaultViewMode = "{{ 'cards' if user.role == 'EXECUTOR' else 'table' }}";
 
   function getState() {
     return {
@@ -1585,7 +1587,7 @@ document.addEventListener("DOMContentLoaded", function () {
       executor_id: dash.dataset.executorId || "",
       q: dash.dataset.q || "",
       sort: dash.dataset.sort || "id_desc",
-      view_mode: dash.dataset.viewMode || "table",
+      view_mode: dash.dataset.viewMode || defaultViewMode,
       page_size: dash.dataset.pageSize || "10",
     };
   }
@@ -1601,7 +1603,7 @@ document.addEventListener("DOMContentLoaded", function () {
     p.set("q", next.q || "");
     p.set("only_overdue", next.only_overdue || "");
     p.set("sort", next.sort || "id_desc");
-    p.set("view_mode", next.view_mode || "table");
+    p.set("view_mode", next.view_mode || defaultViewMode);
     p.set("page_size", next.page_size || "10");
     return "{{ list_path }}?" + p.toString();
   }
@@ -1649,7 +1651,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
 
 
 

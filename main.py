@@ -4011,8 +4011,12 @@ def _render_web_tickets_page(
         # СЃРѕСЂС‚РёСЂРѕРІРєР°
     sort_value = (sort or "").strip() or "id_desc"
     raw_view_mode = (view_mode or "").strip().lower()
-    if is_manager(user):
-        view_mode_value = "cards" if raw_view_mode == "cards" else "table"
+    can_switch_view_mode = user.role in (Role.admin, Role.curator, Role.executor)
+    if can_switch_view_mode:
+        if user.role == Role.executor:
+            view_mode_value = "table" if raw_view_mode == "table" else "cards"
+        else:
+            view_mode_value = "cards" if raw_view_mode == "cards" else "table"
     else:
         view_mode_value = "cards"
 
@@ -4096,7 +4100,7 @@ def _render_web_tickets_page(
     if per_page not in page_size_options:
         per_page = 10
     reset_filters_url = list_path
-    if is_manager(user):
+    if can_switch_view_mode:
         reset_filters_url = f"{list_path}?view_mode={view_mode_value}&page_size={per_page}"
     current_list_url = request.url.path
     if request.url.query:
@@ -4125,6 +4129,7 @@ def _render_web_tickets_page(
             "active_list_path": "/web",
             "archive_list_path": "/web/archive",
             "view_mode_storage_key": view_mode_storage_key,
+            "can_switch_view_mode": can_switch_view_mode,
             "projects": projects,
             "executors": executors,
             "watcher_candidates": users,
