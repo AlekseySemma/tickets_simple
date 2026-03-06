@@ -1,4 +1,4 @@
-from calendar import monthrange
+﻿from calendar import monthrange
 from datetime import datetime, timedelta, date
 import csv
 from decimal import Decimal, InvalidOperation
@@ -173,6 +173,12 @@ def receipt_status_label_ru(value: ReceiptStatus | str) -> str:
     except ValueError:
         return value
     return RECEIPT_STATUS_LABELS_RU.get(status_value, status_value.value)
+
+
+def ticket_status_change_log_action(old_status: TicketStatus | str, new_status: TicketStatus | str) -> str:
+    old_label = status_label_ru(old_status)
+    new_label = status_label_ru(new_status)
+    return f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u0430: {old_label} -> {new_label}"
 
 class User(Base):
     __tablename__ = "users"
@@ -3439,6 +3445,10 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїРµСЂРёРѕРґР° С€Р°Р±Р»РѕРЅР°")
         has_specific_log = True
 
+    if t.status != old_status:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
+        has_specific_log = True
+
     if not has_specific_log:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
 
@@ -5954,7 +5964,8 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
 
     old_status = t.status
     t.status = TicketStatus(status_raw)
-    add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
+    if t.status != old_status:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
     db.commit()
     notify_curators_status_changed(db, t, actor=user, old_status=old_status)
     db.commit()
@@ -6330,6 +6341,9 @@ async def web_ticket_edit_save(
 
     if t.ticket_type_id != old_ticket_type_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С‚РёРїР° Р·Р°СЏРІРєРё")
+        has_specific_log = True
+    if t.status != old_status:
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
         has_specific_log = True
 
     if not has_specific_log:
