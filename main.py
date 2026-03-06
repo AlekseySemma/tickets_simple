@@ -6501,10 +6501,11 @@ def web_receipts(
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
 
+    can_view_accounting_mode = bool(user.show_receipts_accounting_mode)
+    default_receipts_mode = "accounting" if user.role in (Role.admin, Role.curator) else "field"
     mode_value = (mode or "").strip().lower()
     if mode_value not in {"field", "accounting"}:
-        mode_value = "field"
-    can_view_accounting_mode = bool(user.show_receipts_accounting_mode)
+        mode_value = default_receipts_mode
     if not can_view_accounting_mode:
         mode_value = "field"
 
