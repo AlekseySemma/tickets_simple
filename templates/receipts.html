@@ -253,6 +253,17 @@
                   <td>{{ r.comment }}</td>
                   <td>
                     {% for f in files_by_receipt.get(r.id, []) %}
+                      {% set lower_name = (f.original_name or "")|lower %}
+                      {% if lower_name.endswith(".jpg") or lower_name.endswith(".jpeg") or lower_name.endswith(".png") or lower_name.endswith(".gif") or lower_name.endswith(".webp") %}
+                        <a
+                          class="btn btn-sm btn-outline-primary mb-1"
+                          href="/web/receipt-files/{{ f.id }}"
+                          data-preview-src="/web/receipt-files/{{ f.id }}"
+                          data-preview-alt="Чек #{{ r.id }}"
+                        >
+                          Превью
+                        </a>
+                      {% endif %}
                       <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать</a>
                     {% endfor %}
                   </td>
@@ -434,10 +445,11 @@
       const previewImg = document.getElementById('receiptPreviewImage');
       if (modalEl && previewImg && window.bootstrap) {
         const previewModal = new window.bootstrap.Modal(modalEl);
-        document.querySelectorAll('img[data-preview-src]').forEach((img) => {
-          img.addEventListener('click', () => {
-            const src = img.getAttribute('data-preview-src') || '';
-            const alt = img.getAttribute('data-preview-alt') || '';
+        document.querySelectorAll('[data-preview-src]').forEach((trigger) => {
+          trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            const src = trigger.getAttribute('data-preview-src') || '';
+            const alt = trigger.getAttribute('data-preview-alt') || '';
             if (!src) return;
             previewImg.src = src;
             previewImg.alt = alt;
