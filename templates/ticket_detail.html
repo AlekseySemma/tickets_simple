@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Р—Р°СЏРІРєР° #{{ t.id }}</title>
+  <title>Заявка #{{ t.id }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -256,30 +256,30 @@
   <div class="container py-4 service-shell" style="max-width: 1000px;">
     <div class="page-head mb-3">
       <div>
-        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Р—Р°СЏРІРєР°</h3></span>
+        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Заявка</h3></span>
         <div class="muted">ID: #{{ t.id }}</div>
       </div>
       <div class="page-actions">
-        <a class="btn btn-outline-secondary" href="/web/receipts">Р§РµРєРё</a>
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">РЈРІРµРґРѕРјР»РµРЅРёСЏ<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web/settings">РќР°СЃС‚СЂРѕР№РєРё</a>
-        <a class="btn btn-outline-secondary" href="{{ next_url }}">< РќР°Р·Р°Рґ Рє СЃРїРёСЃРєСѓ</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
+        <a class="btn btn-outline-secondary" href="{{ next_url }}">< Назад к списку</a>
         <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
       </div>
     </div>
     <div class="detail-banner mb-3">
       <div>
-        <span class="detail-kicker">РљР°СЂС‚РѕС‡РєР° РёСЃРїРѕР»РЅРµРЅРёСЏ</span>
+        <span class="detail-kicker">Карточка исполнения</span>
         <p class="detail-title">Заявка в работе: комментарии, файлы, статус и полный лог действий.</p>
       </div>
       <div class="detail-badges">
         <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
-        <span class="detail-badge">РџСЂРѕРµРєС‚ <strong>{{ projects_by_id.get(t.project_id, "вЂ”") }}</strong></span>
-        <span class="detail-badge">РСЃРїРѕР»РЅРёС‚РµР»СЊ <strong>{{ users_by_id.get(t.executor_id, "вЂ”") }}</strong></span>
+        <span class="detail-badge">Проект <strong>{{ projects_by_id.get(t.project_id, "—") }}</strong></span>
+        <span class="detail-badge">Исполнитель <strong>{{ users_by_id.get(t.executor_id, "—") }}</strong></span>
         {% if t.status.value == "ARCHIVED" %}
-          <span class="detail-badge">РЈРґР°Р»РµРЅРёРµ <strong>{{ format_deadline(t.delete_at) }}</strong></span>
+          <span class="detail-badge">Удаление <strong>{{ format_deadline(t.delete_at) }}</strong></span>
           {% if t.is_legal_hold %}
-            <span class="detail-badge">Legal hold <strong>РІРєР»СЋС‡РµРЅ</strong></span>
+            <span class="detail-badge">Legal hold <strong>включен</strong></span>
           {% endif %}
         {% endif %}
       </div>
@@ -290,15 +290,15 @@
         <div class="ticket-layout">
           <div class="ticket-main">
             <div class="ticket-head">
-              <div class="ticket-head-id">ID Р·Р°СЏРІРєРё: #{{ t.id }}</div>
-              <div class="ticket-head-project">РџСЂРѕРµРєС‚: <b>{{ projects_by_id.get(t.project_id, "вЂ”") }}</b></div>
-              <div class="ticket-head-project">РўРёРї Р·Р°СЏРІРєРё: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "вЂ”") }}</b></div>
+              <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+              <div class="ticket-head-project">Тип заявки: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</b></div>
               <h5 class="ticket-head-title">{{ t.title }}</h5>
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
-                <span class="meta-chip">РСЃРїРѕР»РЅРёС‚РµР»СЊ: <b>{{ users_by_id.get(t.executor_id, "вЂ”") }}</b></span>
-                <span class="meta-chip">РЎРѕР·РґР°Р»: <b>{{ users_by_id.get(t.created_by, "вЂ”") }}</b></span>
-                <span class="meta-chip deadline-chip {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">РљСЂР°Р№РЅРёР№ СЃСЂРѕРє:
+                <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
+                <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
+                <span class="meta-chip deadline-chip {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок:
                   <b>
                     {% if t.deadline %}
                       {{ format_deadline(t.deadline) }}
@@ -328,7 +328,7 @@
 
                 <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded">
                   <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option"
-                          data-ticket-id="{{ t.id }}" data-status="NEW">РќРѕРІР°СЏ</button>
+                          data-ticket-id="{{ t.id }}" data-status="NEW">Новая</button>
                   <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option"
                           data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">В работе</button>
                   <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option"
@@ -341,7 +341,7 @@
 
               <span id="overdue-badge-{{ t.id }}"
                     class="badge badge-status st-OVERDUE {% if not is_overdue %}d-none{% endif %}">
-                РџСЂРѕСЃСЂРѕС‡РµРЅРѕ
+                Просрочено
               </span>
             </div>
 
@@ -393,7 +393,7 @@
 
         <div class="row g-4">
           <div class="col-12 col-lg-7">
-            <h5>РљРѕРјРјРµРЅС‚Р°СЂРёРё</h5>
+            <h5>Комментарии</h5>
 
             <div class="mb-2 comments-list section-card">
               {% for c in comments %}
@@ -401,24 +401,24 @@
                 <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
                   <div class="comment-bubble">
                     <div class="small muted">
-                      <b>{{ users_by_id.get(c.author_id, "вЂ”") }}</b> В· {{ format_dt(c.created_at) }}
+                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
                     </div>
                     <div>{{ c.text }}</div>
                   </div>
                 </div>
               {% endfor %}
               {% if comments|length == 0 %}
-                <div class="muted small">РќРµС‚ РєРѕРјРјРµРЅС‚Р°СЂРёРµРІ</div>
+                <div class="muted small">Нет комментариев</div>
               {% endif %}
             </div>
 
             {% if t.status.value == "ARCHIVED" %}
-              <div class="small text-muted">РђСЂС…РёРІРЅР°СЏ Р·Р°СЏРІРєР° РґРѕСЃС‚СѓРїРЅР° С‚РѕР»СЊРєРѕ РґР»СЏ РїСЂРѕСЃРјРѕС‚СЂР°.</div>
+              <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
             {% else %}
               <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
                 <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
-                <input name="text" class="form-control" placeholder="Р”РѕР±Р°РІРёС‚СЊ РєРѕРјРјРµРЅС‚Р°СЂРёР№..." required />
-                <button class="btn btn-outline-secondary">РћС‚РїСЂР°РІРёС‚СЊ</button>
+                <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
+                <button class="btn btn-outline-secondary">Отправить</button>
               </form>
             {% endif %}
 
@@ -427,9 +427,9 @@
           <div class="col-12 col-lg-5">
             <h5>Ответственные</h5>
             <div class="mb-3 section-card">
-              <div class="small text-muted mb-2">РЎРѕР·РґР°Р»</div>
+              <div class="small text-muted mb-2">Создал</div>
               <div class="mb-2"><b>{{ users_by_id.get(t.created_by, "вЂ”") }}</b></div>
-              <div class="small text-muted mb-2">РСЃРїРѕР»РЅРёС‚РµР»СЊ</div>
+              <div class="small text-muted mb-2">Исполнитель</div>
               <div class="mb-3"><b>{{ users_by_id.get(t.executor_id, "вЂ”") }}</b></div>
               <div class="small text-muted mb-2">Наблюдатели</div>
               {% if watcher_user_ids %}
@@ -444,7 +444,7 @@
               {% if not is_current_user_watcher %}
                 <form method="post" action="/web/tickets/{{ t.id }}/watchers/self">
                   <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
-                  <button class="btn btn-sm btn-outline-secondary">Р”РѕР±Р°РІРёС‚СЊ СЃРµР±СЏ</button>
+                  <button class="btn btn-sm btn-outline-secondary">Добавить себя</button>
                 </form>
               {% endif %}
             </div>
@@ -510,7 +510,7 @@
                 enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
             <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
             <input type="file" name="file" class="form-control" required />
-            <button class="btn btn-outline-secondary">Р—Р°РіСЂСѓР·РёС‚СЊ</button>
+            <button class="btn btn-outline-secondary">Загрузить</button>
           </form>
         {% endif %}
 
@@ -521,26 +521,26 @@
         <hr class="my-4"/>
 
         <div>
-          <h5>Р›РѕРі РёР·РјРµРЅРµРЅРёР№</h5>
+          <h5>Лог изменений</h5>
           <div class="mb-0 section-card">
             <div class="row g-2 mb-3">
               <div class="col-12 col-md-4">
-                <label class="form-label mb-1" for="log-action-filter">Р¤РёР»СЊС‚СЂ РїРѕ РґРµР№СЃС‚РІРёСЋ</label>
+                <label class="form-label mb-1" for="log-action-filter">Фильтр по действию</label>
                 <select id="log-action-filter" class="form-select form-select-sm">
-                  <option value="">Р’СЃРµ РґРµР№СЃС‚РІРёСЏ</option>
-                  <option value="СЃРѕР·РґР°РЅРёРµ">РЎРѕР·РґР°РЅРёРµ</option>
-                  <option value="РёР·РјРµРЅРµРЅРёРµ">РР·РјРµРЅРµРЅРёРµ</option>
-                  <option value="РёР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°">РР·РјРµРЅРµРЅРёРµ СЃСЂРѕРєР°</option>
-                  <option value="РёР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ">РР·РјРµРЅРµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ</option>
-                  <option value="РёР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°">РР·РјРµРЅРµРЅРёРµ РїСЂРѕРµРєС‚Р°</option>
+                  <option value="">Все действия</option>
+                  <option value="создание">Создание</option>
+                  <option value="изменение">зменение</option>
+                  <option value="изменение срока">Изменение срока</option>
+                  <option value="изменение исполнителя">зменение исполнителя</option>
+                  <option value="изменение проекта">зменение проекта</option>
                   <option value="добавление файла">Добавление файла</option>
-                  <option value="Р°СЂС…РёРІРёСЂРѕРІР°РЅРёРµ">РђСЂС…РёРІРёСЂРѕРІР°РЅРёРµ</option>
-                  <option value="РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ">Р’РѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ</option>
+                  <option value="архивирование">Архивирование</option>
+                  <option value="восстановление">Восстановление</option>
                 </select>
               </div>
               <div class="col-12 col-md-8">
-                <label class="form-label mb-1" for="log-search">РџРѕРёСЃРє РїРѕ Р»РѕРіСѓ</label>
-                <input id="log-search" class="form-control form-control-sm" placeholder="РўРµРєСЃС‚ РґРµР№СЃС‚РІРёСЏ РёР»Рё РёРјСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ" />
+                <label class="form-label mb-1" for="log-search">Поиск по логу</label>
+                <input id="log-search" class="form-control form-control-sm" placeholder="Текст действия или имя пользователя" />
               </div>
             </div>
 
@@ -548,16 +548,16 @@
               {% for log in ticket_logs %}
                 <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ fix_mojibake_text(log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, 'вЂ”') or '')|lower }}" data-text="{{ (fix_mojibake_text(log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, 'вЂ”') or ''))|lower }}">
                   <div class="small muted">
-                    <b>{{ users_by_id.get(log.actor_id, "вЂ”") }}</b> В· {{ format_dt(log.created_at) }}
+                    <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
                   </div>
                   <div>{{ fix_mojibake_text(log.action) }}</div>
                 </div>
               {% endfor %}
             </div>
 
-            <div id="log-empty-filter" class="muted small d-none">РџРѕ РІС‹Р±СЂР°РЅРЅС‹Рј РїР°СЂР°РјРµС‚СЂР°Рј Р·Р°РїРёСЃРµР№ РЅРµС‚</div>
+            <div id="log-empty-filter" class="muted small d-none">По выбранным параметрам записей нет</div>
             {% if ticket_logs|length == 0 %}
-              <div class="muted small">РР·РјРµРЅРµРЅРёР№ РїРѕРєР° РЅРµС‚</div>
+              <div class="muted small">зменений пока нет</div>
             {% endif %}
           </div>
         </div>
@@ -618,7 +618,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     if (!res.ok) {
-      alert("РћС€РёР±РєР° СЃРјРµРЅС‹ СЃС‚Р°С‚СѓСЃР°");
+      alert("Ошибка смены статуса");
       return;
     }
 
@@ -657,7 +657,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Р¤РёР»СЊС‚СЂ Рё РїРѕРёСЃРє РїРѕ Р»РѕРіСѓ РёР·РјРµРЅРµРЅРёР№
+  // Фильтр и поиск по логу изменений
   const logActionFilter = document.getElementById("log-action-filter");
   const logSearch = document.getElementById("log-search");
   const logItems = Array.from(document.querySelectorAll("#log-list .log-item"));
