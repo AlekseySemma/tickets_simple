@@ -6132,6 +6132,43 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
+@app.post("/web/attachments/{attachment_id}/delete")
+async def web_delete_attachment(
+    attachment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    attachment = db.get(Attachment, attachment_id)
+    if not attachment:
+        raise HTTPException(404, "Attachment not found")
+    ticket = get_company_ticket_or_404(db, user, attachment.ticket_id)
+    if not can_access_ticket(user, ticket):
+        raise HTTPException(403, "Forbidden")
+    if ticket.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
+
+    can_delete_file = bool(is_manager(user) or (user.role == Role.executor and attachment.uploader_id == user.id))
+    if not can_delete_file:
+        raise HTTPException(403, "Forbidden")
+
+    disk_path = resolve_attachment_disk_path(attachment.file_path)
+    if disk_path:
+        try:
+            if disk_path.exists() and disk_path.is_file():
+                disk_path.unlink()
+        except OSError:
+            pass
+
+    db.delete(attachment)
+    add_ticket_log(db, ticket_id=ticket.id, actor_id=user.id, action="Удаление файла")
+    db.commit()
+
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket.id}")
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
 @app.get("/web/tickets/{ticket_id}/edit")
 def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_company_ticket_or_404(db, user, ticket_id)
