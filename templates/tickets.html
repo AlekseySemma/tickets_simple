@@ -958,6 +958,11 @@
                           {% if t.is_legal_hold %}Снять hold{% else %}Legal hold{% endif %}
                         </button>
                       </form>
+                      <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0"
+                            onsubmit="return confirm('Безвозвратно удалить заявку #{{ t.id }} из архива? Это действие нельзя отменить.');">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <button class="btn btn-sm btn-outline-danger">Удалить навсегда</button>
+                      </form>
                     {% endif %}
                     {% if not is_archive_page %}
                       <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
@@ -1070,6 +1075,11 @@
               <button class="btn btn-sm {% if t.is_legal_hold %}btn-warning{% else %}btn-outline-warning{% endif %} w-100">
                 {% if t.is_legal_hold %}Снять hold{% else %}Legal hold{% endif %}
               </button>
+            </form>
+            <form method="post" action="/web/tickets/{{ t.id }}/delete" class="mt-2"
+              onsubmit="return confirm('Безвозвратно удалить заявку #{{ t.id }} из архива? Это действие нельзя отменить.');">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
+              <button class="btn btn-sm btn-outline-danger w-100">Удалить навсегда</button>
             </form>
             {% endif %}
 
@@ -1651,6 +1661,5 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
 
 

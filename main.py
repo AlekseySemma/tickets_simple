@@ -6009,25 +6009,28 @@ async def web_delete_ticket(
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
     if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived tickets are removed by cleanup job")
-
-    # РїСЂР°РІР°
-    if is_manager(user):
-        allowed = True
-    elif user.role == Role.executor and t.created_by == user.id:
-        allowed = True
+        # Archived tickets can be removed manually only by managers.
+        allowed = is_manager(user)
     else:
-        allowed = False
+        # РїСЂР°РІР°
+        if is_manager(user):
+            allowed = True
+        elif user.role == Role.executor and t.created_by == user.id:
+            allowed = True
+        else:
+            allowed = False
 
     if not allowed:
         raise HTTPException(403, "Forbidden")
+
+    default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
 
     # СѓРґР°Р»СЏРµРј СЃРІСЏР·Р°РЅРЅС‹Рµ Р·Р°РїРёСЃРё РґРѕ СѓРґР°Р»РµРЅРёСЏ Р·Р°СЏРІРєРё (FK РІ Postgres)
     delete_ticket_with_related_data(db, t, remove_files=True)
     db.commit()
 
     form = await request.form()
-    next_url = safe_next(form.get("next"), fallback="/web")
+    next_url = safe_next(form.get("next"), fallback=default_next)
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
