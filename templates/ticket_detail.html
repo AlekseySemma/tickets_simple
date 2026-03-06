@@ -351,37 +351,37 @@
             <div class="ticket-actions">
               {% if can_edit and t.status.value != "ARCHIVED" %}
                 <a class="btn btn-sm btn-outline-secondary"
-                   href="/web/tickets/{{ t.id }}/edit?next={{ next_url_encoded }}">РР·РјРµРЅРёС‚СЊ</a>
+                   href="/web/tickets/{{ t.id }}/edit?next={{ next_url_encoded }}">Изменить</a>
               {% endif %}
               {% if can_archive %}
                 <form method="post"
                       action="/web/tickets/{{ t.id }}/archive"
-                      onsubmit="return confirm('РћС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ РІ Р°СЂС…РёРІ?');">
+                      onsubmit="return confirm('Отправить заявку в архив?');">
                   <input type="hidden" name="next" value="{{ next_url }}">
-                  <button class="btn btn-sm btn-outline-secondary">Р’ Р°СЂС…РёРІ</button>
+                  <button class="btn btn-sm btn-outline-secondary">В архив</button>
                 </form>
               {% endif %}
               {% if can_restore %}
                 <form method="post"
                       action="/web/tickets/{{ t.id }}/restore"
-                      onsubmit="return confirm('Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ Р·Р°СЏРІРєСѓ РёР· Р°СЂС…РёРІР°?');">
+                      onsubmit="return confirm('Восстановить заявку из архива?');">
                   <input type="hidden" name="next" value="{{ next_url }}">
-                  <button class="btn btn-sm btn-outline-primary">Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ</button>
+                  <button class="btn btn-sm btn-outline-primary">Восстановить</button>
                 </form>
                 <form method="post" action="/web/tickets/{{ t.id }}/legal-hold">
                   <input type="hidden" name="next" value="{{ next_url }}">
                   <input type="hidden" name="is_legal_hold" value="{% if t.is_legal_hold %}0{% else %}1{% endif %}">
                   <button class="btn btn-sm {% if t.is_legal_hold %}btn-warning{% else %}btn-outline-warning{% endif %}">
-                    {% if t.is_legal_hold %}РЎРЅСЏС‚СЊ hold{% else %}Legal hold{% endif %}
+                    {% if t.is_legal_hold %}Снять hold{% else %}Legal hold{% endif %}
                   </button>
                 </form>
               {% endif %}
               {% if can_delete and t.status.value != "ARCHIVED" %}
                 <form method="post"
                       action="/web/tickets/{{ t.id }}/delete"
-                      onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ Р·Р°СЏРІРєСѓ?');">
+                      onsubmit="return confirm('Удалить заявку?');">
                   <input type="hidden" name="next" value="{{ next_url }}">
-                  <button class="btn btn-sm btn-outline-danger">РЈРґР°Р»РёС‚СЊ</button>
+                  <button class="btn btn-sm btn-outline-danger">Удалить</button>
                 </form>
               {% endif %}
             </div>
