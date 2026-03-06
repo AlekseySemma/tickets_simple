@@ -1888,7 +1888,8 @@ def repair_mojibake_data(db: Session) -> int:
 
 def normalize_log_action(action: str | None) -> str:
     raw = (action or "").strip()
-    text = fix_mojibake_text(raw).lower()
+    fixed_raw = fix_mojibake_text(raw).strip()
+    text = fixed_raw.lower()
     merged = f"{raw.lower()} {text}"
     escaped = raw.encode("unicode_escape").decode("ascii").lower()
 
@@ -1918,6 +1919,7 @@ def normalize_log_action(action: str | None) -> str:
     k_unit = "\u0443\u0437\u043b"
     k_period = "\u043f\u0435\u0440\u0438\u043e\u0434"
     k_file = "\u0444\u0430\u0439\u043b"
+    k_status = "\u0441\u0442\u0430\u0442\u0443\u0441"
     k_change = "\u0438\u0437\u043c\u0435\u043d"
 
     if k_create in merged:
@@ -1940,6 +1942,10 @@ def normalize_log_action(action: str | None) -> str:
         return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0448\u0430\u0431\u043b\u043e\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
     if k_file in merged or "file" in merged:
         return "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
+    if k_status in merged:
+        if "->" in fixed_raw or "\u2192" in fixed_raw:
+            return fixed_raw
+        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u0430"
     if k_change in merged:
         return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
     return text or "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
