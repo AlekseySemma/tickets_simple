@@ -1,17 +1,28 @@
 {% set nav_class = top_nav_class|default("d-flex gap-2 flex-wrap") %}
+{% set p = request.url.path %}
+{% set is_tickets = p == "/web" or p.startswith("/web/tickets/") %}
+{% set is_receipts = p.startswith("/web/receipts") %}
+{% set is_notifications = p.startswith("/web/notifications") %}
+{% set is_templates = p.startswith("/web/ticket-templates") %}
+{% set is_archive = p.startswith("/web/archive") %}
+{% set is_settings = p.startswith("/web/settings") or p.startswith("/web/projects") or p.startswith("/web/admin") or p.startswith("/web/pwa-check") %}
+{% set is_org = p.startswith("/web/org-structure") %}
+{% set is_users = p.startswith("/web/users") or p.startswith("/web/executors") %}
+{% set is_ticket_types = p.startswith("/web/ticket-types") %}
+{% set is_more = is_templates or is_archive or is_settings or is_org or is_users or is_ticket_types %}
 <div class="{{ nav_class }}">
-  <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-  <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-  <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+  <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
+  <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
+  <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
   <details class="more-menu">
-    <summary class="btn btn-outline-secondary">еще</summary>
+    <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">еще</summary>
     <div class="more-menu-list">
-      <a href="/web/ticket-templates">Шаблоны</a>
-      <a href="/web/archive">Архив</a>
-      <a href="/web/settings">Настройки</a>
-      <a href="/web/org-structure">Оргструктура</a>
-      <a href="/web/users">Пользователи</a>
-      <a href="/web/ticket-types">Типы заявок</a>
+      <a class="{% if is_templates %}top-nav-item-active{% endif %}" href="/web/ticket-templates">Шаблоны</a>
+      <a class="{% if is_archive %}top-nav-item-active{% endif %}" href="/web/archive">Архив</a>
+      <a class="{% if is_settings %}top-nav-item-active{% endif %}" href="/web/settings">Настройки</a>
+      <a class="{% if is_org %}top-nav-item-active{% endif %}" href="/web/org-structure">Оргструктура</a>
+      <a class="{% if is_users %}top-nav-item-active{% endif %}" href="/web/users">Пользователи</a>
+      <a class="{% if is_ticket_types %}top-nav-item-active{% endif %}" href="/web/ticket-types">Типы заявок</a>
       <hr />
       <a class="danger-link" href="/web/logout">Выход</a>
     </div>

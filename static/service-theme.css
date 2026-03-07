@@ -158,6 +158,24 @@ a:hover {
   color: #d8e8e1;
 }
 
+.btn.top-nav-link-active {
+  --bs-btn-color: #154f4a;
+  --bs-btn-border-color: #6fb6aa;
+  --bs-btn-bg: #ddf2ec;
+  --bs-btn-hover-color: #133f3a;
+  --bs-btn-hover-border-color: #5ea89c;
+  --bs-btn-hover-bg: #d1ece4;
+  --bs-btn-active-color: #123934;
+  --bs-btn-active-border-color: #51998e;
+  --bs-btn-active-bg: #c6e6dc;
+}
+
+.more-menu-list a.top-nav-item-active {
+  background: #ddf2ec;
+  color: #154f4a;
+  border: 1px solid #b9dfd4;
+}
+
 .container,
 .container-fluid {
   position: relative;
