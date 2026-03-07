@@ -1,8 +1,8 @@
-<!doctype html>
+﻿<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Проекты</title>
+  <title>РџСЂРѕРµРєС‚С‹</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -84,58 +84,70 @@
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1200px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Проекты</h3></span>
-      <div class="d-flex gap-2">
+      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">РџСЂРѕРµРєС‚С‹</h3></span>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="/web/archive">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
       </div>
     </div>
     {% set projects_with_description = projects|selectattr("description")|list|length %}
     <div class="projects-hero mb-3">
       <div>
-        <span class="projects-kicker">Портфель работ</span>
-        <p class="projects-title">Проекты формируют рабочие контуры: используйте их для маршрутизации заявок и отчетности.</p>
+        <span class="projects-kicker">РџРѕСЂС‚С„РµР»СЊ СЂР°Р±РѕС‚</span>
+        <p class="projects-title">РџСЂРѕРµРєС‚С‹ С„РѕСЂРјРёСЂСѓСЋС‚ СЂР°Р±РѕС‡РёРµ РєРѕРЅС‚СѓСЂС‹: РёСЃРїРѕР»СЊР·СѓР№С‚Рµ РёС… РґР»СЏ РјР°СЂС€СЂСѓС‚РёР·Р°С†РёРё Р·Р°СЏРІРѕРє Рё РѕС‚С‡РµС‚РЅРѕСЃС‚Рё.</p>
       </div>
       <div class="projects-kpi">
         <div class="projects-kpi-card">
-          <span>Всего проектов</span>
+          <span>Р’СЃРµРіРѕ РїСЂРѕРµРєС‚РѕРІ</span>
           <strong>{{ projects|length }}</strong>
         </div>
         <div class="projects-kpi-card">
-          <span>С описанием</span>
+          <span>РЎ РѕРїРёСЃР°РЅРёРµРј</span>
           <strong>{{ projects_with_description }}</strong>
         </div>
         <div class="projects-kpi-card">
-          <span>Без описания</span>
+          <span>Р‘РµР· РѕРїРёСЃР°РЅРёСЏ</span>
           <strong>{{ projects|length - projects_with_description }}</strong>
         </div>
       </div>
     </div>
     {% if project_deleted %}
-      <div class="alert alert-success py-2">Проект удален.</div>
+      <div class="alert alert-success py-2">РџСЂРѕРµРєС‚ СѓРґР°Р»РµРЅ.</div>
     {% endif %}
     {% if delete_error == "in_use" %}
-      <div class="alert alert-danger py-2">Проект нельзя удалить: он используется в заявках.</div>
+      <div class="alert alert-danger py-2">РџСЂРѕРµРєС‚ РЅРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ: РѕРЅ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ Р·Р°СЏРІРєР°С….</div>
     {% elif delete_error == "not_found" %}
-      <div class="alert alert-danger py-2">Проект не найден.</div>
+      <div class="alert alert-danger py-2">РџСЂРѕРµРєС‚ РЅРµ РЅР°Р№РґРµРЅ.</div>
     {% elif delete_error == "failed" %}
-      <div class="alert alert-danger py-2">Не удалось удалить проект. Повторите позже.</div>
+      <div class="alert alert-danger py-2">РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РїСЂРѕРµРєС‚. РџРѕРІС‚РѕСЂРёС‚Рµ РїРѕР·Р¶Рµ.</div>
     {% endif %}
 
     <div class="card shadow-sm mb-3 projects-card">
       <div class="card-body">
-        <h5 class="mb-3">Добавить проект</h5>
+        <h5 class="mb-3">Р”РѕР±Р°РІРёС‚СЊ РїСЂРѕРµРєС‚</h5>
         <form method="post" action="/web/projects/create" class="row g-2">
           <div class="col-12 col-md-5">
-            <input name="name" class="form-control" placeholder="Название" required />
+            <input name="name" class="form-control" placeholder="РќР°Р·РІР°РЅРёРµ" required />
           </div>
           <div class="col-12 col-md-7">
-            <input name="description" class="form-control" placeholder="Описание (необязательно)" />
+            <input name="description" class="form-control" placeholder="РћРїРёСЃР°РЅРёРµ (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)" />
           </div>
           <div class="col-12">
-            <button class="btn btn-primary">Создать</button>
+            <button class="btn btn-primary">РЎРѕР·РґР°С‚СЊ</button>
           </div>
         </form>
       </div>
@@ -145,24 +157,25 @@
       <div class="card shadow-sm mb-2 project-item">
         <div class="card-body d-flex justify-content-between align-items-start gap-2">
           <div>
-            <b>#{{ p.id }} — {{ p.name }}</b>
+            <b>#{{ p.id }} вЂ” {{ p.name }}</b>
             <div class="text-muted">{{ p.description or "" }}</div>
           </div>
-          <form method="post" action="/web/projects/{{ p.id }}/delete" class="m-0" onsubmit="return confirm('Удалить проект #{{ p.id }}?');">
-            <button class="btn btn-sm btn-outline-danger">Удалить</button>
+          <form method="post" action="/web/projects/{{ p.id }}/delete" class="m-0" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ РїСЂРѕРµРєС‚ #{{ p.id }}?');">
+            <button class="btn btn-sm btn-outline-danger">РЈРґР°Р»РёС‚СЊ</button>
           </form>
         </div>
       </div>
     {% endfor %}
 
     {% if projects|length == 0 %}
-      <div class="alert alert-info">Проектов пока нет.</div>
+      <div class="alert alert-info">РџСЂРѕРµРєС‚РѕРІ РїРѕРєР° РЅРµС‚.</div>
     {% endif %}
   </div>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+
 
 
 

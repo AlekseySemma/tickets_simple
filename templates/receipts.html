@@ -1,8 +1,8 @@
-<!doctype html>
+﻿<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Чеки материалов</title>
+  <title>Р§РµРєРё РјР°С‚РµСЂРёР°Р»РѕРІ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -23,52 +23,64 @@
   <div class="container py-4 service-shell" style="max-width: 1320px;">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div>
-        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Чеки материалов</h3></span>
-        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ user.role }})</div>
+        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Р§РµРєРё РјР°С‚РµСЂРёР°Р»РѕРІ</h3></span>
+        <div class="text-muted">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="d-flex gap-2 flex-wrap">
-        <a class="btn btn-outline-secondary" href="/web?view_mode=cards">Заявки</a>
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="/web/archive">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
       </div>
     </div>
 
     {% if ok == "created" %}
-      <div class="alert alert-success py-2">Чек добавлен.</div>
+      <div class="alert alert-success py-2">Р§РµРє РґРѕР±Р°РІР»РµРЅ.</div>
     {% elif ok == "updated" %}
-      <div class="alert alert-success py-2">Чек обновлен.</div>
+      <div class="alert alert-success py-2">Р§РµРє РѕР±РЅРѕРІР»РµРЅ.</div>
     {% elif ok == "deleted" %}
-      <div class="alert alert-success py-2">Чек удален.</div>
+      <div class="alert alert-success py-2">Р§РµРє СѓРґР°Р»РµРЅ.</div>
     {% elif ok == "card_created" %}
-      <div class="alert alert-success py-2">Карта добавлена.</div>
+      <div class="alert alert-success py-2">РљР°СЂС‚Р° РґРѕР±Р°РІР»РµРЅР°.</div>
     {% elif ok == "status_updated" or ok == "bulk_updated" %}
-      <div class="alert alert-success py-2">Статус обновлен.</div>
+      <div class="alert alert-success py-2">РЎС‚Р°С‚СѓСЃ РѕР±РЅРѕРІР»РµРЅ.</div>
     {% endif %}
     {% if err == "missing_required" %}
-      <div class="alert alert-danger py-2">Заполните обязательные поля.</div>
+      <div class="alert alert-danger py-2">Р—Р°РїРѕР»РЅРёС‚Рµ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ РїРѕР»СЏ.</div>
     {% elif err == "bad_links" %}
-      <div class="alert alert-danger py-2">Объект или карта не найдены.</div>
+      <div class="alert alert-danger py-2">РћР±СЉРµРєС‚ РёР»Рё РєР°СЂС‚Р° РЅРµ РЅР°Р№РґРµРЅС‹.</div>
     {% elif err == "bad_amount" %}
-      <div class="alert alert-danger py-2">Сумма указана в неверном формате.</div>
+      <div class="alert alert-danger py-2">РЎСѓРјРјР° СѓРєР°Р·Р°РЅР° РІ РЅРµРІРµСЂРЅРѕРј С„РѕСЂРјР°С‚Рµ.</div>
     {% elif err == "missing_files" %}
-      <div class="alert alert-danger py-2">Добавьте хотя бы один файл чека.</div>
+      <div class="alert alert-danger py-2">Р”РѕР±Р°РІСЊС‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ С„Р°Р№Р» С‡РµРєР°.</div>
     {% elif err == "card_exists" %}
-      <div class="alert alert-danger py-2">Такая карта уже есть.</div>
+      <div class="alert alert-danger py-2">РўР°РєР°СЏ РєР°СЂС‚Р° СѓР¶Рµ РµСЃС‚СЊ.</div>
     {% elif err == "bad_status" %}
-      <div class="alert alert-danger py-2">Недопустимый статус.</div>
+      <div class="alert alert-danger py-2">РќРµРґРѕРїСѓСЃС‚РёРјС‹Р№ СЃС‚Р°С‚СѓСЃ.</div>
     {% elif err == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить изменения.</div>
+      <div class="alert alert-danger py-2">РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ.</div>
     {% endif %}
 
     {% if not can_view_accounting_mode %}
       <div class="d-flex gap-2 mb-3">
-        <span class="btn btn-primary disabled">Полевой режим</span>
+        <span class="btn btn-primary disabled">РџРѕР»РµРІРѕР№ СЂРµР¶РёРј</span>
       </div>
     {% else %}
       <div class="d-flex gap-2 mb-3">
-        <a class="btn {% if mode == 'field' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=field">Полевой режим</a>
-        <a class="btn {% if mode == 'accounting' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=accounting">Бухгалтерский режим</a>
+        <a class="btn {% if mode == 'field' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=field">РџРѕР»РµРІРѕР№ СЂРµР¶РёРј</a>
+        <a class="btn {% if mode == 'accounting' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=accounting">Р‘СѓС…РіР°Р»С‚РµСЂСЃРєРёР№ СЂРµР¶РёРј</a>
       </div>
     {% endif %}
     <datalist id="receipt-project-options">
@@ -80,27 +92,27 @@
     <div class="card shadow-sm mb-3">
       <div class="card-body">
         <details {% if mode == "field" %}open{% endif %}>
-          <summary class="h5 mb-3" style="cursor:pointer; user-select:none;">Добавить чек</summary>
+          <summary class="h5 mb-3" style="cursor:pointer; user-select:none;">Р”РѕР±Р°РІРёС‚СЊ С‡РµРє</summary>
           <div class="mb-3">
-            <div class="btn-group" role="group" aria-label="Вариант формы чека">
+            <div class="btn-group" role="group" aria-label="Р’Р°СЂРёР°РЅС‚ С„РѕСЂРјС‹ С‡РµРєР°">
               <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-short" autocomplete="off" checked>
-              <label class="btn btn-outline-primary" for="receipt-form-short">Короткий</label>
+              <label class="btn btn-outline-primary" for="receipt-form-short">РљРѕСЂРѕС‚РєРёР№</label>
               <input type="radio" class="btn-check" name="receipt_form_variant" id="receipt-form-full" autocomplete="off">
-              <label class="btn btn-outline-primary" for="receipt-form-full">Полный</label>
+              <label class="btn btn-outline-primary" for="receipt-form-full">РџРѕР»РЅС‹Р№</label>
             </div>
-            <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
+            <div class="small text-muted mt-1">РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ вЂ” РєРѕСЂРѕС‚РєР°СЏ С„РѕСЂРјР°: РєР°СЂС‚Р°, РѕР±СЉРµРєС‚, РєРѕРјРјРµРЅС‚Р°СЂРёР№ Рё С„Р°Р№Р».</div>
           </div>
           <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
           <div class="col-12 col-md-4" data-project-combo>
-            <label class="form-label">Объект</label>
-            <input type="text" class="form-control project-combo-input" list="receipt-project-options" placeholder="Выберите или введите объект" autocomplete="off" />
+            <label class="form-label">РћР±СЉРµРєС‚</label>
+            <input type="text" class="form-control project-combo-input" list="receipt-project-options" placeholder="Р’С‹Р±РµСЂРёС‚Рµ РёР»Рё РІРІРµРґРёС‚Рµ РѕР±СЉРµРєС‚" autocomplete="off" />
             <input type="hidden" name="project_id" class="project-id-hidden" required />
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Карта</label>
+            <label class="form-label">РљР°СЂС‚Р°</label>
             <select name="card_id" class="form-select" required>
               <option value="" {% if not preferred_card_id %}selected{% endif %} disabled>
-                {% if preferred_card_id %}Выберите карту{% else %}Карта из настроек не найдена{% endif %}
+                {% if preferred_card_id %}Р’С‹Р±РµСЂРёС‚Рµ РєР°СЂС‚Сѓ{% else %}РљР°СЂС‚Р° РёР· РЅР°СЃС‚СЂРѕРµРє РЅРµ РЅР°Р№РґРµРЅР°{% endif %}
               </option>
               {% for c in cards %}
                 {% if c.is_active %}
@@ -110,31 +122,31 @@
             </select>
           </div>
           <div class="col-12 col-md-4" data-full-only>
-            <label class="form-label">Сумма (опционально)</label>
+            <label class="form-label">РЎСѓРјРјР° (РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ)</label>
             <input name="amount" class="form-control" placeholder="1500.00" />
           </div>
           <div class="col-12 col-md-4" data-full-only>
-            <label class="form-label">Дата чека (опционально)</label>
+            <label class="form-label">Р”Р°С‚Р° С‡РµРєР° (РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ)</label>
             <input type="date" name="receipt_date" class="form-control" />
           </div>
           <div class="col-12 col-md-4" data-full-only>
-            <label class="form-label">Категория</label>
-            <input name="category" class="form-control" placeholder="Гвозди / топливо" />
+            <label class="form-label">РљР°С‚РµРіРѕСЂРёСЏ</label>
+            <input name="category" class="form-control" placeholder="Р“РІРѕР·РґРё / С‚РѕРїР»РёРІРѕ" />
           </div>
           <div class="col-12 col-md-4" data-full-only>
-            <label class="form-label">Поставщик</label>
-            <input name="supplier" class="form-control" placeholder="Леруа / АЗС" />
+            <label class="form-label">РџРѕСЃС‚Р°РІС‰РёРє</label>
+            <input name="supplier" class="form-control" placeholder="Р›РµСЂСѓР° / РђР—РЎ" />
           </div>
           <div class="col-12">
-            <label class="form-label">Комментарий</label>
-            <input name="comment" class="form-control" placeholder="Что купили (необязательно)" />
+            <label class="form-label">РљРѕРјРјРµРЅС‚Р°СЂРёР№</label>
+            <input name="comment" class="form-control" placeholder="Р§С‚Рѕ РєСѓРїРёР»Рё (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)" />
           </div>
           <div class="col-12">
-            <label class="form-label">Фото/файлы (1+)</label>
+            <label class="form-label">Р¤РѕС‚Рѕ/С„Р°Р№Р»С‹ (1+)</label>
             <input type="file" name="files" class="form-control" accept="image/*,.pdf" capture="environment" multiple required />
           </div>
             <div class="col-12">
-              <button class="btn btn-primary">Отправить чек</button>
+              <button class="btn btn-primary">РћС‚РїСЂР°РІРёС‚СЊ С‡РµРє</button>
             </div>
           </form>
         </details>
@@ -146,56 +158,56 @@
         <form method="get" action="/web/receipts" class="row g-2">
           <input type="hidden" name="mode" value="{{ mode }}" />
           <div class="col-12 col-md-2">
-            <label class="form-label">Период от</label>
+            <label class="form-label">РџРµСЂРёРѕРґ РѕС‚</label>
             <input type="date" class="form-control" name="date_from" value="{{ date_from_filter }}" />
           </div>
           <div class="col-12 col-md-2">
-            <label class="form-label">Период до</label>
+            <label class="form-label">РџРµСЂРёРѕРґ РґРѕ</label>
             <input type="date" class="form-control" name="date_to" value="{{ date_to_filter }}" />
           </div>
           <div class="col-12 col-md-2">
-            <label class="form-label">Объект</label>
+            <label class="form-label">РћР±СЉРµРєС‚</label>
             <select name="project_id" class="form-select">
-              <option value="">Все</option>
+              <option value="">Р’СЃРµ</option>
               {% for p in projects %}
                 <option value="{{ p.id }}" {% if project_id_filter == p.id %}selected{% endif %}>{{ p.name }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-2">
-            <label class="form-label">Карта</label>
+            <label class="form-label">РљР°СЂС‚Р°</label>
             <select name="card_id" class="form-select">
-              <option value="">Все</option>
+              <option value="">Р’СЃРµ</option>
               {% for c in cards %}
                 <option value="{{ c.id }}" {% if card_id_filter == c.id %}selected{% endif %}>{{ c.name }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-2">
-            <label class="form-label">Сотрудник</label>
+            <label class="form-label">РЎРѕС‚СЂСѓРґРЅРёРє</label>
             <select name="employee_id" class="form-select">
-              <option value="">Все</option>
+              <option value="">Р’СЃРµ</option>
               {% for e in employees %}
                 <option value="{{ e.id }}" {% if employee_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-2">
-            <label class="form-label">Статус</label>
+            <label class="form-label">РЎС‚Р°С‚СѓСЃ</label>
             <select name="status_filter" class="form-select">
-              <option value="">Все</option>
+              <option value="">Р’СЃРµ</option>
               {% for s in status_options %}
                 <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ receipt_status_label_ru(s) }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-8">
-            <label class="form-label">Поиск</label>
-            <input class="form-control" name="q" value="{{ q_filter }}" placeholder="Комментарий / категория / поставщик" />
+            <label class="form-label">РџРѕРёСЃРє</label>
+            <input class="form-control" name="q" value="{{ q_filter }}" placeholder="РљРѕРјРјРµРЅС‚Р°СЂРёР№ / РєР°С‚РµРіРѕСЂРёСЏ / РїРѕСЃС‚Р°РІС‰РёРє" />
           </div>
           <div class="col-12 col-md-4 d-flex gap-2 align-items-end">
-            <button class="btn btn-outline-primary">Фильтровать</button>
-            <a class="btn btn-outline-secondary" href="/web/receipts?mode={{ mode }}">Сброс</a>
+            <button class="btn btn-outline-primary">Р¤РёР»СЊС‚СЂРѕРІР°С‚СЊ</button>
+            <a class="btn btn-outline-secondary" href="/web/receipts?mode={{ mode }}">РЎР±СЂРѕСЃ</a>
             {% set query_string = request.url.query %}
             <a class="btn btn-outline-success" href="/web/receipts/export.xlsx{% if query_string %}?{{ query_string }}{% endif %}">Excel</a>
             <a class="btn btn-outline-success" href="/web/receipts/export.zip{% if query_string %}?{{ query_string }}{% endif %}">ZIP</a>
@@ -209,19 +221,19 @@
         <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
         <div class="d-flex gap-2 mb-2">
           <select name="status" class="form-select" style="max-width: 240px;">
-            <option value="IN_PROCESSING">В обработке</option>
-            <option value="ACCEPTED">Принят</option>
-            <option value="REJECTED">Отклонён</option>
-            <option value="NEW">Новый</option>
+            <option value="IN_PROCESSING">Р’ РѕР±СЂР°Р±РѕС‚РєРµ</option>
+            <option value="ACCEPTED">РџСЂРёРЅСЏС‚</option>
+            <option value="REJECTED">РћС‚РєР»РѕРЅС‘РЅ</option>
+            <option value="NEW">РќРѕРІС‹Р№</option>
           </select>
-          <button class="btn btn-outline-primary">Изменить статус выбранных</button>
+          <button class="btn btn-outline-primary">РР·РјРµРЅРёС‚СЊ СЃС‚Р°С‚СѓСЃ РІС‹Р±СЂР°РЅРЅС‹С…</button>
           <button
             class="btn btn-outline-danger"
             formaction="/web/receipts/delete/bulk"
             formmethod="post"
-            onclick="return confirm('Удалить выбранные чеки? Действие необратимо.');"
+            onclick="return confirm('РЈРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Рµ С‡РµРєРё? Р”РµР№СЃС‚РІРёРµ РЅРµРѕР±СЂР°С‚РёРјРѕ.');"
           >
-            Удалить выбранные
+            РЈРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Рµ
           </button>
         </div>
         <div class="table-responsive">
@@ -230,14 +242,14 @@
               <tr>
                 <th><input type="checkbox" onclick="document.querySelectorAll('.receipt-check').forEach(x => x.checked = this.checked)" /></th>
                 <th>ID</th>
-                <th>Дата</th>
-                <th>Объект</th>
-                <th>Карта</th>
-                <th>Сотрудник</th>
-                <th>Сумма</th>
-                <th>Комментарий</th>
-                <th>Файлы</th>
-                <th>Статус</th>
+                <th>Р”Р°С‚Р°</th>
+                <th>РћР±СЉРµРєС‚</th>
+                <th>РљР°СЂС‚Р°</th>
+                <th>РЎРѕС‚СЂСѓРґРЅРёРє</th>
+                <th>РЎСѓРјРјР°</th>
+                <th>РљРѕРјРјРµРЅС‚Р°СЂРёР№</th>
+                <th>Р¤Р°Р№Р»С‹</th>
+                <th>РЎС‚Р°С‚СѓСЃ</th>
               </tr>
             </thead>
             <tbody>
@@ -259,12 +271,12 @@
                           class="btn btn-sm btn-outline-primary mb-1"
                           href="/web/receipt-files/{{ f.id }}"
                           data-preview-src="/web/receipt-files/{{ f.id }}"
-                          data-preview-alt="Чек #{{ r.id }}"
+                          data-preview-alt="Р§РµРє #{{ r.id }}"
                         >
-                          Превью
+                          РџСЂРµРІСЊСЋ
                         </a>
                       {% endif %}
-                      <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать</a>
+                      <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">РЎРєР°С‡Р°С‚СЊ</a>
                     {% endfor %}
                   </td>
                   <td><span class="status-badge st-{{ r.status.value }}">{{ receipt_status_label_ru(r.status) }}</span></td>
@@ -287,22 +299,22 @@
                   <img
                     src="/web/receipt-files/{{ first_file.id }}"
                     class="receipt-thumb"
-                    alt="Чек #{{ r.id }}"
+                    alt="Р§РµРє #{{ r.id }}"
                     data-preview-src="/web/receipt-files/{{ first_file.id }}"
-                    data-preview-alt="Чек #{{ r.id }}"
+                    data-preview-alt="Р§РµРє #{{ r.id }}"
                   />
                 {% else %}
-                  <div class="p-3 border rounded bg-light">Файл: <a href="/web/receipt-files/{{ first_file.id }}?download=1">{{ first_file.original_name or ("file_" ~ first_file.id) }}</a></div>
+                  <div class="p-3 border rounded bg-light">Р¤Р°Р№Р»: <a href="/web/receipt-files/{{ first_file.id }}?download=1">{{ first_file.original_name or ("file_" ~ first_file.id) }}</a></div>
                 {% endif %}
               {% else %}
-                <div class="p-3 border rounded bg-light">Файлы не найдены</div>
+                <div class="p-3 border rounded bg-light">Р¤Р°Р№Р»С‹ РЅРµ РЅР°Р№РґРµРЅС‹</div>
               {% endif %}
             </div>
             <div class="col-12 col-md-8">
               <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
                 <div>
-                  <b>Чек #{{ r.id }}</b>
-                  <div class="text-muted">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }} · {{ users_by_id.get(r.created_by, "#" ~ r.created_by) }}</div>
+                  <b>Р§РµРє #{{ r.id }}</b>
+                  <div class="text-muted">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }} В· {{ users_by_id.get(r.created_by, "#" ~ r.created_by) }}</div>
                 </div>
                 <span class="status-badge st-{{ r.status.value }}">{{ receipt_status_label_ru(r.status) }}</span>
               </div>
@@ -312,31 +324,31 @@
                 {% if r.amount is not none %}<span class="meta-chip">{{ "%.2f"|format(r.amount|float) }}</span>{% endif %}
               </div>
               <div class="mb-2">{{ r.comment }}</div>
-              {% if r.category %}<div class="text-muted small">Категория: {{ r.category }}</div>{% endif %}
-              {% if r.supplier %}<div class="text-muted small">Поставщик: {{ r.supplier }}</div>{% endif %}
+              {% if r.category %}<div class="text-muted small">РљР°С‚РµРіРѕСЂРёСЏ: {{ r.category }}</div>{% endif %}
+              {% if r.supplier %}<div class="text-muted small">РџРѕСЃС‚Р°РІС‰РёРє: {{ r.supplier }}</div>{% endif %}
               <div class="mt-2">
                 {% for f in files %}
-                  <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">Скачать</a>
+                  <a class="btn btn-sm btn-outline-secondary mb-1" href="/web/receipt-files/{{ f.id }}?download=1">РЎРєР°С‡Р°С‚СЊ</a>
                 {% endfor %}
               </div>
               {% if user.role in ["EXECUTOR", "ADMIN", "CURATOR"] and r.created_by == user.id %}
                 <div class="d-flex gap-2 flex-wrap mt-2">
-                  <a class="btn btn-sm btn-outline-primary" href="/web/receipts?mode={{ mode }}&edit_id={{ r.id }}">Изменить</a>
-                  <form method="post" action="/web/receipts/{{ r.id }}/delete" class="m-0" onsubmit="return confirm('Удалить чек #{{ r.id }}?');">
+                  <a class="btn btn-sm btn-outline-primary" href="/web/receipts?mode={{ mode }}&edit_id={{ r.id }}">РР·РјРµРЅРёС‚СЊ</a>
+                  <form method="post" action="/web/receipts/{{ r.id }}/delete" class="m-0" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ С‡РµРє #{{ r.id }}?');">
                     <input type="hidden" name="next" value="/web/receipts?mode={{ mode }}" />
-                    <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                    <button class="btn btn-sm btn-outline-danger">РЈРґР°Р»РёС‚СЊ</button>
                   </form>
                 </div>
                 {% if edit_id == r.id %}
                   <form method="post" action="/web/receipts/{{ r.id }}/edit" class="row g-2 mt-2">
                     <input type="hidden" name="next" value="/web/receipts?mode={{ mode }}" />
                     <div class="col-12 col-md-6" data-project-combo>
-                      <label class="form-label">Объект</label>
-                      <input type="text" class="form-control project-combo-input" list="receipt-project-options" value="{{ projects_by_id.get(r.project_id, '') }} (#{{ r.project_id }})" placeholder="Выберите или введите объект" autocomplete="off" />
+                      <label class="form-label">РћР±СЉРµРєС‚</label>
+                      <input type="text" class="form-control project-combo-input" list="receipt-project-options" value="{{ projects_by_id.get(r.project_id, '') }} (#{{ r.project_id }})" placeholder="Р’С‹Р±РµСЂРёС‚Рµ РёР»Рё РІРІРµРґРёС‚Рµ РѕР±СЉРµРєС‚" autocomplete="off" />
                       <input type="hidden" name="project_id" class="project-id-hidden" value="{{ r.project_id }}" required />
                     </div>
                     <div class="col-12 col-md-6">
-                      <label class="form-label">Карта</label>
+                      <label class="form-label">РљР°СЂС‚Р°</label>
                       <select name="card_id" class="form-select" required>
                         {% for c in cards %}
                           {% if c.is_active %}
@@ -346,28 +358,28 @@
                       </select>
                     </div>
                     <div class="col-12">
-                      <label class="form-label">Комментарий</label>
+                      <label class="form-label">РљРѕРјРјРµРЅС‚Р°СЂРёР№</label>
                       <input name="comment" class="form-control" value="{{ r.comment or '' }}" />
                     </div>
                     <div class="col-12 col-md-3">
-                      <label class="form-label">Сумма</label>
+                      <label class="form-label">РЎСѓРјРјР°</label>
                       <input name="amount" class="form-control" value="{% if r.amount is not none %}{{ '%.2f'|format(r.amount|float) }}{% endif %}" />
                     </div>
                     <div class="col-12 col-md-3">
-                      <label class="form-label">Дата чека</label>
+                      <label class="form-label">Р”Р°С‚Р° С‡РµРєР°</label>
                       <input type="date" name="receipt_date" class="form-control" value="{{ r.receipt_date.isoformat() if r.receipt_date else '' }}" />
                     </div>
                     <div class="col-12 col-md-3">
-                      <label class="form-label">Категория</label>
+                      <label class="form-label">РљР°С‚РµРіРѕСЂРёСЏ</label>
                       <input name="category" class="form-control" value="{{ r.category or '' }}" />
                     </div>
                     <div class="col-12 col-md-3">
-                      <label class="form-label">Поставщик</label>
+                      <label class="form-label">РџРѕСЃС‚Р°РІС‰РёРє</label>
                       <input name="supplier" class="form-control" value="{{ r.supplier or '' }}" />
                     </div>
                     <div class="col-12 d-flex gap-2">
-                      <button class="btn btn-sm btn-primary">Сохранить</button>
-                      <a class="btn btn-sm btn-outline-secondary" href="/web/receipts?mode={{ mode }}">Отмена</a>
+                      <button class="btn btn-sm btn-primary">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+                      <a class="btn btn-sm btn-outline-secondary" href="/web/receipts?mode={{ mode }}">РћС‚РјРµРЅР°</a>
                     </div>
                   </form>
                 {% endif %}
@@ -380,7 +392,7 @@
                       <option value="{{ s }}" {% if r.status.value == s %}selected{% endif %}>{{ receipt_status_label_ru(s) }}</option>
                     {% endfor %}
                   </select>
-                  <button class="btn btn-sm btn-outline-primary">Сохранить статус</button>
+                  <button class="btn btn-sm btn-outline-primary">РЎРѕС…СЂР°РЅРёС‚СЊ СЃС‚Р°С‚СѓСЃ</button>
                 </form>
               {% endif %}
             </div>
@@ -390,7 +402,7 @@
     {% endif %}
 
     {% if receipts|length == 0 %}
-      <div class="alert alert-info">Чеков по выбранным фильтрам нет.</div>
+      <div class="alert alert-info">Р§РµРєРѕРІ РїРѕ РІС‹Р±СЂР°РЅРЅС‹Рј С„РёР»СЊС‚СЂР°Рј РЅРµС‚.</div>
     {% endif %}
   </div>
   <script src="/static/sw-register.js"></script>
@@ -399,8 +411,8 @@
     <div class="modal-dialog modal-dialog-centered modal-xl">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Превью чека</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+          <h5 class="modal-title">РџСЂРµРІСЊСЋ С‡РµРєР°</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Р—Р°РєСЂС‹С‚СЊ"></button>
         </div>
         <div class="modal-body text-center bg-light" id="receiptPreviewViewport" style="max-height:75vh; overflow:auto; display:flex; justify-content:center; align-items:flex-start;">
           <img id="receiptPreviewImage" src="" alt="" style="max-width:100%; max-height:75vh; width:auto; height:auto; border-radius:10px; cursor: zoom-in; transition: width .12s ease;" />
@@ -500,3 +512,4 @@
   </script>
 </body>
 </html>
+

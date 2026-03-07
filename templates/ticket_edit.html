@@ -1,8 +1,8 @@
-<!doctype html>
+﻿<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Редактирование заявки</title>
+  <title>Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ Р·Р°СЏРІРєРё</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -39,12 +39,24 @@
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 900px;">
     <div class="page-head mb-3">
-      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Редактирование заявки #{{ t.id }}</h3></span>
+      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ Р·Р°СЏРІРєРё #{{ t.id }}</h3></span>
       <div class="page-actions">
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="{{ next_url }}">Назад</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="/web/archive">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -58,18 +70,18 @@
           <input type="hidden" name="next" value="{{ next_url }}">
           {% if can_edit_full %}
             <div class="col-12 col-md-6">
-              <label class="form-label">Название</label>
+              <label class="form-label">РќР°Р·РІР°РЅРёРµ</label>
               <input name="title" class="form-control ticket-title-input" value="{{ t.title }}" required maxlength="{{ max_ticket_title_len }}" data-title-limit="{{ max_ticket_title_len }}" data-counter-target="edit-title-counter" />
               <div class="d-flex justify-content-end mt-1">
                 <small id="edit-title-counter" class="text-muted">0/{{ max_ticket_title_len }}</small>
               </div>
               <div class="invalid-feedback">
-                Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
+                РќР°Р·РІР°РЅРёРµ СЃР»РёС€РєРѕРј РґР»РёРЅРЅРѕРµ. РњР°РєСЃРёРјСѓРј: {{ max_ticket_title_len }} СЃРёРјРІРѕР»РѕРІ.
               </div>
             </div>
 
             <div class="col-12 col-md-6">
-              <label class="form-label">Проект</label>
+              <label class="form-label">РџСЂРѕРµРєС‚</label>
               <select name="project_id" class="form-select" required>
                 {% for p in projects %}
                   <option value="{{ p.id }}" {% if p.id == t.project_id %}selected{% endif %}>{{ p.name }}</option>
@@ -78,9 +90,9 @@
             </div>
 
             <div class="col-12 col-md-6">
-              <label class="form-label">Тип заявки</label>
+              <label class="form-label">РўРёРї Р·Р°СЏРІРєРё</label>
               <select name="ticket_type_id" class="form-select">
-                <option value="">— не выбран —</option>
+                <option value="">вЂ” РЅРµ РІС‹Р±СЂР°РЅ вЂ”</option>
                 {% for tt in ticket_types %}
                   <option value="{{ tt.id }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>
                     {{ tt.name }}{% if not tt.is_active %} (inactive){% endif %}
@@ -91,23 +103,23 @@
           {% endif %}
 
           <div class="col-12">
-            <label class="form-label">Описание</label>
+            <label class="form-label">РћРїРёСЃР°РЅРёРµ</label>
             <textarea name="description" class="form-control" rows="4">{{ t.description or "" }}</textarea>
           </div>
 
           <div class="col-12 col-md-6">
-  <label class="form-label">Срок: дата</label>
+  <label class="form-label">РЎСЂРѕРє: РґР°С‚Р°</label>
   <input id="deadline_date" name="deadline_date" type="date" class="form-control"
          value="{{ deadline_date or '' }}" />
 </div>
 
 <div class="col-12 col-md-6">
-  <label class="form-label">Время (HHMM)</label>
+  <label class="form-label">Р’СЂРµРјСЏ (HHMM)</label>
   <div class="input-group">
     <input id="deadline_time4" name="deadline_time4" class="form-control"
            inputmode="numeric" maxlength="4"
            value="{{ deadline_time4 or '' }}"
-           placeholder="например 9, 930, 1745" />
+           placeholder="РЅР°РїСЂРёРјРµСЂ 9, 930, 1745" />
     <span class="input-group-text" id="deadline_time_pretty">--:--</span>
   </div>
 </div>
@@ -115,9 +127,9 @@
 
           {% if can_edit_full %}
             <div class="col-12 col-md-6">
-              <label class="form-label">Исполнитель</label>
+              <label class="form-label">РСЃРїРѕР»РЅРёС‚РµР»СЊ</label>
               <select name="executor_id" class="form-select">
-                <option value="">— не назначен —</option>
+                <option value="">вЂ” РЅРµ РЅР°Р·РЅР°С‡РµРЅ вЂ”</option>
                 {% for e in executors %}
                   <option value="{{ e.id }}" {% if t.executor_id == e.id %}selected{% endif %}>{{ e.name }} ({{ e.email }})</option>
                 {% endfor %}
@@ -125,19 +137,19 @@
             </div>
 
             <div class="col-12 col-md-6">
-              <label class="form-label">Статус</label>
+              <label class="form-label">РЎС‚Р°С‚СѓСЃ</label>
               <select name="status" class="form-select">
-  <option value="NEW" {% if t.status.value == "NEW" %}selected{% endif %}>Новая</option>
-  <option value="IN_PROGRESS" {% if t.status.value == "IN_PROGRESS" %}selected{% endif %}>В работе</option>
-  <option value="DONE" {% if t.status.value == "DONE" %}selected{% endif %}>Выполнена</option>
-  <option value="CANCELED" {% if t.status.value == "CANCELED" %}selected{% endif %}>Отменена</option>
+  <option value="NEW" {% if t.status.value == "NEW" %}selected{% endif %}>РќРѕРІР°СЏ</option>
+  <option value="IN_PROGRESS" {% if t.status.value == "IN_PROGRESS" %}selected{% endif %}>Р’ СЂР°Р±РѕС‚Рµ</option>
+  <option value="DONE" {% if t.status.value == "DONE" %}selected{% endif %}>Р’С‹РїРѕР»РЅРµРЅР°</option>
+  <option value="CANCELED" {% if t.status.value == "CANCELED" %}selected{% endif %}>РћС‚РјРµРЅРµРЅР°</option>
 </select>
             </div>
           {% endif %}
             
           <div class="col-12 d-flex gap-2 flex-column flex-sm-row">
-            <button class="btn btn-primary" type="submit">Сохранить</button>
-            <a class="btn btn-outline-secondary" href="{{ next_url }}">Отмена</a>
+            <button class="btn btn-primary" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+            <a class="btn btn-outline-secondary" href="{{ next_url }}">РћС‚РјРµРЅР°</a>
           </div>
 
         </form>
@@ -154,7 +166,7 @@
 
     const pad2 = (n) => String(n).padStart(2, "0");
 
-    // проставим текущие значения из ticket (пришли из backend)
+    // РїСЂРѕСЃС‚Р°РІРёРј С‚РµРєСѓС‰РёРµ Р·РЅР°С‡РµРЅРёСЏ РёР· ticket (РїСЂРёС€Р»Рё РёР· backend)
     const initialDate = "{{ deadline_date or '' }}";
     const initialTime = "{{ deadline_time4 or '' }}";
 
@@ -218,7 +230,7 @@ document.addEventListener("DOMContentLoaded", function () {
       counter.classList.toggle("text-danger", tooLong);
     }
     titleInput.classList.toggle("is-invalid", tooLong);
-    titleInput.setCustomValidity(tooLong ? `Максимум ${limit} символов` : "");
+    titleInput.setCustomValidity(tooLong ? `РњР°РєСЃРёРјСѓРј ${limit} СЃРёРјРІРѕР»РѕРІ` : "");
   }
 
   titleInput.addEventListener("input", renderCounter);
@@ -238,6 +250,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+
 
 
 

@@ -1,7 +1,7 @@
-<html>
+﻿<html>
 <head>
   <meta charset="utf-8" />
-  <title>Настройки компании</title>
+  <title>РќР°СЃС‚СЂРѕР№РєРё РєРѕРјРїР°РЅРёРё</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -12,37 +12,50 @@
   <div class="container py-4 service-shell" style="max-width: 1200px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Настройки компании</h3></span>
+      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">РќР°СЃС‚СЂРѕР№РєРё РєРѕРјРїР°РЅРёРё</h3></span>
         <div class="text-muted">#{{ company.id }} - {{ company.name }}</div>
       </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/web/admin/companies">К списку компаний</a>
-        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
-        <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="/web/archive">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
       </div>
     </div>
 
     {% if ok %}
-      <div class="alert alert-success">Сохранено: {{ ok }}</div>
+      <div class="alert alert-success">РЎРѕС…СЂР°РЅРµРЅРѕ: {{ ok }}</div>
     {% endif %}
     {% if err %}
-      <div class="alert alert-danger">Ошибка: {{ err }}</div>
+      <div class="alert alert-danger">РћС€РёР±РєР°: {{ err }}</div>
     {% endif %}
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="mb-3">Данные компании</h5>
+        <h5 class="mb-3">Р”Р°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё</h5>
         <form method="post" action="/web/admin/companies/{{ company.id }}/update" class="row g-2">
           <div class="col-12 col-md-5">
-            <label class="form-label mb-1">Название компании</label>
+            <label class="form-label mb-1">РќР°Р·РІР°РЅРёРµ РєРѕРјРїР°РЅРёРё</label>
             <input class="form-control" name="name" value="{{ company.name }}" required />
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label mb-1">Предупреждение о дедлайне, мин</label>
+            <label class="form-label mb-1">РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ Рѕ РґРµРґР»Р°Р№РЅРµ, РјРёРЅ</label>
             <input class="form-control" type="number" min="{{ min_deadline_soon_warning_minutes }}" max="{{ max_deadline_soon_warning_minutes }}" name="deadline_soon_warning_minutes" value="{{ company.deadline_soon_warning_minutes }}" required />
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label mb-1">Хранение в архиве, дней</label>
+            <label class="form-label mb-1">РҐСЂР°РЅРµРЅРёРµ РІ Р°СЂС…РёРІРµ, РґРЅРµР№</label>
             <input class="form-control" type="number" min="{{ min_archive_retention_days }}" max="{{ max_archive_retention_days }}" name="archive_retention_days_default" value="{{ company.archive_retention_days_default }}" required />
           </div>
           <div class="col-12 col-md-1 d-grid">
@@ -55,16 +68,16 @@
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="mb-3">Добавить пользователя</h5>
+        <h5 class="mb-3">Р”РѕР±Р°РІРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</h5>
         <form method="post" action="/web/admin/companies/{{ company.id }}/users/create" class="row g-2">
           <div class="col-12 col-md-3">
-            <input class="form-control" name="name" placeholder="Имя" required />
+            <input class="form-control" name="name" placeholder="РРјСЏ" required />
           </div>
           <div class="col-12 col-md-3">
             <input class="form-control" type="email" name="email" placeholder="Email" required />
           </div>
           <div class="col-12 col-md-2">
-            <input class="form-control" type="password" name="password" placeholder="Пароль" required />
+            <input class="form-control" type="password" name="password" placeholder="РџР°СЂРѕР»СЊ" required />
           </div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="role" required>
@@ -74,7 +87,7 @@
             </select>
           </div>
           <div class="col-12 col-md-2 d-grid">
-            <button class="btn btn-primary" type="submit">Создать</button>
+            <button class="btn btn-primary" type="submit">РЎРѕР·РґР°С‚СЊ</button>
           </div>
         </form>
       </div>
@@ -82,17 +95,17 @@
 
     <div class="card shadow-sm">
       <div class="card-body">
-        <h5 class="mb-3">Пользователи компании</h5>
+        <h5 class="mb-3">РџРѕР»СЊР·РѕРІР°С‚РµР»Рё РєРѕРјРїР°РЅРёРё</h5>
         {% if users %}
           <div class="table-responsive">
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Имя</th>
+                  <th>РРјСЏ</th>
                   <th>Email</th>
-                  <th>Роль</th>
-                  <th>Пароль</th>
+                  <th>Р РѕР»СЊ</th>
+                  <th>РџР°СЂРѕР»СЊ</th>
                   <th></th>
                 </tr>
               </thead>
@@ -110,11 +123,11 @@
                           {% endfor %}
                         </select>
                       </td>
-                      <td><input class="form-control form-control-sm" type="password" name="password" placeholder="Не менять" /></td>
+                      <td><input class="form-control form-control-sm" type="password" name="password" placeholder="РќРµ РјРµРЅСЏС‚СЊ" /></td>
                       <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
-                          <button class="btn btn-outline-primary btn-sm" type="submit">Сохранить</button>
-                          <button class="btn btn-outline-danger btn-sm" type="submit" formaction="/web/admin/companies/{{ company.id }}/users/{{ u.id }}/delete" formmethod="post" onclick="return confirm('Удалить пользователя {{ u.name }}?');">Удалить</button>
+                          <button class="btn btn-outline-primary btn-sm" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+                          <button class="btn btn-outline-danger btn-sm" type="submit" formaction="/web/admin/companies/{{ company.id }}/users/{{ u.id }}/delete" formmethod="post" onclick="return confirm('РЈРґР°Р»РёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ {{ u.name }}?');">РЈРґР°Р»РёС‚СЊ</button>
                         </div>
                       </td>
                     </form>
@@ -124,7 +137,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">Пользователей пока нет.</div>
+          <div class="text-muted">РџРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РїРѕРєР° РЅРµС‚.</div>
         {% endif %}
       </div>
     </div>
@@ -132,3 +145,4 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+

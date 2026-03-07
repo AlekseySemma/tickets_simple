@@ -110,6 +110,54 @@ a:hover {
   gap: 10px !important;
 }
 
+.more-menu {
+  position: relative;
+}
+
+.more-menu > summary {
+  list-style: none;
+}
+
+.more-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  border: 1px solid var(--srv-border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 0.45rem 1rem rgba(33, 37, 41, 0.12);
+  padding: 6px;
+}
+
+.more-menu-list a {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-decoration: none;
+  color: #2f5f66;
+}
+
+.more-menu-list a:hover {
+  background: #edf7f3;
+  color: #1f4e53;
+}
+
+.more-menu-list .danger-link {
+  color: #b12f3d;
+}
+
+.more-menu-list hr {
+  margin: 6px 4px;
+  color: #d8e8e1;
+}
+
 .container,
 .container-fluid {
   position: relative;

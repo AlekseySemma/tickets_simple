@@ -481,19 +481,23 @@
         <div class="muted">Вы вошли как: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
       <div class="page-actions">
-  {% if user.role in ["ADMIN", "CURATOR"] %}
-  <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны</a>
-  {% endif %}
-  {% if is_archive_page %}
-  <a class="btn btn-outline-secondary" href="{{ active_list_path }}">Активные заявки</a>
-  {% else %}
-  <a class="btn btn-outline-secondary" href="{{ archive_list_path }}">Архив заявок</a>
-  {% endif %}
-  <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-  <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-  <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
-  <a class="btn btn-outline-danger" href="/web/logout">Выйти</a>
-</div>
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="{{ archive_list_path }}">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
+      </div>
     </div>
     {% if create_error == "title_too_long" %}
     <div class="alert alert-danger">
@@ -1661,5 +1665,3 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
-

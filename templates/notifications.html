@@ -1,7 +1,7 @@
-<html>
+﻿<html>
 <head>
   <meta charset="utf-8" />
-  <title>Уведомления</title>
+  <title>РЈРІРµРґРѕРјР»РµРЅРёСЏ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -18,17 +18,26 @@
   <div class="container py-4 service-shell" style="max-width: 1200px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Уведомления</h3></span>
-        <div class="text-muted">Непрочитанных: <b>{{ unread_count }}</b></div>
+        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">РЈРІРµРґРѕРјР»РµРЅРёСЏ</h3></span>
+        <div class="text-muted">РќРµРїСЂРѕС‡РёС‚Р°РЅРЅС‹С…: <b>{{ unread_count }}</b></div>
       </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">
-          Уведомления
-          <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span>
-        </a>
-        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
+      <div class="d-flex gap-2 flex-wrap">
         <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
+        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="/web/archive">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -37,19 +46,19 @@
         <form method="get" action="/web/notifications" class="row g-2 mb-3">
           <div class="col-12 col-md-2">
             <select class="form-select" name="status_filter">
-              <option value="all" {% if status_filter == "all" %}selected{% endif %}>Все</option>
-              <option value="unread" {% if status_filter == "unread" %}selected{% endif %}>Непрочитанные</option>
-              <option value="read" {% if status_filter == "read" %}selected{% endif %}>Прочитанные</option>
+              <option value="all" {% if status_filter == "all" %}selected{% endif %}>Р’СЃРµ</option>
+              <option value="unread" {% if status_filter == "unread" %}selected{% endif %}>РќРµРїСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ</option>
+              <option value="read" {% if status_filter == "read" %}selected{% endif %}>РџСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ</option>
             </select>
           </div>
           <div class="col-12 col-md-2">
             <select class="form-select" name="kind_filter">
-              <option value="all" {% if kind_filter == "all" %}selected{% endif %}>Все типы</option>
-              <option value="status" {% if kind_filter == "status" %}selected{% endif %}>Статус</option>
-              <option value="comment" {% if kind_filter == "comment" %}selected{% endif %}>Комментарий</option>
-              <option value="deadline" {% if kind_filter == "deadline" %}selected{% endif %}>Срок</option>
-              <option value="assignment" {% if kind_filter == "assignment" %}selected{% endif %}>Назначение</option>
-              <option value="other" {% if kind_filter == "other" %}selected{% endif %}>Другое</option>
+              <option value="all" {% if kind_filter == "all" %}selected{% endif %}>Р’СЃРµ С‚РёРїС‹</option>
+              <option value="status" {% if kind_filter == "status" %}selected{% endif %}>РЎС‚Р°С‚СѓСЃ</option>
+              <option value="comment" {% if kind_filter == "comment" %}selected{% endif %}>РљРѕРјРјРµРЅС‚Р°СЂРёР№</option>
+              <option value="deadline" {% if kind_filter == "deadline" %}selected{% endif %}>РЎСЂРѕРє</option>
+              <option value="assignment" {% if kind_filter == "assignment" %}selected{% endif %}>РќР°Р·РЅР°С‡РµРЅРёРµ</option>
+              <option value="other" {% if kind_filter == "other" %}selected{% endif %}>Р”СЂСѓРіРѕРµ</option>
             </select>
           </div>
           <div class="col-12 col-md-2">
@@ -59,20 +68,20 @@
             <input class="form-control" type="date" name="date_to" value="{{ date_to or '' }}" />
           </div>
           <div class="col-12 col-md-3">
-            <input class="form-control" name="q" value="{{ q or '' }}" placeholder="Поиск по тексту" />
+            <input class="form-control" name="q" value="{{ q or '' }}" placeholder="РџРѕРёСЃРє РїРѕ С‚РµРєСЃС‚Сѓ" />
           </div>
           <div class="col-12 col-md-1 d-grid">
             <button class="btn btn-primary" type="submit">OK</button>
           </div>
         </form>
         <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
-          <div class="text-muted">Нажмите «Открыть», чтобы перейти к заявке и отметить уведомление прочитанным.</div>
+          <div class="text-muted">РќР°Р¶РјРёС‚Рµ В«РћС‚РєСЂС‹С‚СЊВ», С‡С‚РѕР±С‹ РїРµСЂРµР№С‚Рё Рє Р·Р°СЏРІРєРµ Рё РѕС‚РјРµС‚РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёРµ РїСЂРѕС‡РёС‚Р°РЅРЅС‹Рј.</div>
           <div class="d-flex gap-2">
             <form method="post" action="/web/notifications/read-all">
-              <button class="btn btn-outline-primary btn-sm" type="submit">Прочитать все</button>
+              <button class="btn btn-outline-primary btn-sm" type="submit">РџСЂРѕС‡РёС‚Р°С‚СЊ РІСЃРµ</button>
             </form>
-            <form method="post" action="/web/notifications/delete-all" onsubmit="return confirm('Удалить все уведомления?');">
-              <button class="btn btn-outline-danger btn-sm" type="submit">Удалить все</button>
+            <form method="post" action="/web/notifications/delete-all" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ РІСЃРµ СѓРІРµРґРѕРјР»РµРЅРёСЏ?');">
+              <button class="btn btn-outline-danger btn-sm" type="submit">РЈРґР°Р»РёС‚СЊ РІСЃРµ</button>
             </form>
           </div>
         </div>
@@ -92,17 +101,17 @@
                       <p class="mb-1">{{ fix_mojibake_text(n.body) }}</p>
                     {% endif %}
                     {% if not n.is_read %}
-                      <small class="text-primary">Непрочитано</small>
+                      <small class="text-primary">РќРµРїСЂРѕС‡РёС‚Р°РЅРѕ</small>
                     {% else %}
-                      <small class="text-muted">Прочитано</small>
+                      <small class="text-muted">РџСЂРѕС‡РёС‚Р°РЅРѕ</small>
                     {% endif %}
                   </div>
                   <div class="text-end ms-3">
                     <small class="text-muted d-block mb-2">{{ format_dt(n.created_at) }}</small>
                     <div class="d-flex gap-2">
-                      <a class="btn btn-sm btn-outline-primary" href="/web/notifications/{{ n.id }}/open">Открыть</a>
-                      <form method="post" action="/web/notifications/{{ n.id }}/delete" onsubmit="return confirm('Удалить это уведомление?');">
-                        <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+                      <a class="btn btn-sm btn-outline-primary" href="/web/notifications/{{ n.id }}/open">РћС‚РєСЂС‹С‚СЊ</a>
+                      <form method="post" action="/web/notifications/{{ n.id }}/delete" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ СЌС‚Рѕ СѓРІРµРґРѕРјР»РµРЅРёРµ?');">
+                        <button class="btn btn-sm btn-outline-danger" type="submit">РЈРґР°Р»РёС‚СЊ</button>
                       </form>
                     </div>
                   </div>
@@ -111,7 +120,7 @@
             {% endfor %}
           </div>
         {% else %}
-          <div class="text-muted">Уведомлений пока нет.</div>
+          <div class="text-muted">РЈРІРµРґРѕРјР»РµРЅРёР№ РїРѕРєР° РЅРµС‚.</div>
         {% endif %}
       </div>
     </div>
@@ -119,6 +128,7 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+
 
 
 

@@ -1,7 +1,7 @@
-<html>
+﻿<html>
 <head>
   <meta charset="utf-8" />
-  <title>Оргструктура</title>
+  <title>РћСЂРіСЃС‚СЂСѓРєС‚СѓСЂР°</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -73,96 +73,108 @@
   <div class="container py-4 service-shell" style="max-width: 1400px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
-        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Оргструктура</h3></span>
-        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ user.role }})</div>
+        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">РћСЂРіСЃС‚СЂСѓРєС‚СѓСЂР°</h3></span>
+        <div class="text-muted">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: <b>{{ user.name }}</b> ({{ user.role }})</div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
         <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
         <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-        <a class="btn btn-outline-secondary" href="/web/settings">Настройки</a>
+        <details class="more-menu">
+          <summary class="btn btn-outline-secondary">еще</summary>
+          <div class="more-menu-list">
+            <a href="/web/ticket-templates">Шаблоны</a>
+            <a href="/web/archive">Архив</a>
+            <a href="/web/settings">Настройки</a>
+            <a href="/web/org-structure">Оргструктура</a>
+            <a href="/web/users">Пользователи</a>
+            <a href="/web/ticket-types">Типы заявок</a>
+            <hr />
+            <a class="danger-link" href="/web/logout">Выход</a>
+          </div>
+        </details>
       </div>
     </div>
     <div class="org-kpi mb-3">
       <div class="org-kpi-card">
-        <span>Узлы в дереве</span>
+        <span>РЈР·Р»С‹ РІ РґРµСЂРµРІРµ</span>
         <strong>{{ units|length }}</strong>
       </div>
       <div class="org-kpi-card">
-        <span>Закрепления</span>
+        <span>Р—Р°РєСЂРµРїР»РµРЅРёСЏ</span>
         <strong>{{ assignments|length }}</strong>
       </div>
       <div class="org-kpi-card">
-        <span>Исполнители</span>
+        <span>РСЃРїРѕР»РЅРёС‚РµР»Рё</span>
         <strong>{{ executors|length }}</strong>
       </div>
       <div class="org-kpi-card">
-        <span>Типы узлов</span>
+        <span>РўРёРїС‹ СѓР·Р»РѕРІ</span>
         <strong>{{ unit_type_names|length }}</strong>
       </div>
     </div>
     <div class="org-hint mb-3">
-      Соберите иерархию, назначьте ответственных по узлам и управляйте жизненным циклом структуры в одном рабочем контуре.
+      РЎРѕР±РµСЂРёС‚Рµ РёРµСЂР°СЂС…РёСЋ, РЅР°Р·РЅР°С‡СЊС‚Рµ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹С… РїРѕ СѓР·Р»Р°Рј Рё СѓРїСЂР°РІР»СЏР№С‚Рµ Р¶РёР·РЅРµРЅРЅС‹Рј С†РёРєР»РѕРј СЃС‚СЂСѓРєС‚СѓСЂС‹ РІ РѕРґРЅРѕРј СЂР°Р±РѕС‡РµРј РєРѕРЅС‚СѓСЂРµ.
     </div>
 
     {% set err = request.query_params.get("error", "") %}
     {% if err %}
       <div class="alert alert-warning py-2">
-        {% if err == "empty_name" %}Введите название узла.{% endif %}
-        {% if err == "bad_parent" %}Некорректный родительский узел.{% endif %}
-        {% if err == "parent_not_found" %}Родительский узел не найден.{% endif %}
-        {% if err == "create_failed" %}Не удалось создать узел (возможно, дубликат в этой ветке).{% endif %}
-        {% if err == "import_empty" %}Файл импорта пустой.{% endif %}
-        {% if err == "import_read_failed" %}Не удалось прочитать файл.{% endif %}
-        {% if err == "import_encoding" %}Неподдерживаемая кодировка CSV. Используйте UTF-8.{% endif %}
-        {% if err == "import_headers" %}Не удалось прочитать заголовки CSV.{% endif %}
-        {% if err == "import_need_path" %}В CSV обязательна колонка path.{% endif %}
-        {% if err == "import_failed" %}Импорт завершился с ошибкой, изменения откатились.{% endif %}
-        {% if err == "assign_bad_input" %}Некорректные данные закрепления исполнителя.{% endif %}
-        {% if err == "assign_unit_not_found" %}Узел для закрепления не найден.{% endif %}
-        {% if err == "assign_executor_not_found" %}Исполнитель для закрепления не найден.{% endif %}
-        {% if err == "assign_failed" %}Не удалось сохранить закрепление исполнителя.{% endif %}
-        {% if err == "edit_not_found" %}Узел для редактирования не найден.{% endif %}
-        {% if err == "edit_empty_name" %}Введите название узла при редактировании.{% endif %}
-        {% if err == "edit_bad_parent" %}Некорректный родитель в редактировании.{% endif %}
-        {% if err == "edit_parent_not_found" %}Родитель для редактирования не найден.{% endif %}
-        {% if err == "edit_cycle" %}Нельзя сделать родителем дочерний узел (цикл в дереве).{% endif %}
-        {% if err == "edit_failed" %}Не удалось сохранить изменения узла.{% endif %}
-        {% if err == "delete_not_found" %}Узел для удаления не найден.{% endif %}
-        {% if err == "delete_has_children" %}Нельзя удалить узел: сначала удалите или перенесите дочерние узлы.{% endif %}
-        {% if err == "delete_has_assignments" %}Нельзя удалить узел: есть закрепленные исполнители.{% endif %}
-        {% if err == "delete_has_templates" %}Нельзя удалить узел: он используется в шаблонах заявок.{% endif %}
-        {% if err == "delete_has_tickets" %}Нельзя удалить узел: по нему есть заявки.{% endif %}
-        {% if err == "delete_has_generation_keys" %}Нельзя удалить узел: по нему есть сгенерированные заявки в периодических шаблонах.{% endif %}
-        {% if err == "delete_failed" %}Не удалось удалить узел.{% endif %}
+        {% if err == "empty_name" %}Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ СѓР·Р»Р°.{% endif %}
+        {% if err == "bad_parent" %}РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ СЂРѕРґРёС‚РµР»СЊСЃРєРёР№ СѓР·РµР».{% endif %}
+        {% if err == "parent_not_found" %}Р РѕРґРёС‚РµР»СЊСЃРєРёР№ СѓР·РµР» РЅРµ РЅР°Р№РґРµРЅ.{% endif %}
+        {% if err == "create_failed" %}РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ СѓР·РµР» (РІРѕР·РјРѕР¶РЅРѕ, РґСѓР±Р»РёРєР°С‚ РІ СЌС‚РѕР№ РІРµС‚РєРµ).{% endif %}
+        {% if err == "import_empty" %}Р¤Р°Р№Р» РёРјРїРѕСЂС‚Р° РїСѓСЃС‚РѕР№.{% endif %}
+        {% if err == "import_read_failed" %}РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ С„Р°Р№Р».{% endif %}
+        {% if err == "import_encoding" %}РќРµРїРѕРґРґРµСЂР¶РёРІР°РµРјР°СЏ РєРѕРґРёСЂРѕРІРєР° CSV. РСЃРїРѕР»СЊР·СѓР№С‚Рµ UTF-8.{% endif %}
+        {% if err == "import_headers" %}РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ Р·Р°РіРѕР»РѕРІРєРё CSV.{% endif %}
+        {% if err == "import_need_path" %}Р’ CSV РѕР±СЏР·Р°С‚РµР»СЊРЅР° РєРѕР»РѕРЅРєР° path.{% endif %}
+        {% if err == "import_failed" %}РРјРїРѕСЂС‚ Р·Р°РІРµСЂС€РёР»СЃСЏ СЃ РѕС€РёР±РєРѕР№, РёР·РјРµРЅРµРЅРёСЏ РѕС‚РєР°С‚РёР»РёСЃСЊ.{% endif %}
+        {% if err == "assign_bad_input" %}РќРµРєРѕСЂСЂРµРєС‚РЅС‹Рµ РґР°РЅРЅС‹Рµ Р·Р°РєСЂРµРїР»РµРЅРёСЏ РёСЃРїРѕР»РЅРёС‚РµР»СЏ.{% endif %}
+        {% if err == "assign_unit_not_found" %}РЈР·РµР» РґР»СЏ Р·Р°РєСЂРµРїР»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ.{% endif %}
+        {% if err == "assign_executor_not_found" %}РСЃРїРѕР»РЅРёС‚РµР»СЊ РґР»СЏ Р·Р°РєСЂРµРїР»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ.{% endif %}
+        {% if err == "assign_failed" %}РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ Р·Р°РєСЂРµРїР»РµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ.{% endif %}
+        {% if err == "edit_not_found" %}РЈР·РµР» РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ.{% endif %}
+        {% if err == "edit_empty_name" %}Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ СѓР·Р»Р° РїСЂРё СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРё.{% endif %}
+        {% if err == "edit_bad_parent" %}РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ СЂРѕРґРёС‚РµР»СЊ РІ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРё.{% endif %}
+        {% if err == "edit_parent_not_found" %}Р РѕРґРёС‚РµР»СЊ РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ.{% endif %}
+        {% if err == "edit_cycle" %}РќРµР»СЊР·СЏ СЃРґРµР»Р°С‚СЊ СЂРѕРґРёС‚РµР»РµРј РґРѕС‡РµСЂРЅРёР№ СѓР·РµР» (С†РёРєР» РІ РґРµСЂРµРІРµ).{% endif %}
+        {% if err == "edit_failed" %}РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ СѓР·Р»Р°.{% endif %}
+        {% if err == "delete_not_found" %}РЈР·РµР» РґР»СЏ СѓРґР°Р»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ.{% endif %}
+        {% if err == "delete_has_children" %}РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СѓР·РµР»: СЃРЅР°С‡Р°Р»Р° СѓРґР°Р»РёС‚Рµ РёР»Рё РїРµСЂРµРЅРµСЃРёС‚Рµ РґРѕС‡РµСЂРЅРёРµ СѓР·Р»С‹.{% endif %}
+        {% if err == "delete_has_assignments" %}РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СѓР·РµР»: РµСЃС‚СЊ Р·Р°РєСЂРµРїР»РµРЅРЅС‹Рµ РёСЃРїРѕР»РЅРёС‚РµР»Рё.{% endif %}
+        {% if err == "delete_has_templates" %}РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СѓР·РµР»: РѕРЅ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ С€Р°Р±Р»РѕРЅР°С… Р·Р°СЏРІРѕРє.{% endif %}
+        {% if err == "delete_has_tickets" %}РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СѓР·РµР»: РїРѕ РЅРµРјСѓ РµСЃС‚СЊ Р·Р°СЏРІРєРё.{% endif %}
+        {% if err == "delete_has_generation_keys" %}РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СѓР·РµР»: РїРѕ РЅРµРјСѓ РµСЃС‚СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°РЅРЅС‹Рµ Р·Р°СЏРІРєРё РІ РїРµСЂРёРѕРґРёС‡РµСЃРєРёС… С€Р°Р±Р»РѕРЅР°С….{% endif %}
+        {% if err == "delete_failed" %}РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СѓР·РµР».{% endif %}
       </div>
     {% endif %}
     {% if import_report.ok == "1" %}
       <div class="alert alert-success py-2">
-        Импорт завершен: строк {{ import_report.rows }}, создано узлов {{ import_report.created }},
-        обновлено {{ import_report.updated }}, ошибок {{ import_report.errors }}.
+        РРјРїРѕСЂС‚ Р·Р°РІРµСЂС€РµРЅ: СЃС‚СЂРѕРє {{ import_report.rows }}, СЃРѕР·РґР°РЅРѕ СѓР·Р»РѕРІ {{ import_report.created }},
+        РѕР±РЅРѕРІР»РµРЅРѕ {{ import_report.updated }}, РѕС€РёР±РѕРє {{ import_report.errors }}.
       </div>
     {% endif %}
 
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
-        <h5 class="mb-3">Добавить узел</h5>
+        <h5 class="mb-3">Р”РѕР±Р°РІРёС‚СЊ СѓР·РµР»</h5>
         <form method="post" action="/web/org-structure/create" class="row g-2">
           <div class="col-12 col-md-4">
-            <input class="form-control" name="name" placeholder="Название узла" required />
+            <input class="form-control" name="name" placeholder="РќР°Р·РІР°РЅРёРµ СѓР·Р»Р°" required />
           </div>
           <div class="col-12 col-md-4">
             <select class="form-select" name="parent_id">
-              <option value="">Без родителя (корневой)</option>
+              <option value="">Р‘РµР· СЂРѕРґРёС‚РµР»СЏ (РєРѕСЂРЅРµРІРѕР№)</option>
               {% for p in parents %}
                 {% if p.is_active %}
-                  <option value="{{ p.id }}">{{ "— " * p.level }}{{ p.name }} (#{{ p.id }})</option>
+                  <option value="{{ p.id }}">{{ "вЂ” " * p.level }}{{ p.name }} (#{{ p.id }})</option>
                 {% endif %}
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-3">
-            <input class="form-control" list="unitTypeNames" name="unit_type_name" placeholder="Тип (например, Филиал)" />
+            <input class="form-control" list="unitTypeNames" name="unit_type_name" placeholder="РўРёРї (РЅР°РїСЂРёРјРµСЂ, Р¤РёР»РёР°Р»)" />
             <datalist id="unitTypeNames">
               {% for n in unit_type_names %}
                 <option value="{{ n }}"></option>
@@ -180,8 +192,8 @@
       <div class="card shadow-sm mb-3 border-primary org-card org-card-focus">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">Редактирование узла #{{ edit_unit.id }}</h5>
-            <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure">Отменить</a>
+            <h5 class="mb-0">Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ СѓР·Р»Р° #{{ edit_unit.id }}</h5>
+            <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure">РћС‚РјРµРЅРёС‚СЊ</a>
           </div>
           <form method="post" action="/web/org-structure/{{ edit_unit.id }}/update" class="row g-2">
             <div class="col-12 col-md-4">
@@ -189,7 +201,7 @@
             </div>
             <div class="col-12 col-md-4">
               <select class="form-select" name="parent_id">
-                <option value="" {% if not edit_unit.parent_id %}selected{% endif %}>Без родителя (корневой)</option>
+                <option value="" {% if not edit_unit.parent_id %}selected{% endif %}>Р‘РµР· СЂРѕРґРёС‚РµР»СЏ (РєРѕСЂРЅРµРІРѕР№)</option>
                 {% for p in parents %}
                   {% if p.id not in edit_forbidden_parent_ids %}
                     <option value="{{ p.id }}" {% if edit_unit.parent_id == p.id %}selected{% endif %}>{{ "- " * p.level }}{{ p.name }} (#{{ p.id }})</option>
@@ -203,11 +215,11 @@
             <div class="col-12 col-md-1 d-flex align-items-center">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="edit_is_active" {% if edit_unit.is_active %}checked{% endif %} />
-                <label class="form-check-label" for="edit_is_active">Активен</label>
+                <label class="form-check-label" for="edit_is_active">РђРєС‚РёРІРµРЅ</label>
               </div>
             </div>
             <div class="col-12">
-              <button class="btn btn-primary" type="submit">Сохранить</button>
+              <button class="btn btn-primary" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
             </div>
           </form>
         </div>
@@ -216,44 +228,44 @@
 
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
-        <h5 class="mb-3">Импорт из CSV</h5>
+        <h5 class="mb-3">РРјРїРѕСЂС‚ РёР· CSV</h5>
         <form method="post" action="/web/org-structure/import-csv" enctype="multipart/form-data" class="row g-2">
           <div class="col-12 col-md-8">
             <input class="form-control" type="file" name="file" accept=".csv,text/csv" required />
           </div>
           <div class="col-12 col-md-4 d-grid">
-            <button class="btn btn-outline-primary" type="submit">Импортировать</button>
+            <button class="btn btn-outline-primary" type="submit">РРјРїРѕСЂС‚РёСЂРѕРІР°С‚СЊ</button>
           </div>
         </form>
         <div class="mt-2">
-          <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure/template.csv">Скачать шаблон CSV</a>
+          <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure/template.csv">РЎРєР°С‡Р°С‚СЊ С€Р°Р±Р»РѕРЅ CSV</a>
         </div>
         <div class="small text-muted mt-2">
-          Формат: обязательная колонка <code>path</code>, опционально <code>types</code> и <code>is_active</code>.
-          Пример: <code>path=Филиал Москва/Район Центр/Техник Иванов</code>,
-          <code>types=Филиал/Район/Техник</code>, <code>is_active=true</code>.
+          Р¤РѕСЂРјР°С‚: РѕР±СЏР·Р°С‚РµР»СЊРЅР°СЏ РєРѕР»РѕРЅРєР° <code>path</code>, РѕРїС†РёРѕРЅР°Р»СЊРЅРѕ <code>types</code> Рё <code>is_active</code>.
+          РџСЂРёРјРµСЂ: <code>path=Р¤РёР»РёР°Р» РњРѕСЃРєРІР°/Р Р°Р№РѕРЅ Р¦РµРЅС‚СЂ/РўРµС…РЅРёРє РРІР°РЅРѕРІ</code>,
+          <code>types=Р¤РёР»РёР°Р»/Р Р°Р№РѕРЅ/РўРµС…РЅРёРє</code>, <code>is_active=true</code>.
         </div>
       </div>
     </div>
 
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
-        <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
+        <h5 class="mb-3">Р—Р°РєСЂРµРїР»РµРЅРёРµ РёСЃРїРѕР»РЅРёС‚РµР»РµР№ РїРѕ СѓР·Р»Р°Рј</h5>
         <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
           <div class="col-12 col-md-6">
             <select class="form-select" name="unit_ids" multiple size="8" required>
-              <option value="" selected disabled>Узел</option>
+              <option value="" selected disabled>РЈР·РµР»</option>
               {% for u in units %}
                 {% if u.is_active %}
                   <option value="{{ u.id }}">{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})</option>
                 {% endif %}
               {% endfor %}
             </select>
-            <div class="form-text">Можно выбрать несколько узлов (Ctrl/Cmd + клик).</div>
+            <div class="form-text">РњРѕР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ РЅРµСЃРєРѕР»СЊРєРѕ СѓР·Р»РѕРІ (Ctrl/Cmd + РєР»РёРє).</div>
           </div>
           <div class="col-12 col-md-4">
             <select class="form-select" name="executor_id" required>
-              <option value="" selected disabled>Исполнитель</option>
+              <option value="" selected disabled>РСЃРїРѕР»РЅРёС‚РµР»СЊ</option>
               {% for e in executors %}
                 <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
               {% endfor %}
@@ -262,9 +274,9 @@
           <div class="col-12 col-md-2 d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-md-end gap-2">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="assign_primary" />
-              <label class="form-check-label" for="assign_primary">Основной</label>
+              <label class="form-check-label" for="assign_primary">РћСЃРЅРѕРІРЅРѕР№</label>
             </div>
-            <button class="btn btn-primary btn-sm" type="submit">Назначить</button>
+            <button class="btn btn-primary btn-sm" type="submit">РќР°Р·РЅР°С‡РёС‚СЊ</button>
           </div>
         </form>
 
@@ -273,9 +285,9 @@
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
-                  <th>Узел</th>
-                  <th>Исполнитель</th>
-                  <th>Статус</th>
+                  <th>РЈР·РµР»</th>
+                  <th>РСЃРїРѕР»РЅРёС‚РµР»СЊ</th>
+                  <th>РЎС‚Р°С‚СѓСЃ</th>
                   <th></th>
                 </tr>
               </thead>
@@ -286,20 +298,20 @@
                     <td>{{ a.user_name }} ({{ a.user_email }})</td>
                     <td>
                       {% if a.is_primary %}
-                        <span class="badge text-bg-primary">Основной</span>
+                        <span class="badge text-bg-primary">РћСЃРЅРѕРІРЅРѕР№</span>
                       {% else %}
-                        <span class="badge text-bg-light">Дополнительный</span>
+                        <span class="badge text-bg-light">Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Р№</span>
                       {% endif %}
                     </td>
                     <td class="text-end">
                       <div class="d-flex gap-2 justify-content-end">
                         {% if not a.is_primary %}
                           <form class="js-preserve-scroll" method="post" action="/web/org-structure/assign/{{ a.id }}/primary">
-                            <button class="btn btn-sm btn-outline-primary" type="submit">Сделать основным</button>
+                            <button class="btn btn-sm btn-outline-primary" type="submit">РЎРґРµР»Р°С‚СЊ РѕСЃРЅРѕРІРЅС‹Рј</button>
                           </form>
                         {% endif %}
                         <form class="js-preserve-scroll" method="post" action="/web/org-structure/assign/{{ a.id }}/delete">
-                          <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+                          <button class="btn btn-sm btn-outline-danger" type="submit">РЈРґР°Р»РёС‚СЊ</button>
                         </form>
                       </div>
                     </td>
@@ -309,23 +321,23 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">Закреплений пока нет.</div>
+          <div class="text-muted">Р—Р°РєСЂРµРїР»РµРЅРёР№ РїРѕРєР° РЅРµС‚.</div>
         {% endif %}
       </div>
     </div>
 
     <div class="card shadow-sm org-card">
       <div class="card-body">
-        <h5 class="mb-3">Список узлов</h5>
+        <h5 class="mb-3">РЎРїРёСЃРѕРє СѓР·Р»РѕРІ</h5>
         {% if units %}
           <div class="table-responsive">
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Название</th>
-                  <th>Тип</th>
-                  <th>Статус</th>
+                  <th>РќР°Р·РІР°РЅРёРµ</th>
+                  <th>РўРёРї</th>
+                  <th>РЎС‚Р°С‚СѓСЃ</th>
                   <th></th>
                 </tr>
               </thead>
@@ -333,27 +345,27 @@
                 {% for u in units %}
                   <tr>
                     <td>{{ u.id }}</td>
-                    <td>{{ "— " * u.level }}{{ u.name }}</td>
+                    <td>{{ "вЂ” " * u.level }}{{ u.name }}</td>
                     <td>{{ u.unit_type_name }}</td>
                     <td>
                       {% if u.is_active %}
-                        <span class="badge text-bg-success">Активен</span>
+                        <span class="badge text-bg-success">РђРєС‚РёРІРµРЅ</span>
                       {% else %}
-                        <span class="badge text-bg-secondary">Выключен</span>
+                        <span class="badge text-bg-secondary">Р’С‹РєР»СЋС‡РµРЅ</span>
                       {% endif %}
                     </td>
                     <td class="text-end">
                       <div class="d-flex gap-2 justify-content-end">
-                        <a class="btn btn-sm btn-outline-primary" href="/web/org-structure?edit_unit_id={{ u.id }}">Редактировать</a>
+                        <a class="btn btn-sm btn-outline-primary" href="/web/org-structure?edit_unit_id={{ u.id }}">Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ</a>
                         <form class="js-preserve-scroll" method="post" action="/web/org-structure/{{ u.id }}/toggle">
                           {% if u.is_active %}
-                            <button class="btn btn-sm btn-outline-secondary" type="submit">Выключить</button>
+                            <button class="btn btn-sm btn-outline-secondary" type="submit">Р’С‹РєР»СЋС‡РёС‚СЊ</button>
                           {% else %}
-                            <button class="btn btn-sm btn-outline-success" type="submit">Включить</button>
+                            <button class="btn btn-sm btn-outline-success" type="submit">Р’РєР»СЋС‡РёС‚СЊ</button>
                           {% endif %}
                         </form>
-                        <form class="js-preserve-scroll" method="post" action="/web/org-structure/{{ u.id }}/delete" onsubmit="return confirm('Удалить узел #{{ u.id }} «{{ u.name }}»?');">
-                          <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+                        <form class="js-preserve-scroll" method="post" action="/web/org-structure/{{ u.id }}/delete" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ СѓР·РµР» #{{ u.id }} В«{{ u.name }}В»?');">
+                          <button class="btn btn-sm btn-outline-danger" type="submit">РЈРґР°Р»РёС‚СЊ</button>
                         </form>
                       </div>
                     </td>
@@ -363,7 +375,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">Пока нет узлов. Добавьте первый узел выше.</div>
+          <div class="text-muted">РџРѕРєР° РЅРµС‚ СѓР·Р»РѕРІ. Р”РѕР±Р°РІСЊС‚Рµ РїРµСЂРІС‹Р№ СѓР·РµР» РІС‹С€Рµ.</div>
         {% endif %}
       </div>
     </div>
@@ -390,6 +402,7 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+
 
 
 
