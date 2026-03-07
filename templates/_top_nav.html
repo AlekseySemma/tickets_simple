@@ -5,7 +5,7 @@
 {% set is_notifications = p.startswith("/web/notifications") %}
 {% set is_templates = p.startswith("/web/ticket-templates") %}
 {% set is_archive = p.startswith("/web/archive") %}
-{% set is_settings = p.startswith("/web/settings") or p.startswith("/web/projects") or p.startswith("/web/admin") or p.startswith("/web/pwa-check") %}
+{% set is_settings = p.startswith("/web/settings") or p.startswith("/web/admin") or p.startswith("/web/pwa-check") %}
 {% set is_org = p.startswith("/web/org-structure") %}
 {% set is_users = p.startswith("/web/users") or p.startswith("/web/executors") %}
 {% set is_ticket_types = p.startswith("/web/ticket-types") %}

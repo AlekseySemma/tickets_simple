@@ -633,7 +633,7 @@
           </form>
 
           <div class="mt-2 muted small">
-            Чтобы список проектов/исполнителей был не пустым — создай проект и исполнителя (можно в Swagger).
+            Чтобы список исполнителей и узлов был не пустым, заполните оргструктуру и назначения.
           </div>
         </details>
       </div>
@@ -665,15 +665,17 @@
               </select>
             </div>
 
-            <div class="col-6 col-md-3">
-              <label class="form-label mb-1">Проект</label>
-              <select name="project_id" class="form-select">
-                <option value="" {% if not project_id_filter %}selected{% endif %}>Все</option>
-                {% for p in projects %}
-                  <option value="{{ p.id }}" {% if project_id_filter == p.id %}selected{% endif %}>{{ p.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
+            {% if not org_v2_enabled %}
+              <div class="col-6 col-md-3">
+                <label class="form-label mb-1">Проект</label>
+                <select name="project_id" class="form-select">
+                  <option value="" {% if not project_id_filter %}selected{% endif %}>Все</option>
+                  {% for p in projects %}
+                    <option value="{{ p.id }}" {% if project_id_filter == p.id %}selected{% endif %}>{{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            {% endif %}
             <div class="col-6 col-md-3">
               <label class="form-label mb-1">Тип заявки</label>
               <select name="ticket_type_id" class="form-select">
@@ -871,7 +873,7 @@
                 {% if is_archive_page %}
                 <th>Удалить после</th>
                 {% endif %}
-                <th>Проект</th>
+                <th>Узел</th>
                 <th>Тип заявки</th>
                 <th>Исполнитель</th>
                 <th>Статус</th>
@@ -975,7 +977,7 @@
           <div class="ticket-main">
             <div class="ticket-head">
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
-              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+              <div class="ticket-head-project">Узел: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <h5 class="ticket-head-title">
                 <a href="/web/tickets/{{ t.id }}?next={{ current_list_url_encoded }}" class="text-decoration-none">
                   {{ t.title }}

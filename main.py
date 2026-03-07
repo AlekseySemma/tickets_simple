@@ -96,7 +96,7 @@ RL_REGISTER_LIMIT = int(os.getenv("RL_REGISTER_LIMIT", "8"))
 RL_REGISTER_WINDOW_SEC = int(os.getenv("RL_REGISTER_WINDOW_SEC", "3600"))
 RL_PUSH_TEST_LIMIT = int(os.getenv("RL_PUSH_TEST_LIMIT", "10"))
 RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
-ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
+ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
 TEXT_REPAIR_ON_START = (os.getenv("TEXT_REPAIR_ON_START", "1").strip().lower() in {"1", "true", "yes", "on"})
@@ -5442,7 +5442,7 @@ def web_admin_companies(request: Request, db: Session = Depends(get_db), user: U
     company_ids = [c.id for c in companies]
 
     users_count_by_company: dict[int, int] = {}
-    projects_count_by_company: dict[int, int] = {}
+    org_units_count_by_company: dict[int, int] = {}
     tickets_count_by_company: dict[int, int] = {}
 
     if company_ids:
@@ -5454,13 +5454,17 @@ def web_admin_companies(request: Request, db: Session = Depends(get_db), user: U
         )
         users_count_by_company = {int(company_id): int(count_value) for company_id, count_value in users_count_rows if company_id is not None}
 
-        projects_count_rows = (
-            db.query(Project.company_id, func.count(Project.id))
-            .filter(Project.company_id.in_(company_ids))
-            .group_by(Project.company_id)
+        org_units_count_rows = (
+            db.query(OrgUnit.company_id, func.count(OrgUnit.id))
+            .filter(OrgUnit.company_id.in_(company_ids))
+            .group_by(OrgUnit.company_id)
             .all()
         )
-        projects_count_by_company = {int(company_id): int(count_value) for company_id, count_value in projects_count_rows if company_id is not None}
+        org_units_count_by_company = {
+            int(company_id): int(count_value)
+            for company_id, count_value in org_units_count_rows
+            if company_id is not None
+        }
 
         tickets_count_rows = (
             db.query(Ticket.company_id, func.count(Ticket.id))
@@ -5478,7 +5482,7 @@ def web_admin_companies(request: Request, db: Session = Depends(get_db), user: U
                 "name": c.name,
                 "created_at": c.created_at,
                 "users_count": users_count_by_company.get(c.id, 0),
-                "projects_count": projects_count_by_company.get(c.id, 0),
+                "org_units_count": org_units_count_by_company.get(c.id, 0),
                 "tickets_count": tickets_count_by_company.get(c.id, 0),
             }
         )
@@ -6350,6 +6354,7 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
             "error": error_message,
             "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
             "next_url": next_url,
+            "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
         },
     )
 
@@ -7279,47 +7284,21 @@ def web_receipts_export_zip(
     return StreamingResponse(output, media_type="application/zip", headers=headers)
 
 
-# ====== WEB: Projects ======
+# ====== WEB: Projects (legacy redirects) ======
 @app.get("/web/projects")
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
-    projects = (
-        db.query(Project.id, Project.name, Project.description)
-        .filter(Project.company_id == user.company_id)
-        .order_by(Project.id.desc())
-        .all()
-    )
-    project_deleted = (request.query_params.get("project_deleted") or "").strip() == "1"
-    delete_error = (request.query_params.get("delete_error") or "").strip().lower()
-    if delete_error not in {"in_use", "not_found", "failed"}:
-        delete_error = ""
-    return templates.TemplateResponse(
-        "projects.html",
-        {
-            "request": request,
-            "projects": projects,
-            "project_deleted": project_deleted,
-            "delete_error": delete_error,
-        },
-    )
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
 
 @app.post("/web/projects/create")
 async def web_projects_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    description = (form.get("description") or "").strip() or None
-    if not name:
-        return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
-    if db.query(Project).filter(Project.name == name, Project.company_id == user.company_id).first():
-        return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
-    p = Project(name=name, description=description, company_id=user.company_id)
-    db.add(p); db.commit()
-    return RedirectResponse(url="/web/projects", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/projects/{project_id}/delete")
@@ -7327,25 +7306,7 @@ async def web_projects_delete(project_id: int, db: Session = Depends(get_db), us
     if not is_manager(user):
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
-    p = db.get(Project, project_id)
-    if not p or p.company_id != user.company_id:
-        return RedirectResponse(url="/web/projects?delete_error=not_found", status_code=HTTP_303_SEE_OTHER)
-
-    has_tickets = (
-        db.query(Ticket.id)
-        .filter(Ticket.company_id == user.company_id, Ticket.project_id == project_id)
-        .first()
-    )
-    if has_tickets:
-        return RedirectResponse(url="/web/projects?delete_error=in_use", status_code=HTTP_303_SEE_OTHER)
-
-    try:
-        db.delete(p)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/projects?delete_error=failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/projects?project_deleted=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 # ====== WEB: Ticket Types ======
 @app.get("/web/ticket-types")

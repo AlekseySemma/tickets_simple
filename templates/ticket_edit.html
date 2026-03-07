@@ -64,14 +64,16 @@
               </div>
             </div>
 
-            <div class="col-12 col-md-6">
-              <label class="form-label">Проект</label>
-              <select name="project_id" class="form-select" required>
-                {% for p in projects %}
-                  <option value="{{ p.id }}" {% if p.id == t.project_id %}selected{% endif %}>{{ p.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
+            {% if not org_v2_enabled %}
+              <div class="col-12 col-md-6">
+                <label class="form-label">Проект</label>
+                <select name="project_id" class="form-select" required>
+                  {% for p in projects %}
+                    <option value="{{ p.id }}" {% if p.id == t.project_id %}selected{% endif %}>{{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            {% endif %}
 
             <div class="col-12 col-md-6">
               <label class="form-label">Тип заявки</label>
@@ -234,7 +236,6 @@ document.addEventListener("DOMContentLoaded", function () {
 <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
 
 
 

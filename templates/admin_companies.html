@@ -90,7 +90,7 @@
       {% include "_top_nav.html" %}
     </div>
     {% set users_total = companies|sum(attribute='users_count') if companies else 0 %}
-    {% set projects_total = companies|sum(attribute='projects_count') if companies else 0 %}
+    {% set org_units_total = companies|sum(attribute='org_units_count') if companies else 0 %}
     {% set tickets_total = companies|sum(attribute='tickets_count') if companies else 0 %}
     <div class="companies-hero mb-3">
       <div>
@@ -107,8 +107,8 @@
           <strong>{{ users_total }}</strong>
         </div>
         <div class="companies-kpi-card">
-          <span>Проектов</span>
-          <strong>{{ projects_total }}</strong>
+          <span>Узлов</span>
+          <strong>{{ org_units_total }}</strong>
         </div>
         <div class="companies-kpi-card">
           <span>Заявок</span>
@@ -125,7 +125,7 @@
             <div>
               <div><b>#{{ c.id }} — {{ c.name }}</b></div>
               <div class="small text-muted">
-                Пользователи: {{ c.users_count }} · Проекты: {{ c.projects_count }} · Заявки: {{ c.tickets_count }}
+                Пользователи: {{ c.users_count }} · Узлы: {{ c.org_units_count }} · Заявки: {{ c.tickets_count }}
               </div>
               <div class="small text-muted">Создана: {{ format_dt(c.created_at) }}</div>
             </div>
@@ -147,7 +147,6 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
 
 
 

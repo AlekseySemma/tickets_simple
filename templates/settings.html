@@ -339,13 +339,10 @@
           </div>
         {% elif user.role in ["ADMIN", "CURATOR"] %}
           <div class="settings-links">
-            <a class="btn btn-outline-secondary" href="/web/projects">Проекты</a>
             <a class="btn btn-outline-secondary" href="/web/ticket-types">Типы заявок</a>
             <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны заявок</a>
             <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
-            {% if org_v2_enabled %}
-              <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
-            {% endif %}
+            <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
           </div>
         {% else %}
           <div class="text-muted">Разделы управления доступны владельцу компании, куратору или администратору платформы.</div>
@@ -359,7 +356,6 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
 
 
 

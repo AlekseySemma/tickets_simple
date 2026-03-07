@@ -269,7 +269,7 @@
       </div>
       <div class="detail-badges">
         <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
-        <span class="detail-badge">Проект <strong>{{ projects_by_id.get(t.project_id, "—") }}</strong></span>
+        <span class="detail-badge">Узел <strong>{{ projects_by_id.get(t.project_id, "—") }}</strong></span>
         <span class="detail-badge">Исполнитель <strong>{{ users_by_id.get(t.executor_id, "—") }}</strong></span>
         {% if t.status.value == "ARCHIVED" %}
           <span class="detail-badge">Удаление <strong>{{ format_deadline(t.delete_at) }}</strong></span>
@@ -286,7 +286,7 @@
           <div class="ticket-main">
             <div class="ticket-head">
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
-              <div class="ticket-head-project">Проект: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
+              <div class="ticket-head-project">Узел: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <div class="ticket-head-project">Тип заявки: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</b></div>
               <h5 class="ticket-head-title">{{ t.title }}</h5>
               <div class="muted mb-2">{{ t.description or "" }}</div>
@@ -527,7 +527,7 @@
                   <option value="изменение">зменение</option>
                   <option value="изменение срока">зменение срока</option>
                   <option value="изменение иИсполнителя">зменение иИсполнителя</option>
-                  <option value="изменение проекта">зменение проекта</option>
+                  <option value="изменение проекта">изменение узла</option>
                   <option value="добавление файла">Добавление файла</option>
                   <option value="архивирование">Архивирование</option>
                   <option value="восстановление">Восстановление</option>
@@ -766,7 +766,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
 
 
 
