@@ -15,24 +15,7 @@
       <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">РќР°СЃС‚СЂРѕР№РєРё РєРѕРјРїР°РЅРёРё</h3></span>
         <div class="text-muted">#{{ company.id }} - {{ company.name }}</div>
       </div>
-      <div class="d-flex gap-2 flex-wrap">
-        <a class="btn btn-outline-secondary" href="/web">Заявки</a>
-        <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
-        <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-        <details class="more-menu">
-          <summary class="btn btn-outline-secondary">еще</summary>
-          <div class="more-menu-list">
-            <a href="/web/ticket-templates">Шаблоны</a>
-            <a href="/web/archive">Архив</a>
-            <a href="/web/settings">Настройки</a>
-            <a href="/web/org-structure">Оргструктура</a>
-            <a href="/web/users">Пользователи</a>
-            <a href="/web/ticket-types">Типы заявок</a>
-            <hr />
-            <a class="danger-link" href="/web/logout">Выход</a>
-          </div>
-        </details>
-      </div>
+      {% include "_top_nav.html" %}
     </div>
 
     {% if ok %}
@@ -145,4 +128,5 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
+
 

@@ -1,0 +1,19 @@
+{% set nav_class = top_nav_class|default("d-flex gap-2 flex-wrap") %}
+<div class="{{ nav_class }}">
+  <a class="btn btn-outline-secondary" href="/web">Заявки</a>
+  <a class="btn btn-outline-secondary" href="/web/receipts">Чеки</a>
+  <a class="btn btn-outline-secondary position-relative" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+  <details class="more-menu">
+    <summary class="btn btn-outline-secondary">еще</summary>
+    <div class="more-menu-list">
+      <a href="/web/ticket-templates">Шаблоны</a>
+      <a href="/web/archive">Архив</a>
+      <a href="/web/settings">Настройки</a>
+      <a href="/web/org-structure">Оргструктура</a>
+      <a href="/web/users">Пользователи</a>
+      <a href="/web/ticket-types">Типы заявок</a>
+      <hr />
+      <a class="danger-link" href="/web/logout">Выход</a>
+    </div>
+  </details>
+</div>
