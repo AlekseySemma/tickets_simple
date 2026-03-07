@@ -1,8 +1,8 @@
-﻿<!doctype html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>РљРѕРјРїР°РЅРёРё</title>
+  <title>Компании</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1f9d8f">
@@ -86,7 +86,7 @@
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1050px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">РљРѕРјРїР°РЅРёРё</h3></span>
+      <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Компании</h3></span>
       {% include "_top_nav.html" %}
     </div>
     {% set users_total = companies|sum(attribute='users_count') if companies else 0 %}
@@ -94,24 +94,24 @@
     {% set tickets_total = companies|sum(attribute='tickets_count') if companies else 0 %}
     <div class="companies-hero mb-3">
       <div>
-        <span class="companies-kicker">РџР»Р°С‚С„РѕСЂРјРµРЅРЅС‹Р№ РєРѕРЅС‚СЂРѕР»СЊ</span>
-        <p class="companies-title">РћР±Р·РѕСЂ РєР»РёРµРЅС‚СЃРєРёС… РєРѕРјРїР°РЅРёР№ Рё РёС… РѕРїРµСЂР°С†РёРѕРЅРЅРѕР№ Р°РєС‚РёРІРЅРѕСЃС‚Рё РЅР° РµРґРёРЅРѕР№ РїР°РЅРµР»Рё.</p>
+        <span class="companies-kicker">Платформенный контроль</span>
+        <p class="companies-title">Обзор клиентских компаний и их операционной активности на единой панели.</p>
       </div>
       <div class="companies-kpi">
         <div class="companies-kpi-card">
-          <span>РљРѕРјРїР°РЅРёР№</span>
+          <span>Компаний</span>
           <strong>{{ companies|length if companies else 0 }}</strong>
         </div>
         <div class="companies-kpi-card">
-          <span>РџРѕР»СЊР·РѕРІР°С‚РµР»РµР№</span>
+          <span>Пользователей</span>
           <strong>{{ users_total }}</strong>
         </div>
         <div class="companies-kpi-card">
-          <span>РџСЂРѕРµРєС‚РѕРІ</span>
+          <span>Проектов</span>
           <strong>{{ projects_total }}</strong>
         </div>
         <div class="companies-kpi-card">
-          <span>Р—Р°СЏРІРѕРє</span>
+          <span>Заявок</span>
           <strong>{{ tickets_total }}</strong>
         </div>
       </div>
@@ -123,16 +123,16 @@
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-start gap-3">
             <div>
-              <div><b>#{{ c.id }} вЂ” {{ c.name }}</b></div>
+              <div><b>#{{ c.id }} — {{ c.name }}</b></div>
               <div class="small text-muted">
-                РџРѕР»СЊР·РѕРІР°С‚РµР»Рё: {{ c.users_count }} В· РџСЂРѕРµРєС‚С‹: {{ c.projects_count }} В· Р—Р°СЏРІРєРё: {{ c.tickets_count }}
+                Пользователи: {{ c.users_count }} · Проекты: {{ c.projects_count }} · Заявки: {{ c.tickets_count }}
               </div>
-              <div class="small text-muted">РЎРѕР·РґР°РЅР°: {{ format_dt(c.created_at) }}</div>
+              <div class="small text-muted">Создана: {{ format_dt(c.created_at) }}</div>
             </div>
             <div class="d-flex gap-2">
-              <a class="btn btn-outline-secondary btn-sm" href="/web/admin/companies/{{ c.id }}/settings">РќР°СЃС‚СЂРѕР№РєРё</a>
-              <form method="post" action="/web/admin/companies/{{ c.id }}/delete" onsubmit="return confirm('РЈРґР°Р»РёС‚СЊ РєРѕРјРїР°РЅРёСЋ {{ c.name }} Рё РІСЃРµ СЃРІСЏР·Р°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ?');">
-                <button class="btn btn-outline-danger btn-sm">РЈРґР°Р»РёС‚СЊ РєРѕРјРїР°РЅРёСЋ</button>
+              <a class="btn btn-outline-secondary btn-sm" href="/web/admin/companies/{{ c.id }}/settings">Настройки</a>
+              <form method="post" action="/web/admin/companies/{{ c.id }}/delete" onsubmit="return confirm('Удалить компанию {{ c.name }} и все связанные данные?');">
+                <button class="btn btn-outline-danger btn-sm">Удалить компанию</button>
               </form>
             </div>
           </div>
@@ -140,7 +140,7 @@
       </div>
       {% endfor %}
     {% else %}
-      <div class="alert alert-info">РљРѕРјРїР°РЅРёР№ РїРѕРєР° РЅРµС‚.</div>
+      <div class="alert alert-info">Компаний пока нет.</div>
     {% endif %}
   </div>
   <script src="/static/sw-register.js"></script>
