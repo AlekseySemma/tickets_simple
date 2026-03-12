@@ -508,6 +508,11 @@
       Не удалось сохранить заявку. Проверьте заполнение формы и попробуйте еще раз.
     </div>
     {% endif %}
+    {% if create_error == "schema_outdated" %}
+    <div class="alert alert-danger">
+      Схема базы данных устарела. Выполните миграции: <code>alembic upgrade head</code>.
+    </div>
+    {% endif %}
     {% if create_enabled %}
     <div class="card shadow-sm mb-3 panel-card">
       <div class="card-body">

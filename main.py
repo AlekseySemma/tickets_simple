@@ -23,8 +23,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, String, Text, DateTime, Date, ForeignKey, Enum as SAEnum, Integer, Boolean, Numeric, UniqueConstraint, func, or_, cast, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import create_engine, String, Text, DateTime, Date, ForeignKey, Enum as SAEnum, Integer, Boolean, Numeric, UniqueConstraint, func, or_, cast, text, inspect as sa_inspect
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
@@ -543,6 +543,42 @@ def ensure_migrations_ready() -> None:
             conn.exec_driver_sql("SELECT version_num FROM alembic_version LIMIT 1")
     except Exception as exc:
         raise RuntimeError("Database schema is not initialized. Run 'alembic upgrade head'.") from exc
+    try:
+        with engine.connect() as conn:
+            inspector = sa_inspect(conn)
+            required_tables = {"tickets", "projects", "users", "ticket_logs", "ticket_watchers"}
+            if ORG_STRUCTURE_V2_ENABLED:
+                required_tables.update({"org_units", "ticket_types", "ticket_templates", "unit_assignments"})
+            missing_tables = sorted(table_name for table_name in required_tables if not inspector.has_table(table_name))
+            if missing_tables:
+                raise RuntimeError(
+                    "Database schema is outdated. Run 'alembic upgrade head'. Missing tables: "
+                    + ", ".join(missing_tables)
+                )
+
+            ticket_columns = {col["name"] for col in inspector.get_columns("tickets")}
+            required_ticket_columns = {
+                "company_id",
+                "project_id",
+                "executor_id",
+                "ticket_type_id",
+                "target_unit_id",
+                "ticket_template_id",
+                "period_key",
+                "batch_id",
+                "created_by",
+                "archived_at",
+            }
+            missing_ticket_columns = sorted(required_ticket_columns - ticket_columns)
+            if missing_ticket_columns:
+                raise RuntimeError(
+                    "Database schema is outdated. Run 'alembic upgrade head'. Missing tickets columns: "
+                    + ", ".join(missing_ticket_columns)
+                )
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError("Database schema check failed. Run 'alembic upgrade head'.") from exc
 
 
 if (os.getenv("SKIP_MIGRATION_CHECK", "0").strip().lower() not in {"1", "true", "yes", "on"}):
@@ -5917,6 +5953,17 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             url = f"{url}&create_error={error_code}"
         return RedirectResponse(url=url, status_code=HTTP_303_SEE_OTHER)
 
+    def is_schema_outdated_db_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        schema_markers = (
+            "no such table",
+            "no such column",
+            "has no column named",
+            "undefined table",
+            "undefined column",
+        )
+        return any(marker in message for marker in schema_markers)
+
     # ?????????????? ?? ?????????????????????? ?????????? ??????????????????
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
@@ -6059,6 +6106,11 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         if "title" in detail:
             return create_redirect("title_too_long")
         return create_redirect("bad_input")
+    except OperationalError as exc:
+        db.rollback()
+        if is_schema_outdated_db_error(exc):
+            return create_redirect("schema_outdated")
+        return create_redirect("save_failed")
     except SQLAlchemyError:
         db.rollback()
         return create_redirect("save_failed")
