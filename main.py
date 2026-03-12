@@ -955,18 +955,18 @@ def add_ticket_watcher(
 
 def ensure_default_ticket_watchers(db: Session, ticket: Ticket) -> bool:
     changed = False
-    changed = add_ticket_watcher(
-        db,
-        ticket,
-        watcher_user_id=ticket.created_by,
-        added_by=ticket.created_by,
-    ) or changed
-    changed = add_ticket_watcher(
-        db,
-        ticket,
-        watcher_user_id=ticket.executor_id,
-        added_by=ticket.created_by,
-    ) or changed
+    default_watcher_ids: list[int] = []
+    for watcher_user_id in (ticket.created_by, ticket.executor_id):
+        if watcher_user_id is None or watcher_user_id in default_watcher_ids:
+            continue
+        default_watcher_ids.append(watcher_user_id)
+    for watcher_user_id in default_watcher_ids:
+        changed = add_ticket_watcher(
+            db,
+            ticket,
+            watcher_user_id=watcher_user_id,
+            added_by=ticket.created_by,
+        ) or changed
     return changed
 
 
