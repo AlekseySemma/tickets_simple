@@ -1582,7 +1582,7 @@ def create_tickets_from_template(
                 db.flush()
                 ensure_default_ticket_watchers(db, ticket)
                 generation_key.ticket_id = ticket.id
-                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="Создание по шаблону")
+                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action=LOG_ACTION_CREATED_FROM_TEMPLATE)
                 if ticket.executor_id and ticket.executor_id != actor_id:
                     send_push_to_user(
                         db=db,
@@ -1998,30 +1998,56 @@ def repair_mojibake_data(db: Session) -> int:
     return fixed
 
 
+LOG_ACTION_CREATED_FROM_TEMPLATE = "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443"
+LOG_ACTION_CREATED = "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435"
+LOG_ACTION_DEADLINE_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0440\u043e\u043a\u0430"
+LOG_ACTION_EXECUTOR_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f"
+LOG_ACTION_PROJECT_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u0430"
+LOG_ACTION_TICKET_TYPE_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
+LOG_ACTION_TARGET_UNIT_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0446\u0435\u043b\u0435\u0432\u043e\u0433\u043e \u0443\u0437\u043b\u0430"
+LOG_ACTION_TEMPLATE_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0448\u0430\u0431\u043b\u043e\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
+LOG_ACTION_TEMPLATE_PERIOD_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0438\u043e\u0434\u0430 \u0448\u0430\u0431\u043b\u043e\u043d\u0430"
+LOG_ACTION_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
+LOG_ACTION_FILE_ADDED = "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
+
+
+def is_placeholder_log_action(value: str | None) -> bool:
+    text = (value or "").strip()
+    if not text:
+        return True
+    meaningful = re.sub(r"[\s\?\!\.,:;\'\"`\-_/\\|()\[\]{}<>+=*#%&~@]+", "", text)
+    return not meaningful
+
+
 def normalize_log_action(action: str | None) -> str:
     raw = (action or "").strip()
     fixed_raw = fix_mojibake_text(raw).strip()
     text = fixed_raw.lower()
+    if not raw:
+        return LOG_ACTION_CHANGED
     merged = f"{raw.lower()} {text}"
     escaped = raw.encode("unicode_escape").decode("ascii").lower()
 
     escaped_map = {
-        "\\u0421\\u0403\\u0420\\u0455\\u0420\\xb7\\u0420\\u0491\\u0420\\xb0\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\u0455 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0421\\u0453": "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443",
-        "\\u0421\\u0403\\u0420\\u0455\\u0420\\xb7\\u0420\\u0491\\u0420\\xb0\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u0403\\u0421\\u0402\\u0420\\u0455\\u0420\\u0454\\u0420\\xb0": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0440\u043e\u043a\u0430",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0451\\u0421\\u0403\\u0420\\u0457\\u0420\\u0455\\u0420\\xbb\\u0420\\u0405\\u0420\\u0451\\u0421\\u201a\\u0420\\xb5\\u0420\\xbb\\u0421\\u040f": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0421\\u0402\\u0420\\u0455\\u0420\\xb5\\u0420\\u0454\\u0421\\u201a\\u0420\\xb0": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u0430",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201a\\u0420\\u0451\\u0420\\u0457\\u0420\\xb0 \\u0420\\xb7\\u0420\\xb0\\u0421\\u040f\\u0420\\u0406\\u0420\\u0454\\u0420\\u0451": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u2020\\u0420\\xb5\\u0420\\xbb\\u0420\\xb5\\u0420\\u0406\\u0420\\u0455\\u0420\\u0456\\u0420\\u0455 \\u0421\\u0453\\u0420\\xb7\\u0420\\xbb\\u0420\\xb0": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0446\u0435\u043b\u0435\u0432\u043e\u0433\u043e \u0443\u0437\u043b\u0430",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0 \\u0420\\xb7\\u0420\\xb0\\u0421\\u040f\\u0420\\u0406\\u0420\\u0454\\u0420\\u0451": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0448\u0430\u0431\u043b\u043e\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\xb5\\u0421\\u0402\\u0420\\u0451\\u0420\\u0455\\u0420\\u0491\\u0420\\xb0 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0438\u043e\u0434\u0430 \u0448\u0430\u0431\u043b\u043e\u043d\u0430",
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435",
-        "\\u0420\\u0491\\u0420\\u0455\\u0420\\xb1\\u0420\\xb0\\u0420\\u0406\\u0420\\xbb\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201e\\u0420\\xb0\\u0420\\u2116\\u0420\\xbb\\u0420\\xb0": "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430",
+        "\\u0421\\u0403\\u0420\\u0455\\u0420\\xb7\\u0420\\u0491\\u0420\\xb0\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\u0455 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0421\\u0453": LOG_ACTION_CREATED_FROM_TEMPLATE,
+        "\\u0421\\u0403\\u0420\\u0455\\u0420\\xb7\\u0420\\u0491\\u0420\\xb0\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": LOG_ACTION_CREATED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u0403\\u0421\\u0402\\u0420\\u0455\\u0420\\u0454\\u0420\\xb0": LOG_ACTION_DEADLINE_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0451\\u0421\\u0403\\u0420\\u0457\\u0420\\u0455\\u0420\\xbb\\u0420\\u0405\\u0420\\u0451\\u0421\\u201a\\u0420\\xb5\\u0420\\xbb\\u0421\\u040f": LOG_ACTION_EXECUTOR_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0421\\u0402\\u0420\\u0455\\u0420\\xb5\\u0420\\u0454\\u0421\\u201a\\u0420\\xb0": LOG_ACTION_PROJECT_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201a\\u0420\\u0451\\u0420\\u0457\\u0420\\xb0 \\u0420\\xb7\\u0420\\xb0\\u0421\\u040f\\u0420\\u0406\\u0420\\u0454\\u0420\\u0451": LOG_ACTION_TICKET_TYPE_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u2020\\u0420\\xb5\\u0420\\xbb\\u0420\\xb5\\u0420\\u0406\\u0420\\u0455\\u0420\\u0456\\u0420\\u0455 \\u0421\\u0453\\u0420\\xb7\\u0420\\xbb\\u0420\\xb0": LOG_ACTION_TARGET_UNIT_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0 \\u0420\\xb7\\u0420\\xb0\\u0421\\u040f\\u0420\\u0406\\u0420\\u0454\\u0420\\u0451": LOG_ACTION_TEMPLATE_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\xb5\\u0421\\u0402\\u0420\\u0451\\u0420\\u0455\\u0420\\u0491\\u0420\\xb0 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0": LOG_ACTION_TEMPLATE_PERIOD_CHANGED,
+        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": LOG_ACTION_CHANGED,
+        "\\u0420\\u0491\\u0420\\u0455\\u0420\\xb1\\u0420\\xb0\\u0420\\u0406\\u0420\\xbb\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201e\\u0420\\xb0\\u0420\\u2116\\u0420\\xbb\\u0420\\xb0": LOG_ACTION_FILE_ADDED,
     }
     if escaped in escaped_map:
         return escaped_map[escaped]
     if fixed_raw and ("->" in fixed_raw or "\u2192" in fixed_raw):
         return fixed_raw
+
+    if is_placeholder_log_action(raw) or is_placeholder_log_action(text):
+        return LOG_ACTION_CHANGED
 
     k_create = "\u0441\u043e\u0437\u0434"
     k_template = "\u0448\u0430\u0431\u043b"
@@ -2038,31 +2064,31 @@ def normalize_log_action(action: str | None) -> str:
 
     if k_create in merged:
         if k_template in merged:
-            return "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443"
-        return "\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435"
+            return LOG_ACTION_CREATED_FROM_TEMPLATE
+        return LOG_ACTION_CREATED
     if k_deadline in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0440\u043e\u043a\u0430"
+        return LOG_ACTION_DEADLINE_CHANGED
     if k_executor in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f"
+        return LOG_ACTION_EXECUTOR_CHANGED
     if k_project in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u0430"
+        return LOG_ACTION_PROJECT_CHANGED
     if k_type in merged and k_ticket in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
+        return LOG_ACTION_TICKET_TYPE_CHANGED
     if k_unit in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0446\u0435\u043b\u0435\u0432\u043e\u0433\u043e \u0443\u0437\u043b\u0430"
+        return LOG_ACTION_TARGET_UNIT_CHANGED
     if k_period in merged and k_template in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0438\u043e\u0434\u0430 \u0448\u0430\u0431\u043b\u043e\u043d\u0430"
+        return LOG_ACTION_TEMPLATE_PERIOD_CHANGED
     if k_template in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0448\u0430\u0431\u043b\u043e\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0438"
+        return LOG_ACTION_TEMPLATE_CHANGED
     if k_file in merged or "file" in merged:
-        return "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
+        return LOG_ACTION_FILE_ADDED
     if k_status in merged:
         if "->" in fixed_raw or "\u2192" in fixed_raw:
             return fixed_raw
         return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u0430"
     if k_change in merged:
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
-    return text or "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
+        return LOG_ACTION_CHANGED
+    return text if not is_placeholder_log_action(text) else LOG_ACTION_CHANGED
 
 
 def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
@@ -3492,7 +3518,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         db.add(t)
         db.flush()
         ensure_default_ticket_watchers(db, t)
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CREATED)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -3609,13 +3635,13 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         )
         has_specific_log = True
     if t.target_unit_id != old_target_unit_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С†РµР»РµРІРѕРіРѕ СѓР·Р»Р°")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TARGET_UNIT_CHANGED)
         has_specific_log = True
     if t.ticket_template_id != old_template_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ С€Р°Р±Р»РѕРЅР° Р·Р°СЏРІРєРё")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TEMPLATE_CHANGED)
         has_specific_log = True
     if t.period_key != old_period_key:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ РїРµСЂРёРѕРґР° С€Р°Р±Р»РѕРЅР°")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TEMPLATE_PERIOD_CHANGED)
         has_specific_log = True
 
     if t.status != old_status:
@@ -3623,7 +3649,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         has_specific_log = True
 
     if not has_specific_log:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CHANGED)
 
     ensure_default_ticket_watchers(db, t)
     db.commit(); db.refresh(t)
@@ -3662,7 +3688,7 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
     enrich_attachment_metadata(a, path)
     db.add(a)
-    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°")
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action=LOG_ACTION_FILE_ADDED)
     db.commit(); db.refresh(a)
     notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
@@ -6079,7 +6105,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 ensure_default_ticket_watchers(db, t)
                 for watcher_id in selected_watcher_ids:
                     add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
-                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="????????????????")
+                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CREATED)
                 created_tickets.append(t)
         else:
             # ??????????: ???????????? deadline=deadline
@@ -6098,7 +6124,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             ensure_default_ticket_watchers(db, t)
             for watcher_id in selected_watcher_ids:
                 add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
-            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="????????????????")
+            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CREATED)
             created_tickets.append(t)
         db.commit()
     except HTTPException as exc:
@@ -6369,7 +6395,7 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
     enrich_attachment_metadata(a, dest_path)
     db.add(a)
-    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action="РґРѕР±Р°РІР»РµРЅРёРµ С„Р°Р№Р»Р°")
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action=LOG_ACTION_FILE_ADDED)
     db.commit()
     notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
@@ -6620,7 +6646,7 @@ async def web_ticket_edit_save(
         has_specific_log = True
 
     if not has_specific_log:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="РёР·РјРµРЅРµРЅРёРµ")
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CHANGED)
 
     ensure_default_ticket_watchers(db, t)
     db.commit()          # вњ… Р±РµР· СЌС‚РѕРіРѕ РЅРµ СЃРѕС…СЂР°РЅРёС‚СЃСЏ
