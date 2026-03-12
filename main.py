@@ -1197,6 +1197,42 @@ def resolve_scope_descendant_units(db: Session, company_id: int, scope_unit_id: 
     return result
 
 
+
+def resolve_target_unit_id_from_form_input(db: Session, company_id: int, raw_value: str | None) -> int | None:
+    value = " ".join(str(raw_value or "").split()).strip()
+    if not value:
+        return None
+
+    id_match = re.search(r"#(\d+)\)?\s*$", value)
+    if id_match:
+        unit_id = int(id_match.group(1))
+        row = (
+            db.query(OrgUnit.id)
+            .filter(
+                OrgUnit.company_id == company_id,
+                OrgUnit.id == unit_id,
+                OrgUnit.is_active.is_(True),
+            )
+            .first()
+        )
+        if row:
+            return int(row[0])
+
+    rows = (
+        db.query(OrgUnit.id, OrgUnit.name)
+        .filter(OrgUnit.company_id == company_id, OrgUnit.is_active.is_(True))
+        .all()
+    )
+    normalized_value = value.casefold()
+    matched_ids = [
+        int(unit_id)
+        for unit_id, unit_name in rows
+        if " ".join(str(unit_name or "").split()).strip().casefold() == normalized_value
+    ]
+    if len(matched_ids) == 1:
+        return matched_ids[0]
+    return None
+
 def validate_template_links(
     db: Session,
     company_id: int,
@@ -5875,7 +5911,13 @@ def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
 
 @app.post("/web/tickets/create")
 async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # РєСѓСЂР°С‚РѕСЂ Рё РёСЃРїРѕР»РЅРёС‚РµР»СЊ РјРѕРіСѓС‚ СЃРѕР·РґР°РІР°С‚СЊ
+    def create_redirect(error_code: str | None = None) -> RedirectResponse:
+        url = "/web?open_create=1"
+        if error_code:
+            url = f"{url}&create_error={error_code}"
+        return RedirectResponse(url=url, status_code=HTTP_303_SEE_OTHER)
+
+    # ?????????????? ?? ?????????????????????? ?????????? ??????????????????
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
@@ -5886,38 +5928,44 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     description = (form.get("description") or "").strip() or None
 
     if is_ticket_title_too_long(title):
-        return RedirectResponse(url="/web?open_create=1&create_error=title_too_long", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("title_too_long")
 
     project_id_raw = (form.get("project_id") or "").strip()
     if not title:
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("missing_required")
     project_id: int | None = None
     if project_id_raw:
         try:
             project_id = int(project_id_raw)
         except ValueError:
-            return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+            return create_redirect("bad_input")
 
-    executor_id_raw = (form.get("executor_id") or "").strip()
-    try:
-        executor_id = int(executor_id_raw) if executor_id_raw else None
-    except ValueError:
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+    if user.role == Role.executor:
+        executor_id = user.id
+    else:
+        executor_id_raw = (form.get("executor_id") or "").strip()
+        try:
+            executor_id = int(executor_id_raw) if executor_id_raw else None
+        except ValueError:
+            return create_redirect("bad_input")
 
     ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
     try:
         ticket_type_id = int(ticket_type_id_raw) if ticket_type_id_raw else None
     except ValueError:
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("bad_input")
     target_unit_id_raw = (form.get("target_unit_id") or "").strip()
+    target_unit_label_raw = (form.get("target_unit_label") or "").strip()
     try:
         target_unit_id = int(target_unit_id_raw) if target_unit_id_raw else None
     except ValueError:
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("bad_input")
+    if ORG_STRUCTURE_V2_ENABLED and target_unit_id is None and target_unit_label_raw:
+        target_unit_id = resolve_target_unit_id_from_form_input(db, user.company_id, target_unit_label_raw)
     if ORG_STRUCTURE_V2_ENABLED and target_unit_id is None:
-        return RedirectResponse(url="/web?open_create=1&create_error=target_unit_required", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("target_unit_required")
     if not ORG_STRUCTURE_V2_ENABLED and project_id is None:
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("missing_required")
 
     watcher_id_values = form.getlist("watcher_user_ids")
     selected_watcher_ids: list[int] = []
@@ -5929,7 +5977,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         try:
             watcher_id = int(value)
         except ValueError:
-            return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+            return create_redirect("bad_input")
         if watcher_id in seen_watcher_ids:
             continue
         seen_watcher_ids.add(watcher_id)
@@ -5949,14 +5997,9 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             )
         }
         if len(valid_watcher_ids) != len(selected_watcher_ids):
-            return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
-
-    # Р•СЃР»Рё СЃРѕР·РґР°С‘С‚ РёСЃРїРѕР»РЅРёС‚РµР»СЊ Рё РЅРµ РІС‹Р±СЂР°Р» РёСЃРїРѕР»РЅРёС‚РµР»СЏ вЂ” РЅР°Р·РЅР°С‡Р°РµРј РЅР° РЅРµРіРѕ
-    if user.role == Role.executor and executor_id is None:
-        executor_id = user.id
+            return create_redirect("bad_input")
 
     deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
-
 
     try:
         validate_ticket_links(db, user.company_id, project_id, executor_id, ticket_type_id, target_unit_id)
@@ -5964,7 +6007,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         if target_unit_id is not None:
             leaf_unit_ids = resolve_scope_leaf_units(db, user.company_id, target_unit_id)
             if not leaf_unit_ids:
-                return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+                return create_redirect("target_unit_required")
             batch_id = uuid.uuid4().hex
             for leaf_unit_id in leaf_unit_ids:
                 resolved_project_id = get_or_create_project_for_org_unit(db, user.company_id, leaf_unit_id)
@@ -5986,10 +6029,10 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 ensure_default_ticket_watchers(db, t)
                 for watcher_id in selected_watcher_ids:
                     add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
-                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
+                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="????????????????")
                 created_tickets.append(t)
         else:
-            # Р’РђР–РќРћ: РёРјРµРЅРЅРѕ deadline=deadline
+            # ??????????: ???????????? deadline=deadline
             t = Ticket(
                 title=title,
                 description=description,
@@ -6005,12 +6048,20 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             ensure_default_ticket_watchers(db, t)
             for watcher_id in selected_watcher_ids:
                 add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
-            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="СЃРѕР·РґР°РЅРёРµ")
+            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action="????????????????")
             created_tickets.append(t)
         db.commit()
+    except HTTPException as exc:
+        db.rollback()
+        detail = str(exc.detail or "").lower()
+        if "target unit" in detail:
+            return create_redirect("target_unit_required")
+        if "title" in detail:
+            return create_redirect("title_too_long")
+        return create_redirect("bad_input")
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web?open_create=1", status_code=HTTP_303_SEE_OTHER)
+        return create_redirect("save_failed")
     for created_ticket in created_tickets:
         notify_executor_new_ticket(db, created_ticket, user)
     try:
