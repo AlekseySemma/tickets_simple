@@ -6,6 +6,7 @@ from enum import Enum
 import hashlib
 import io
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -38,6 +39,8 @@ except Exception:
     class WebPushException(Exception):
         pass
     PYWEBPUSH_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 # =========================
@@ -6108,11 +6111,31 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         return create_redirect("bad_input")
     except OperationalError as exc:
         db.rollback()
+        logger.exception(
+            "Ticket create operational error: user_id=%s company_id=%s role=%s project_id=%s executor_id=%s ticket_type_id=%s target_unit_id=%s",
+            user.id,
+            user.company_id,
+            user.role,
+            project_id,
+            executor_id,
+            ticket_type_id,
+            target_unit_id,
+        )
         if is_schema_outdated_db_error(exc):
             return create_redirect("schema_outdated")
         return create_redirect("save_failed")
     except SQLAlchemyError:
         db.rollback()
+        logger.exception(
+            "Ticket create SQLAlchemy error: user_id=%s company_id=%s role=%s project_id=%s executor_id=%s ticket_type_id=%s target_unit_id=%s",
+            user.id,
+            user.company_id,
+            user.role,
+            project_id,
+            executor_id,
+            ticket_type_id,
+            target_unit_id,
+        )
         return create_redirect("save_failed")
     for created_ticket in created_tickets:
         notify_executor_new_ticket(db, created_ticket, user)
