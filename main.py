@@ -2040,6 +2040,7 @@ LOG_ACTION_TEMPLATE_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\
 LOG_ACTION_TEMPLATE_PERIOD_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0438\u043e\u0434\u0430 \u0448\u0430\u0431\u043b\u043e\u043d\u0430"
 LOG_ACTION_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
 LOG_ACTION_FILE_ADDED = "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
+LOG_ACTION_FILE_DELETED = "\u0443\u0434\u0430\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
 
 
 def is_placeholder_log_action(value: str | None) -> bool:
@@ -2071,6 +2072,7 @@ def normalize_log_action(action: str | None) -> str:
         "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\xb5\\u0421\\u0402\\u0420\\u0451\\u0420\\u0455\\u0420\\u0491\\u0420\\xb0 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0": LOG_ACTION_TEMPLATE_PERIOD_CHANGED,
         "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": LOG_ACTION_CHANGED,
         "\\u0420\\u0491\\u0420\\u0455\\u0420\\xb1\\u0420\\xb0\\u0420\\u0406\\u0420\\xbb\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201e\\u0420\\xb0\\u0420\\u2116\\u0420\\xbb\\u0420\\xb0": LOG_ACTION_FILE_ADDED,
+        "\\u0423\\u0434\\u0430\\u043b\\u0435\\u043d\\u0438\\u0435 \\u0444\\u0430\\u0439\\u043b\\u0430": LOG_ACTION_FILE_DELETED,
     }
     if escaped in escaped_map:
         return escaped_map[escaped]
@@ -2090,6 +2092,7 @@ def normalize_log_action(action: str | None) -> str:
     k_unit = "\u0443\u0437\u043b"
     k_period = "\u043f\u0435\u0440\u0438\u043e\u0434"
     k_file = "\u0444\u0430\u0439\u043b"
+    k_delete = "\u0443\u0434\u0430\u043b"
     k_status = "\u0441\u0442\u0430\u0442\u0443\u0441"
     k_change = "\u0438\u0437\u043c\u0435\u043d"
 
@@ -2111,6 +2114,8 @@ def normalize_log_action(action: str | None) -> str:
         return LOG_ACTION_TEMPLATE_PERIOD_CHANGED
     if k_template in merged:
         return LOG_ACTION_TEMPLATE_CHANGED
+    if k_delete in merged and k_file in merged:
+        return LOG_ACTION_FILE_DELETED
     if k_file in merged or "file" in merged:
         return LOG_ACTION_FILE_ADDED
     if k_status in merged:
@@ -6481,7 +6486,7 @@ async def web_delete_attachment(
             pass
 
     db.delete(attachment)
-    add_ticket_log(db, ticket_id=ticket.id, actor_id=user.id, action="Удаление файла")
+    add_ticket_log(db, ticket_id=ticket.id, actor_id=user.id, action=LOG_ACTION_FILE_DELETED)
     db.commit()
 
     form = await request.form()
