@@ -39,6 +39,19 @@ except Exception:
     class WebPushException(Exception):
         pass
     PYWEBPUSH_AVAILABLE = False
+try:
+    import boto3
+    from botocore.client import Config as BotoConfig
+    from botocore.exceptions import BotoCoreError, ClientError
+    BOTO3_AVAILABLE = True
+except Exception:
+    boto3 = None
+    BotoConfig = None
+    class BotoCoreError(Exception):
+        pass
+    class ClientError(Exception):
+        pass
+    BOTO3_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +70,18 @@ if DB_URL.startswith("postgres://"):
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 ARCHIVE_UPLOAD_SUBDIR = "_archive"
 ARCHIVE_UPLOAD_DIR = UPLOAD_DIR / ARCHIVE_UPLOAD_SUBDIR
+STORAGE_BACKEND = (os.getenv("STORAGE_BACKEND", "local") or "local").strip().lower()
+if STORAGE_BACKEND not in {"local", "s3"}:
+    raise RuntimeError("STORAGE_BACKEND must be either 'local' or 's3'")
+S3_ENDPOINT_URL = (os.getenv("S3_ENDPOINT_URL") or "").strip()
+S3_BUCKET = (os.getenv("S3_BUCKET") or "").strip()
+S3_ACCESS_KEY = (os.getenv("S3_ACCESS_KEY") or "").strip()
+S3_SECRET_KEY = (os.getenv("S3_SECRET_KEY") or "").strip()
+S3_REGION = (os.getenv("S3_REGION") or "").strip()
+S3_PRESIGNED_TTL_SECONDS = max(60, int(os.getenv("S3_PRESIGNED_TTL_SECONDS", "3600")))
+S3_ADDRESSING_STYLE = (os.getenv("S3_ADDRESSING_STYLE", "path") or "path").strip().lower()
+ATTACHMENTS_STORAGE_PREFIX = "attachments"
+RECEIPTS_STORAGE_PREFIX = "receipts"
 MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))
 ALLOWED_UPLOAD_EXTENSIONS = {
     ext.strip().lower()
@@ -103,6 +128,21 @@ ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "1").strip().l
 TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
 TEXT_REPAIR_ON_START = (os.getenv("TEXT_REPAIR_ON_START", "1").strip().lower() in {"1", "true", "yes", "on"})
+if STORAGE_BACKEND == "s3":
+    if not BOTO3_AVAILABLE:
+        raise RuntimeError("boto3 must be installed when STORAGE_BACKEND=s3")
+    missing_s3 = [
+        name
+        for name, value in (
+            ("S3_ENDPOINT_URL", S3_ENDPOINT_URL),
+            ("S3_BUCKET", S3_BUCKET),
+            ("S3_ACCESS_KEY", S3_ACCESS_KEY),
+            ("S3_SECRET_KEY", S3_SECRET_KEY),
+        )
+        if not value
+    ]
+    if missing_s3:
+        raise RuntimeError(f"Missing S3 settings: {', '.join(missing_s3)}")
 
 # =========================
 # Р‘Р°Р·Р° РґР°РЅРЅС‹С… (SQLite)
@@ -989,9 +1029,97 @@ def get_api_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
     return ticket
 
 
+_s3_client = None
+
+
+def get_s3_client():
+    global _s3_client
+    if not BOTO3_AVAILABLE:
+        raise RuntimeError("boto3 is required for S3 storage support")
+    missing_s3 = [
+        name
+        for name, value in (
+            ("S3_ENDPOINT_URL", S3_ENDPOINT_URL),
+            ("S3_BUCKET", S3_BUCKET),
+            ("S3_ACCESS_KEY", S3_ACCESS_KEY),
+            ("S3_SECRET_KEY", S3_SECRET_KEY),
+        )
+        if not value
+    ]
+    if missing_s3:
+        raise RuntimeError(f"Missing S3 settings: {', '.join(missing_s3)}")
+    if _s3_client is None:
+        config_kwargs = {"signature_version": "s3v4"}
+        if S3_ADDRESSING_STYLE in {"path", "virtual"}:
+            config_kwargs["s3"] = {"addressing_style": S3_ADDRESSING_STYLE}
+        _s3_client = boto3.client(
+            "s3",
+            endpoint_url=S3_ENDPOINT_URL or None,
+            aws_access_key_id=S3_ACCESS_KEY,
+            aws_secret_access_key=S3_SECRET_KEY,
+            region_name=S3_REGION or None,
+            config=BotoConfig(**config_kwargs),
+        )
+    return _s3_client
+
+
+def build_storage_key(*parts: str | None) -> str:
+    tokens: list[str] = []
+    for part in parts:
+        value = str(part or "").replace("\\", "/").strip("/")
+        if value:
+            tokens.append(value)
+    return "/".join(tokens)
+
+
+def parse_s3_storage_path(raw_path: str | None) -> tuple[str, str] | None:
+    raw = (raw_path or "").strip()
+    if not raw.lower().startswith("s3://"):
+        return None
+    parsed = urlsplit(raw)
+    bucket = (parsed.netloc or "").strip()
+    key = parsed.path.lstrip("/")
+    if not bucket or not key:
+        return None
+    return bucket, key
+
+
+def build_s3_storage_path(object_key: str, bucket: str | None = None) -> str:
+    target_bucket = (bucket or S3_BUCKET).strip()
+    normalized_key = build_storage_key(object_key)
+    if not target_bucket or not normalized_key:
+        raise HTTPException(500, "S3 storage is not configured")
+    return f"s3://{target_bucket}/{normalized_key}"
+
+
+def build_attachment_object_key(stored_name: str, archived_ticket_id: int | None = None) -> str:
+    if archived_ticket_id is None:
+        return build_storage_key(ATTACHMENTS_STORAGE_PREFIX, stored_name)
+    return build_storage_key(ATTACHMENTS_STORAGE_PREFIX, ARCHIVE_UPLOAD_SUBDIR, str(archived_ticket_id), stored_name)
+
+
+def build_receipt_object_key(stored_name: str) -> str:
+    return build_storage_key(RECEIPTS_STORAGE_PREFIX, stored_name)
+
+
+def get_storage_basename(raw_path: str | None) -> str:
+    s3_ref = parse_s3_storage_path(raw_path)
+    if s3_ref:
+        return Path(s3_ref[1]).name
+    raw = (raw_path or "").strip()
+    if raw.startswith("/uploads/"):
+        return Path(raw.replace("/uploads/", "", 1)).name
+    return Path(raw).name
+
+
+def build_download_content_disposition(filename: str, disposition: str) -> str:
+    safe_name = (filename or "file").replace("\\", "_").replace('"', "")
+    return f"{disposition}; filename*=UTF-8''{quote(safe_name)}"
+
+
 def resolve_attachment_disk_path(raw_path: str | None) -> Path | None:
     raw = (raw_path or "").strip()
-    if not raw:
+    if not raw or parse_s3_storage_path(raw):
         return None
     if raw.startswith("/uploads/"):
         candidate = UPLOAD_DIR / raw.replace("/uploads/", "", 1)
@@ -1066,14 +1194,7 @@ def delete_ticket_with_related_data(
     attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
     if remove_files:
         for attachment in attachments:
-            path = resolve_attachment_disk_path(attachment.file_path)
-            if not path:
-                continue
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
+            delete_stored_file(attachment.file_path)
     db.query(Comment).filter(Comment.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(Attachment).filter(Attachment.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(TicketLog).filter(TicketLog.ticket_id == ticket.id).delete(synchronize_session=False)
@@ -1671,11 +1792,207 @@ async def write_upload_file_async(upload: UploadFile, destination: Path, max_siz
         raise
 
 
+def read_upload_bytes(upload: UploadFile, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> bytes:
+    total = 0
+    chunks: list[bytes] = []
+    while True:
+        chunk = upload.file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(413, "File too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def read_upload_bytes_async(upload: UploadFile, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> bytes:
+    total = 0
+    chunks: list[bytes] = []
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(413, "File too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def build_upload_url_from_disk_path(path: Path) -> str:
     upload_root = UPLOAD_DIR.resolve(strict=False)
     resolved = path.resolve(strict=False)
     relative = resolved.relative_to(upload_root).as_posix()
     return f"/uploads/{relative}"
+
+
+def compute_bytes_sha256_and_size(payload: bytes) -> tuple[str, int]:
+    return hashlib.sha256(payload).hexdigest(), len(payload)
+
+
+def store_bytes_in_storage(object_key: str, payload: bytes, content_type: str | None = None) -> str:
+    normalized_key = build_storage_key(object_key)
+    if STORAGE_BACKEND == "s3":
+        put_kwargs = {
+            "Bucket": S3_BUCKET,
+            "Key": normalized_key,
+            "Body": payload,
+        }
+        if content_type:
+            put_kwargs["ContentType"] = content_type
+        get_s3_client().put_object(**put_kwargs)
+        return build_s3_storage_path(normalized_key)
+
+    destination = UPLOAD_DIR / Path(normalized_key)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with destination.open("wb") as out:
+            out.write(payload)
+    except Exception:
+        if destination.exists():
+            destination.unlink()
+        raise
+    return build_upload_url_from_disk_path(destination)
+
+
+def store_upload_file_to_storage(upload: UploadFile, object_key: str, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> tuple[str, str, int]:
+    normalized_key = build_storage_key(object_key)
+    if STORAGE_BACKEND == "s3":
+        payload = read_upload_bytes(upload, max_size=max_size)
+        file_hash, file_size = compute_bytes_sha256_and_size(payload)
+        stored_path = store_bytes_in_storage(normalized_key, payload, content_type=upload.content_type)
+        return stored_path, file_hash, file_size
+
+    destination = UPLOAD_DIR / Path(normalized_key)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    write_upload_file(upload, destination, max_size=max_size)
+    file_hash, file_size = compute_file_sha256_and_size(destination)
+    return build_upload_url_from_disk_path(destination), file_hash, file_size
+
+
+async def store_upload_file_to_storage_async(upload: UploadFile, object_key: str, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> tuple[str, str, int]:
+    normalized_key = build_storage_key(object_key)
+    if STORAGE_BACKEND == "s3":
+        payload = await read_upload_bytes_async(upload, max_size=max_size)
+        file_hash, file_size = compute_bytes_sha256_and_size(payload)
+        stored_path = store_bytes_in_storage(normalized_key, payload, content_type=upload.content_type)
+        return stored_path, file_hash, file_size
+
+    destination = UPLOAD_DIR / Path(normalized_key)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    await write_upload_file_async(upload, destination, max_size=max_size)
+    file_hash, file_size = compute_file_sha256_and_size(destination)
+    return build_upload_url_from_disk_path(destination), file_hash, file_size
+
+
+def read_stored_file_bytes(raw_path: str | None) -> tuple[bytes, str] | None:
+    s3_ref = parse_s3_storage_path(raw_path)
+    if s3_ref:
+        bucket, key = s3_ref
+        try:
+            response = get_s3_client().get_object(Bucket=bucket, Key=key)
+            body = response.get("Body")
+            if body is None:
+                return None
+            try:
+                payload = body.read()
+            finally:
+                close = getattr(body, "close", None)
+                if callable(close):
+                    close()
+            return payload, Path(key).name
+        except (BotoCoreError, ClientError):
+            return None
+
+    disk_path = resolve_attachment_disk_path(raw_path)
+    if not disk_path or not disk_path.exists() or not disk_path.is_file():
+        return None
+    return disk_path.read_bytes(), disk_path.name
+
+
+def delete_stored_file(raw_path: str | None) -> None:
+    s3_ref = parse_s3_storage_path(raw_path)
+    if s3_ref:
+        bucket, key = s3_ref
+        try:
+            get_s3_client().delete_object(Bucket=bucket, Key=key)
+        except (BotoCoreError, ClientError, RuntimeError):
+            pass
+        return
+
+    disk_path = resolve_attachment_disk_path(raw_path)
+    if not disk_path:
+        return
+    try:
+        if disk_path.exists() and disk_path.is_file():
+            disk_path.unlink()
+    except OSError:
+        pass
+
+
+def build_presigned_storage_download_url(raw_path: str | None, display_name: str, disposition: str) -> str | None:
+    s3_ref = parse_s3_storage_path(raw_path)
+    if not s3_ref:
+        return None
+    bucket, key = s3_ref
+    params = {
+        "Bucket": bucket,
+        "Key": key,
+        "ResponseContentDisposition": build_download_content_disposition(display_name, disposition),
+    }
+    return str(get_s3_client().generate_presigned_url("get_object", Params=params, ExpiresIn=S3_PRESIGNED_TTL_SECONDS))
+
+
+def move_stored_file_to_key(raw_path: str | None, target_key: str) -> str | None:
+    normalized_key = build_storage_key(target_key)
+    s3_ref = parse_s3_storage_path(raw_path)
+
+    if STORAGE_BACKEND == "s3":
+        if s3_ref:
+            source_bucket, source_key = s3_ref
+            target_bucket = S3_BUCKET or source_bucket
+            if source_bucket == target_bucket and source_key == normalized_key:
+                return build_s3_storage_path(normalized_key, bucket=target_bucket)
+            client = get_s3_client()
+            client.copy_object(Bucket=target_bucket, CopySource={"Bucket": source_bucket, "Key": source_key}, Key=normalized_key)
+            client.delete_object(Bucket=source_bucket, Key=source_key)
+            return build_s3_storage_path(normalized_key, bucket=target_bucket)
+
+        source = resolve_attachment_disk_path(raw_path)
+        if not source or not source.exists() or not source.is_file():
+            return None
+        payload = source.read_bytes()
+        stored_path = store_bytes_in_storage(normalized_key, payload)
+        try:
+            source.unlink()
+        except OSError:
+            pass
+        return stored_path
+
+    target = UPLOAD_DIR / Path(normalized_key)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if s3_ref:
+        payload_info = read_stored_file_bytes(raw_path)
+        if not payload_info:
+            return None
+        payload, _ = payload_info
+        try:
+            with target.open("wb") as out:
+                out.write(payload)
+        except Exception:
+            if target.exists():
+                target.unlink()
+            raise
+        delete_stored_file(raw_path)
+        return build_upload_url_from_disk_path(target)
+
+    source = resolve_attachment_disk_path(raw_path)
+    if not source or not source.exists() or not source.is_file():
+        return None
+    if source.resolve(strict=False) != target.resolve(strict=False):
+        shutil.move(str(source), str(target))
+    return build_upload_url_from_disk_path(target)
 
 
 def compute_file_sha256_and_size(path: Path) -> tuple[str, int]:
@@ -1707,16 +2024,18 @@ def create_ticket_attachment_record(
     ticket_id: int,
     uploader_id: int,
     upload: UploadFile,
-    stored_name: str,
-    disk_path: Path,
+    stored_path: str,
+    file_hash: str,
+    file_size: int,
 ) -> Attachment:
     attachment = Attachment(
         ticket_id=ticket_id,
         uploader_id=uploader_id,
-        file_path=f"/uploads/{stored_name}",
+        file_path=stored_path,
         original_name=upload.filename,
     )
-    enrich_attachment_metadata(attachment, disk_path)
+    attachment.file_sha256 = file_hash
+    attachment.file_size_bytes = file_size
     db.add(attachment)
     add_ticket_log(db, ticket_id=ticket_id, actor_id=uploader_id, action=LOG_ACTION_FILE_ADDED)
     return attachment
@@ -1749,32 +2068,25 @@ def choose_attachment_storage_name(attachment: Attachment, ticket_id: int) -> st
 
 
 def move_attachment_to_archive(attachment: Attachment, ticket_id: int, archived_at: datetime) -> None:
-    source = resolve_attachment_disk_path(attachment.file_path)
-    if not source or not source.exists() or not source.is_file():
+    archive_name = choose_attachment_storage_name(attachment, ticket_id)
+    target_key = build_attachment_object_key(archive_name, archived_ticket_id=ticket_id)
+    target_path = move_stored_file_to_key(attachment.file_path, target_key)
+    if not target_path:
         attachment.archived_at = archived_at
         return
-    archive_name = choose_attachment_storage_name(attachment, ticket_id)
-    target_dir = ARCHIVE_UPLOAD_DIR / str(ticket_id)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / archive_name
-    shutil.move(str(source), str(target))
-    attachment.file_path = build_upload_url_from_disk_path(target)
+    attachment.file_path = target_path
     attachment.archived_at = archived_at
-    enrich_attachment_metadata(attachment, target)
 
 
 def move_attachment_to_active_storage(attachment: Attachment, ticket_id: int) -> None:
-    source = resolve_attachment_disk_path(attachment.file_path)
-    if not source or not source.exists() or not source.is_file():
+    active_name = choose_attachment_storage_name(attachment, ticket_id)
+    target_key = build_attachment_object_key(active_name)
+    target_path = move_stored_file_to_key(attachment.file_path, target_key)
+    if not target_path:
         attachment.archived_at = None
         return
-    active_name = choose_attachment_storage_name(attachment, ticket_id)
-    target = UPLOAD_DIR / active_name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(source), str(target))
-    attachment.file_path = build_upload_url_from_disk_path(target)
+    attachment.file_path = target_path
     attachment.archived_at = None
-    enrich_attachment_metadata(attachment, target)
 
 
 def to_local_dt(dt: datetime | None) -> datetime | None:
@@ -2657,14 +2969,7 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
     if ticket_ids:
         attachments = db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).all()
         for a in attachments:
-            path = resolve_attachment_disk_path(a.file_path)
-            if not path:
-                continue
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
+            delete_stored_file(a.file_path)
 
         db.query(Comment).filter(Comment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
         db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
@@ -2674,14 +2979,7 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
     if receipt_ids:
         receipt_files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).all()
         for file_row in receipt_files:
-            path = resolve_attachment_disk_path(file_row.file_path)
-            if not path:
-                continue
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
+            delete_stored_file(file_row.file_path)
         db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).delete(synchronize_session=False)
         db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).delete(synchronize_session=False)
 
@@ -3716,19 +4014,19 @@ def upload_attachment(ticket_id: int, files: list[UploadFile] = File(...), db: S
     if t.status == TicketStatus.archived:
         raise HTTPException(400, "Archived ticket is read-only")
 
-    UPLOAD_DIR.mkdir(exist_ok=True)
     saved_attachments: list[Attachment] = []
     for upload in normalize_uploaded_files(files):
         safe_name = make_safe_upload_name(upload.filename, ticket_id=ticket_id)
-        path = UPLOAD_DIR / safe_name
-        write_upload_file(upload, path)
+        object_key = build_attachment_object_key(safe_name)
+        stored_path, file_hash, file_size = store_upload_file_to_storage(upload, object_key)
         attachment = create_ticket_attachment_record(
             db=db,
             ticket_id=ticket_id,
             uploader_id=user.id,
             upload=upload,
-            stored_name=safe_name,
-            disk_path=path,
+            stored_path=stored_path,
+            file_hash=file_hash,
+            file_size=file_size,
         )
         saved_attachments.append(attachment)
 
@@ -3752,12 +4050,15 @@ def download_attachment(
     if not a:
         raise HTTPException(404, "Attachment not found")
     t = get_api_ticket_or_404(db, user, a.ticket_id)
+    display_name = ((a.original_name or "").strip() or get_storage_basename(a.file_path) or "file")[:255]
+    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
+    presigned_url = build_presigned_storage_download_url(a.file_path, display_name, disposition)
+    if presigned_url:
+        return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
     disk_path = resolve_attachment_disk_path(a.file_path)
     if not disk_path or not disk_path.exists() or not disk_path.is_file():
         raise HTTPException(404, "Attachment file not found")
-
-    display_name = ((a.original_name or "").strip() or disk_path.name)[:255]
-    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
     return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
 
 # =========================
@@ -6426,7 +6727,7 @@ async def web_add_attachment(ticket_id: int, request: Request, files: list[Uploa
 
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # РїСЂР°РІР° (РєР°Рє Сѓ РєРѕРјРјРµРЅС‚Р°СЂРёРµРІ/СЃС‚Р°С‚СѓСЃРѕРІ)
+    # Access rules match comments and status updates.
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
     if t.status == TicketStatus.archived:
@@ -6435,15 +6736,16 @@ async def web_add_attachment(ticket_id: int, request: Request, files: list[Uploa
     saved_attachments: list[Attachment] = []
     for upload in normalize_uploaded_files(files):
         safe_name = make_safe_upload_name(upload.filename, ticket_id=ticket_id)
-        dest_path = UPLOAD_DIR / safe_name
-        await write_upload_file_async(upload, dest_path)
+        object_key = build_attachment_object_key(safe_name)
+        stored_path, file_hash, file_size = await store_upload_file_to_storage_async(upload, object_key)
         attachment = create_ticket_attachment_record(
             db=db,
             ticket_id=ticket_id,
             uploader_id=user.id,
             upload=upload,
-            stored_name=safe_name,
-            disk_path=dest_path,
+            stored_path=stored_path,
+            file_hash=file_hash,
+            file_size=file_size,
         )
         saved_attachments.append(attachment)
 
@@ -6477,13 +6779,7 @@ async def web_delete_attachment(
     if not can_delete_file:
         raise HTTPException(403, "Forbidden")
 
-    disk_path = resolve_attachment_disk_path(attachment.file_path)
-    if disk_path:
-        try:
-            if disk_path.exists() and disk_path.is_file():
-                disk_path.unlink()
-        except OSError:
-            pass
+    delete_stored_file(attachment.file_path)
 
     db.delete(attachment)
     add_ticket_log(db, ticket_id=ticket.id, actor_id=user.id, action=LOG_ACTION_FILE_DELETED)
@@ -6983,7 +7279,7 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
     project_name = str(project_row[1] or "")
     card_name = str(card_row[1] or "")
 
-    written_paths: list[Path] = []
+    written_paths: list[str] = []
     try:
         receipt = Receipt(
             company_id=user.company_id,
@@ -7001,10 +7297,9 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
         db.flush()
         for upload in uploads:
             safe_name = make_safe_upload_name(upload.filename, ticket_id=receipt.id)
-            dest_path = UPLOAD_DIR / safe_name
-            await write_upload_file_async(upload, dest_path)
-            written_paths.append(dest_path)
-            file_hash, file_size = compute_file_sha256_and_size(dest_path)
+            object_key = build_receipt_object_key(safe_name)
+            stored_path, file_hash, file_size = await store_upload_file_to_storage_async(upload, object_key)
+            written_paths.append(stored_path)
             display_name = build_receipt_original_name(
                 receipt_date_value=receipt.receipt_date,
                 card_name=card_name,
@@ -7016,7 +7311,7 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
                 ReceiptFile(
                     receipt_id=receipt.id,
                     uploader_id=user.id,
-                    file_path=f"/uploads/{safe_name}",
+                    file_path=stored_path,
                     original_name=display_name[:255] or None,
                     file_size_bytes=file_size,
                     file_sha256=file_hash,
@@ -7027,11 +7322,7 @@ async def web_receipts_create(request: Request, db: Session = Depends(get_db), u
     except SQLAlchemyError:
         db.rollback()
         for path in written_paths:
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
+            delete_stored_file(path)
         return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
 
     return RedirectResponse(url="/web/receipts?ok=created&mode=field", status_code=HTTP_303_SEE_OTHER)
@@ -7159,14 +7450,7 @@ async def web_receipt_delete(
     success_url = f"{next_url}&ok=deleted" if "?" in next_url else f"{next_url}?ok=deleted"
     files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id == receipt.id).all()
     for file_row in files:
-        path = resolve_attachment_disk_path(file_row.file_path)
-        if not path:
-            continue
-        try:
-            if path.exists():
-                path.unlink()
-        except OSError:
-            pass
+        delete_stored_file(file_row.file_path)
     db.query(ReceiptFile).filter(ReceiptFile.receipt_id == receipt.id).delete(synchronize_session=False)
     db.delete(receipt)
     try:
@@ -7210,14 +7494,7 @@ async def web_receipt_bulk_delete(
     found_ids = [r.id for r in receipts]
     files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(found_ids)).all()
     for file_row in files:
-        path = resolve_attachment_disk_path(file_row.file_path)
-        if not path:
-            continue
-        try:
-            if path.exists():
-                path.unlink()
-        except OSError:
-            pass
+        delete_stored_file(file_row.file_path)
     db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(found_ids)).delete(synchronize_session=False)
     db.query(Receipt).filter(Receipt.id.in_(found_ids)).delete(synchronize_session=False)
     try:
@@ -7290,11 +7567,14 @@ def web_receipt_file_download(
     receipt = get_company_receipt_or_404(db, user, file_row.receipt_id)
     if not can_access_receipt(user, receipt):
         raise HTTPException(403, "Forbidden")
+    display_name = ((file_row.original_name or "").strip() or get_storage_basename(file_row.file_path) or "file")[:255]
+    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
+    presigned_url = build_presigned_storage_download_url(file_row.file_path, display_name, disposition)
+    if presigned_url:
+        return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     disk_path = resolve_attachment_disk_path(file_row.file_path)
     if not disk_path or not disk_path.exists() or not disk_path.is_file():
         raise HTTPException(404, "File not found")
-    display_name = ((file_row.original_name or "").strip() or disk_path.name)[:255]
-    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
     return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
 
 
@@ -7472,16 +7752,17 @@ def web_receipts_export_zip(
             receipt = receipts_by_id.get(file_row.receipt_id)
             if not receipt:
                 continue
-            disk_path = resolve_attachment_disk_path(file_row.file_path)
-            if not disk_path or not disk_path.exists() or not disk_path.is_file():
+            payload_info = read_stored_file_bytes(file_row.file_path)
+            if not payload_info:
                 continue
-            ext = Path(file_row.original_name or disk_path.name).suffix.lower() or ".bin"
+            payload, stored_name = payload_info
+            ext = Path(file_row.original_name or stored_name).suffix.lower() or ".bin"
             dt_str = (receipt.receipt_date or receipt.created_at.date()).isoformat()
             card_name = sanitize_export_token(cards.get(receipt.card_id, f"card{receipt.card_id}"), max_len=24)
             comment = sanitize_export_token(receipt.comment, max_len=24)
             amount_token = sanitize_export_token(str(receipt.amount or ""), max_len=12)
             arcname = f"{dt_str}_{card_name}_{comment}_{amount_token}_r{receipt.id}_f{file_row.id}{ext}"
-            zf.write(disk_path, arcname=arcname)
+            zf.writestr(arcname, payload)
     output.seek(0)
     filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
