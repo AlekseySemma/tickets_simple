@@ -504,7 +504,7 @@
           <form method="post" action="/web/tickets/{{ t.id }}/attachments"
                 enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
             <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
-            <input type="file" name="file" class="form-control" required />
+            <input type="file" name="files" class="form-control" multiple required />
             <button class="btn btn-outline-secondary">Загрузить</button>
           </form>
         {% endif %}

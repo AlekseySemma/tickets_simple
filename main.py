@@ -1700,6 +1700,37 @@ def enrich_attachment_metadata(attachment: Attachment, disk_path: Path | None = 
     attachment.file_size_bytes = file_size
 
 
+
+def create_ticket_attachment_record(
+    *,
+    db: Session,
+    ticket_id: int,
+    uploader_id: int,
+    upload: UploadFile,
+    stored_name: str,
+    disk_path: Path,
+) -> Attachment:
+    attachment = Attachment(
+        ticket_id=ticket_id,
+        uploader_id=uploader_id,
+        file_path=f"/uploads/{stored_name}",
+        original_name=upload.filename,
+    )
+    enrich_attachment_metadata(attachment, disk_path)
+    db.add(attachment)
+    add_ticket_log(db, ticket_id=ticket_id, actor_id=uploader_id, action=LOG_ACTION_FILE_ADDED)
+    return attachment
+
+
+def normalize_uploaded_files(files: list[UploadFile]) -> list[UploadFile]:
+    valid_files: list[UploadFile] = []
+    for upload in files:
+        if upload and (upload.filename or "").strip():
+            valid_files.append(upload)
+    if not valid_files:
+        raise HTTPException(400, "No files uploaded")
+    return valid_files
+
 def choose_attachment_storage_name(attachment: Attachment, ticket_id: int) -> str:
     preferred_name = (attachment.original_name or "").strip()
     if preferred_name:
@@ -3672,8 +3703,8 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
     db.commit()
     return c
 
-@app.post("/tickets/{ticket_id}/attachments", response_model=AttachmentOut)
-def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@app.post("/tickets/{ticket_id}/attachments", response_model=list[AttachmentOut])
+def upload_attachment(ticket_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_api_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
@@ -3681,18 +3712,28 @@ def upload_attachment(ticket_id: int, file: UploadFile = File(...), db: Session 
         raise HTTPException(400, "Archived ticket is read-only")
 
     UPLOAD_DIR.mkdir(exist_ok=True)
-    safe_name = make_safe_upload_name(file.filename)
-    path = UPLOAD_DIR / safe_name
-    write_upload_file(file, path)
+    saved_attachments: list[Attachment] = []
+    for upload in normalize_uploaded_files(files):
+        safe_name = make_safe_upload_name(upload.filename, ticket_id=ticket_id)
+        path = UPLOAD_DIR / safe_name
+        write_upload_file(upload, path)
+        attachment = create_ticket_attachment_record(
+            db=db,
+            ticket_id=ticket_id,
+            uploader_id=user.id,
+            upload=upload,
+            stored_name=safe_name,
+            disk_path=path,
+        )
+        saved_attachments.append(attachment)
 
-    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
-    enrich_attachment_metadata(a, path)
-    db.add(a)
-    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action=LOG_ACTION_FILE_ADDED)
-    db.commit(); db.refresh(a)
-    notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
     db.commit()
-    return a
+    for attachment in saved_attachments:
+        db.refresh(attachment)
+    for attachment in saved_attachments:
+        notify_curators_executor_act(db, ticket=t, uploader=user, original_name=attachment.original_name)
+    db.commit()
+    return saved_attachments
 
 
 @app.get("/attachments/{attachment_id}")
@@ -6375,7 +6416,7 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 @app.post("/web/tickets/{ticket_id}/attachments")
-async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile = File(...),
+async def web_add_attachment(ticket_id: int, request: Request, files: list[UploadFile] = File(...),
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
 
     t = get_company_ticket_or_404(db, user, ticket_id)
@@ -6386,18 +6427,24 @@ async def web_add_attachment(ticket_id: int, request: Request, file: UploadFile 
     if t.status == TicketStatus.archived:
         raise HTTPException(400, "Archived ticket is read-only")
 
-    safe_name = make_safe_upload_name(file.filename, ticket_id=ticket_id)
+    saved_attachments: list[Attachment] = []
+    for upload in normalize_uploaded_files(files):
+        safe_name = make_safe_upload_name(upload.filename, ticket_id=ticket_id)
+        dest_path = UPLOAD_DIR / safe_name
+        await write_upload_file_async(upload, dest_path)
+        attachment = create_ticket_attachment_record(
+            db=db,
+            ticket_id=ticket_id,
+            uploader_id=user.id,
+            upload=upload,
+            stored_name=safe_name,
+            disk_path=dest_path,
+        )
+        saved_attachments.append(attachment)
 
-    dest_path = UPLOAD_DIR / safe_name
-    await write_upload_file_async(file, dest_path)
-
-    # СЃРѕС…СЂР°РЅСЏРµРј РїСѓС‚СЊ РєР°Рє URL (СѓРґРѕР±РЅРѕ РґР»СЏ С€Р°Р±Р»РѕРЅРѕРІ)
-    a = Attachment(ticket_id=ticket_id, uploader_id=user.id, file_path=f"/uploads/{safe_name}", original_name=file.filename)
-    enrich_attachment_metadata(a, dest_path)
-    db.add(a)
-    add_ticket_log(db, ticket_id=ticket_id, actor_id=user.id, action=LOG_ACTION_FILE_ADDED)
     db.commit()
-    notify_curators_executor_act(db, ticket=t, uploader=user, original_name=file.filename)
+    for attachment in saved_attachments:
+        notify_curators_executor_act(db, ticket=t, uploader=user, original_name=attachment.original_name)
     db.commit()
 
     form = await request.form()
@@ -8216,3 +8263,5 @@ def web_ticket_detail(
             "is_current_user_watcher": is_current_user_watcher,
         },
     )
+
+
