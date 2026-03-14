@@ -1049,9 +1049,19 @@ def get_s3_client():
     if missing_s3:
         raise RuntimeError(f"Missing S3 settings: {', '.join(missing_s3)}")
     if _s3_client is None:
-        config_kwargs = {"signature_version": "s3v4"}
+        config_kwargs = {
+            "signature_version": "s3v4",
+            "request_checksum_calculation": "when_required",
+            "response_checksum_validation": "when_required",
+        }
         if S3_ADDRESSING_STYLE in {"path", "virtual"}:
-            config_kwargs["s3"] = {"addressing_style": S3_ADDRESSING_STYLE}
+            config_kwargs["s3"] = {
+                "addressing_style": S3_ADDRESSING_STYLE,
+                # Some S3-compatible backends reject boto3's payload hash mode for PutObject.
+                "payload_signing_enabled": False,
+            }
+        else:
+            config_kwargs["s3"] = {"payload_signing_enabled": False}
         _s3_client = boto3.client(
             "s3",
             endpoint_url=S3_ENDPOINT_URL or None,
