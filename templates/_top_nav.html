@@ -9,7 +9,8 @@
 {% set is_org = p.startswith("/web/org-structure") %}
 {% set is_users = p.startswith("/web/users") or p.startswith("/web/executors") %}
 {% set is_ticket_types = p.startswith("/web/ticket-types") %}
-{% set can_manage_company = user.role in ["ADMIN", "CURATOR"] %}
+{% set current_role = user.role if user is defined and user else "" %}
+{% set can_manage_company = current_role in ["ADMIN", "CURATOR"] %}
 {% set show_templates = can_manage_company %}
 {% set show_org = can_manage_company %}
 {% set show_users = can_manage_company %}
