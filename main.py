@@ -466,6 +466,7 @@ class TicketTemplate(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     ticket_type_id: Mapped[int] = mapped_column(ForeignKey("ticket_types.id"), index=True)
+    department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     name: Mapped[str] = mapped_column(String(255), index=True)
     title_template: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     description_template: Mapped[Optional[str]] = mapped_column(Text, default=None)
@@ -657,6 +658,14 @@ def ensure_migrations_ready() -> None:
                     "Database schema is outdated. Run 'alembic upgrade head'. Missing tickets columns: "
                     + ", ".join(missing_ticket_columns)
                 )
+            if ORG_STRUCTURE_V2_ENABLED:
+                template_columns = {col["name"] for col in inspector.get_columns("ticket_templates")}
+                missing_template_columns = sorted({"department_id"} - template_columns)
+                if missing_template_columns:
+                    raise RuntimeError(
+                        "Database schema is outdated. Run 'alembic upgrade head'. Missing ticket_templates columns: "
+                        + ", ".join(missing_template_columns)
+                    )
             user_columns = {col["name"] for col in inspector.get_columns("users")}
             required_user_columns = {
                 "show_receipts_accounting_mode",
@@ -811,6 +820,7 @@ class TicketTypeOut(BaseModel):
 
 class TicketTemplateCreate(BaseModel):
     ticket_type_id: int
+    department_id: Optional[int] = None
     name: str
     title_template: Optional[str] = None
     description_template: Optional[str] = None
@@ -821,6 +831,7 @@ class TicketTemplateCreate(BaseModel):
 
 class TicketTemplateUpdate(BaseModel):
     ticket_type_id: Optional[int] = None
+    department_id: Optional[int] = None
     name: Optional[str] = None
     title_template: Optional[str] = None
     description_template: Optional[str] = None
@@ -832,6 +843,7 @@ class TicketTemplateUpdate(BaseModel):
 class TicketTemplateOut(BaseModel):
     id: int
     ticket_type_id: int
+    department_id: Optional[int]
     name: str
     title_template: Optional[str]
     description_template: Optional[str]
@@ -1568,6 +1580,7 @@ def validate_template_links(
     db: Session,
     company_id: int,
     ticket_type_id: int | None,
+    department_id: int | None,
     default_executor_id: int | None,
     scope_unit_id: int | None,
 ) -> None:
@@ -1575,6 +1588,12 @@ def validate_template_links(
         tt = db.get(TicketType, ticket_type_id)
         if not tt or tt.company_id != company_id:
             raise HTTPException(400, "Ticket type not found")
+    if department_id is not None:
+        department = db.get(Department, department_id)
+        if not department or department.company_id != company_id:
+            raise HTTPException(400, "Department not found")
+        if not department.is_active:
+            raise HTTPException(400, "Department is inactive")
     if default_executor_id is not None:
         u = db.get(User, default_executor_id)
         if not u or u.company_id != company_id or u.role != Role.executor:
@@ -1815,11 +1834,11 @@ def create_tickets_from_template(
     effective_period = (period_key or "").strip() or month_period_key()
     if template.scope_unit_id is None:
         return 0, 0, effective_period
-    template_ticket_type = db.get(TicketType, template.ticket_type_id) if template.ticket_type_id else None
-    template_department_id = (
-        int(template_ticket_type.department_id)
-        if template_ticket_type is not None and template_ticket_type.department_id is not None
-        else None
+    template_department_id = resolve_ticket_department_id(
+        db,
+        company_id=template.company_id,
+        ticket_type_id=template.ticket_type_id,
+        department_id=template.department_id,
     )
 
     leaf_unit_ids = resolve_scope_leaf_units(db, template.company_id, template.scope_unit_id)
@@ -3692,6 +3711,7 @@ def delete_department(
     in_use = any(
         (
             db.query(TicketType.id).filter(TicketType.department_id == item.id).first() is not None,
+            db.query(TicketTemplate.id).filter(TicketTemplate.department_id == item.id).first() is not None,
             db.query(UnitAssignment.id).filter(UnitAssignment.department_id == item.id).first() is not None,
             db.query(Ticket.id).filter(Ticket.department_id == item.id).first() is not None,
         )
@@ -3965,8 +3985,15 @@ def create_ticket_template(
         db,
         _manager.company_id,
         payload.ticket_type_id,
+        payload.department_id,
         payload.default_executor_id,
         payload.scope_unit_id,
+    )
+    resolved_department_id = resolve_ticket_department_id(
+        db,
+        company_id=_manager.company_id,
+        ticket_type_id=payload.ticket_type_id,
+        department_id=payload.department_id,
     )
     exists = (
         db.query(TicketTemplate.id)
@@ -3978,6 +4005,7 @@ def create_ticket_template(
     item = TicketTemplate(
         company_id=_manager.company_id,
         ticket_type_id=payload.ticket_type_id,
+        department_id=resolved_department_id,
         name=name,
         title_template=(payload.title_template or "").strip() or None,
         description_template=(payload.description_template or "").strip() or None,
@@ -4035,18 +4063,28 @@ def update_ticket_template(
         item.name = next_name
 
     next_ticket_type_id = incoming.get("ticket_type_id", item.ticket_type_id)
+    next_department_id = incoming.get("department_id", item.department_id)
     next_default_executor_id = incoming.get("default_executor_id", item.default_executor_id)
     next_scope_unit_id = incoming.get("scope_unit_id", item.scope_unit_id)
     validate_template_links(
         db,
         _manager.company_id,
         next_ticket_type_id,
+        next_department_id,
         next_default_executor_id,
         next_scope_unit_id,
+    )
+    resolved_department_id = resolve_ticket_department_id(
+        db,
+        company_id=_manager.company_id,
+        ticket_type_id=next_ticket_type_id,
+        department_id=next_department_id,
     )
 
     if "ticket_type_id" in incoming:
         item.ticket_type_id = incoming.get("ticket_type_id")
+    if "department_id" in incoming or "ticket_type_id" in incoming:
+        item.department_id = resolved_department_id
     if "title_template" in incoming:
         item.title_template = (incoming.get("title_template") or "").strip() or None
     if "description_template" in incoming:
@@ -5886,6 +5924,7 @@ def web_departments_delete(
     in_use = any(
         (
             db.query(TicketType.id).filter(TicketType.company_id == user.company_id, TicketType.department_id == item.id).first() is not None,
+            db.query(TicketTemplate.id).filter(TicketTemplate.company_id == user.company_id, TicketTemplate.department_id == item.id).first() is not None,
             db.query(UnitAssignment.id).filter(UnitAssignment.company_id == user.company_id, UnitAssignment.department_id == item.id).first() is not None,
             db.query(Ticket.id).filter(Ticket.company_id == user.company_id, Ticket.department_id == item.id).first() is not None,
         )
@@ -8534,9 +8573,15 @@ def web_ticket_templates(request: Request, db: Session = Depends(get_db), user: 
         .all()
     )
     ticket_types = (
-        db.query(TicketType.id, TicketType.name, TicketType.is_active)
+        db.query(TicketType.id, TicketType.name, TicketType.is_active, TicketType.department_id)
         .filter(TicketType.company_id == user.company_id)
         .order_by(TicketType.name.asc())
+        .all()
+    )
+    departments = (
+        db.query(Department.id, Department.name, Department.is_active)
+        .filter(Department.company_id == user.company_id)
+        .order_by(Department.name.asc(), Department.id.asc())
         .all()
     )
     org_units = (
@@ -8557,6 +8602,7 @@ def web_ticket_templates(request: Request, db: Session = Depends(get_db), user: 
             "request": request,
             "items": items,
             "ticket_types": ticket_types,
+            "departments": departments,
             "org_units": org_units,
             "executors": executors,
         },
@@ -8576,12 +8622,22 @@ async def web_ticket_templates_create(request: Request, db: Session = Depends(ge
         ticket_type_id = int((form.get("ticket_type_id") or "").strip())
     except ValueError:
         return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    department_raw = (form.get("department_id") or "").strip()
     scope_raw = (form.get("scope_unit_id") or "").strip()
     executor_raw = (form.get("default_executor_id") or "").strip()
+    if department_raw and not department_raw.isdigit():
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    department_id = int(department_raw) if department_raw.isdigit() else None
     scope_unit_id = int(scope_raw) if scope_raw.isdigit() else None
     default_executor_id = int(executor_raw) if executor_raw.isdigit() else None
     is_active = (form.get("is_active") or "1").strip() == "1"
-    validate_template_links(db, user.company_id, ticket_type_id, default_executor_id, scope_unit_id)
+    validate_template_links(db, user.company_id, ticket_type_id, department_id, default_executor_id, scope_unit_id)
+    resolved_department_id = resolve_ticket_department_id(
+        db,
+        company_id=user.company_id,
+        ticket_type_id=ticket_type_id,
+        department_id=department_id,
+    )
     exists = (
         db.query(TicketTemplate.id)
         .filter(TicketTemplate.company_id == user.company_id, TicketTemplate.name == name)
@@ -8592,6 +8648,7 @@ async def web_ticket_templates_create(request: Request, db: Session = Depends(ge
     item = TicketTemplate(
         company_id=user.company_id,
         ticket_type_id=ticket_type_id,
+        department_id=resolved_department_id,
         name=name,
         title_template=(form.get("title_template") or "").strip() or None,
         description_template=(form.get("description_template") or "").strip() or None,
@@ -8626,12 +8683,22 @@ async def web_ticket_templates_update(
         ticket_type_id = int((form.get("ticket_type_id") or "").strip())
     except ValueError:
         return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    department_raw = (form.get("department_id") or "").strip()
     scope_raw = (form.get("scope_unit_id") or "").strip()
     executor_raw = (form.get("default_executor_id") or "").strip()
+    if department_raw and not department_raw.isdigit():
+        return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
+    department_id = int(department_raw) if department_raw.isdigit() else None
     scope_unit_id = int(scope_raw) if scope_raw.isdigit() else None
     default_executor_id = int(executor_raw) if executor_raw.isdigit() else None
     is_active = (form.get("is_active") or "").strip() == "1"
-    validate_template_links(db, user.company_id, ticket_type_id, default_executor_id, scope_unit_id)
+    validate_template_links(db, user.company_id, ticket_type_id, department_id, default_executor_id, scope_unit_id)
+    resolved_department_id = resolve_ticket_department_id(
+        db,
+        company_id=user.company_id,
+        ticket_type_id=ticket_type_id,
+        department_id=department_id,
+    )
     exists = (
         db.query(TicketTemplate.id)
         .filter(
@@ -8644,6 +8711,7 @@ async def web_ticket_templates_update(
     if exists:
         return RedirectResponse(url="/web/ticket-templates", status_code=HTTP_303_SEE_OTHER)
     item.ticket_type_id = ticket_type_id
+    item.department_id = resolved_department_id
     item.name = name
     item.title_template = (form.get("title_template") or "").strip() or None
     item.description_template = (form.get("description_template") or "").strip() or None

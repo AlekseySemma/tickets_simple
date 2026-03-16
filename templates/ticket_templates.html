@@ -166,7 +166,17 @@
           <div class="col-12 col-md-4">
             <select class="form-select" name="ticket_type_id" required>
               <option value="" selected disabled>Тип заявки</option>
-              {% for tt in ticket_types %}<option value="{{ tt.id }}">{{ tt.name }}</option>{% endfor %}
+              {% for tt in ticket_types %}<option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}">{{ tt.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-4">
+            <select class="form-select" name="department_id" id="template-create-department-id">
+              <option value="">Отдел (необязательно)</option>
+              {% for department in departments %}
+                {% if department.is_active %}
+                  <option value="{{ department.id }}">{{ department.name }}</option>
+                {% endif %}
+              {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-4"><input class="form-control" name="title_template" placeholder="Шаблон названия" /></div>
@@ -209,17 +219,34 @@
         <div class="card-body">
           <div class="tmpl-item-head">
             <div class="tmpl-id">Шаблон #{{ t.id }}</div>
-            {% if t.is_active %}
-              <span class="badge text-bg-success">Автогенерация: Вкл</span>
-            {% else %}
-              <span class="badge text-bg-secondary">Автогенерация: Выкл</span>
-            {% endif %}
+            <div class="d-flex gap-2 flex-wrap">
+              {% if t.department_id %}
+                {% for department in departments %}
+                  {% if department.id == t.department_id %}
+                    <span class="badge text-bg-light border">{{ department.name }}</span>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+              {% if t.is_active %}
+                <span class="badge text-bg-success">Автогенерация: Вкл</span>
+              {% else %}
+                <span class="badge text-bg-secondary">Автогенерация: Выкл</span>
+              {% endif %}
+            </div>
           </div>
           <form method="post" action="/web/ticket-templates/{{ t.id }}/update" class="row g-2">
             <div class="col-12 col-md-3"><input class="form-control" name="name" value="{{ t.name }}" required /></div>
             <div class="col-12 col-md-3">
               <select class="form-select" name="ticket_type_id" required>
-                {% for tt in ticket_types %}<option value="{{ tt.id }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>{{ tt.name }}</option>{% endfor %}
+                {% for tt in ticket_types %}<option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>{{ tt.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <select class="form-select" name="department_id">
+                <option value="">Отдел (необязательно)</option>
+                {% for department in departments %}
+                  <option value="{{ department.id }}" {% if t.department_id == department.id %}selected{% endif %}>{{ department.name }}</option>
+                {% endfor %}
               </select>
             </div>
             <div class="col-12 col-md-3"><input class="form-control" name="title_template" value="{{ t.title_template or '' }}" /></div>
@@ -288,14 +315,38 @@
       <div class="alert alert-info">Шаблонов пока нет.</div>
     {% endif %}
   </div>
+  <script>
+    (function () {
+      function bindDepartmentSync(form, departmentSelector) {
+        if (!form) return;
+        const typeSelect = form.querySelector('select[name="ticket_type_id"]');
+        const departmentSelect = departmentSelector ? form.querySelector(departmentSelector) : form.querySelector('select[name="department_id"]');
+        if (!typeSelect || !departmentSelect) return;
+
+        function syncDepartmentFromType() {
+          const option = typeSelect.options[typeSelect.selectedIndex];
+          if (!option) return;
+          const departmentId = option.getAttribute("data-department-id") || "";
+          if (departmentId) {
+            departmentSelect.value = departmentId;
+          }
+        }
+
+        typeSelect.addEventListener("change", syncDepartmentFromType);
+        if (!departmentSelect.value) {
+          syncDepartmentFromType();
+        }
+      }
+
+      bindDepartmentSync(document.querySelector('form[action="/web/ticket-templates/create"]'), "#template-create-department-id");
+      document.querySelectorAll('form[action^="/web/ticket-templates/"][action$="/update"]').forEach(function (form) {
+        bindDepartmentSync(form);
+      });
+    })();
+  </script>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-
-
-
 
 
