@@ -1,6 +1,6 @@
 """Add departments and per-user ticket permissions.
 
-Revision ID: 0019_departments_ticket_permissions
+Revision ID: 0019_departments_permissions
 Revises: 0018_user_receipt_notify
 Create Date: 2026-03-16
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0019_departments_ticket_permissions"
+revision = "0019_departments_permissions"
 down_revision = "0018_user_receipt_notify"
 branch_labels = None
 depends_on = None
