@@ -64,6 +64,8 @@ if len(JWT_SECRET) < 32:
     raise RuntimeError("JWT_SECRET must be set and contain at least 32 characters")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 РґРЅРµР№
+ACCESS_TOKEN_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+PUBLIC_WEB_PATHS = {"/web/login", "/web/register", "/web/register-company", "/web/logout"}
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
@@ -2969,6 +2971,27 @@ def create_access_token(subject: str) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode({"sub": subject, "exp": exp}, JWT_SECRET, algorithm=ALGORITHM)
 
+
+def get_auth_cookie_params(request: Request) -> dict[str, object]:
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    scheme = forwarded_proto or request.url.scheme
+
+    cookie_domain = None
+    if host.endswith(".servora.ru") or host == "servora.ru":
+        cookie_domain = ".servora.ru"
+
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": (scheme == "https"),
+        "domain": cookie_domain,
+        "path": "/",
+        "max_age": ACCESS_TOKEN_COOKIE_MAX_AGE,
+        "expires": ACCESS_TOKEN_COOKIE_MAX_AGE,
+    }
+
+
 def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     final_token = (token or "") or (request.cookies.get("access_token") or "")
     if not final_token:
@@ -3263,6 +3286,37 @@ async def security_headers_middleware(request: Request, call_next):
         "camera=(), microphone=(), geolocation=()",
     )
     return response
+
+
+@app.middleware("http")
+async def sliding_session_middleware(request: Request, call_next):
+    response = await call_next(request)
+
+    if not request.url.path.startswith("/web"):
+        return response
+    if request.url.path in PUBLIC_WEB_PATHS:
+        return response
+
+    raw_token = (request.cookies.get("access_token") or "").strip()
+    if not raw_token:
+        return response
+
+    try:
+        payload = jwt.decode(raw_token, JWT_SECRET, algorithms=[ALGORITHM])
+        subject = str(payload.get("sub") or "").strip()
+        if not subject:
+            return response
+    except JWTError:
+        return response
+
+    refreshed_token = create_access_token(subject)
+    response.set_cookie(
+        "access_token",
+        refreshed_token,
+        **get_auth_cookie_params(request),
+    )
+    return response
+
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ARCHIVE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -4501,21 +4555,10 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
     token = create_access_token(str(user.id))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
-    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
-    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
-    scheme = forwarded_proto or request.url.scheme
-
-    cookie_domain = None
-    if host.endswith(".servora.ru") or host == "servora.ru":
-        cookie_domain = ".servora.ru"
-
     resp.set_cookie(
         "access_token",
         token,
-        httponly=True,
-        samesite="lax",
-        secure=(scheme == "https"),
-        domain=cookie_domain,
+        **get_auth_cookie_params(request),
     )
     audit_security_event("web_login", request, success=True, email=email, user_id=user.id)
     return resp
@@ -4647,9 +4690,14 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
     )
 
 @app.get("/web/logout")
-def web_logout():
+def web_logout(request: Request):
     resp = RedirectResponse(url="/web/login", status_code=HTTP_303_SEE_OTHER)
-    resp.delete_cookie("access_token")
+    cookie_params = get_auth_cookie_params(request)
+    resp.delete_cookie(
+        "access_token",
+        domain=cookie_params.get("domain"),
+        path=str(cookie_params.get("path") or "/"),
+    )
     return resp
 
 def _render_web_tickets_page(
