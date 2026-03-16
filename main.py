@@ -7431,6 +7431,7 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
         "ticket_edit.html",
         {
             "request": request,
+            "user": user,
             "t": t,
             "projects": projects,
             "executors": executors,
@@ -8440,6 +8441,7 @@ def web_ticket_types(request: Request, db: Session = Depends(get_db), user: User
         "ticket_types.html",
         {
             "request": request,
+            "user": user,
             "ticket_types": ticket_types,
             "departments": departments,
             "can_manage_departments": is_admin(user),
@@ -8600,6 +8602,7 @@ def web_ticket_templates(request: Request, db: Session = Depends(get_db), user: 
         "ticket_templates.html",
         {
             "request": request,
+            "user": user,
             "items": items,
             "ticket_types": ticket_types,
             "departments": departments,
