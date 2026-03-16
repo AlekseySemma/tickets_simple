@@ -9,7 +9,12 @@
 {% set is_org = p.startswith("/web/org-structure") %}
 {% set is_users = p.startswith("/web/users") or p.startswith("/web/executors") %}
 {% set is_ticket_types = p.startswith("/web/ticket-types") %}
-{% set is_more = is_templates or is_archive or is_settings or is_org or is_users or is_ticket_types %}
+{% set can_manage_company = user.role in ["ADMIN", "CURATOR"] %}
+{% set show_templates = can_manage_company %}
+{% set show_org = can_manage_company %}
+{% set show_users = can_manage_company %}
+{% set show_ticket_types = can_manage_company %}
+{% set is_more = is_archive or is_settings or (show_templates and is_templates) or (show_org and is_org) or (show_users and is_users) or (show_ticket_types and is_ticket_types) %}
 <div class="{{ nav_class }}">
   <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
   <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
@@ -17,12 +22,20 @@
   <details class="more-menu">
     <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">еще</summary>
     <div class="more-menu-list">
-      <a class="{% if is_templates %}top-nav-item-active{% endif %}" href="/web/ticket-templates">Шаблоны</a>
       <a class="{% if is_archive %}top-nav-item-active{% endif %}" href="/web/archive">Архив</a>
       <a class="{% if is_settings %}top-nav-item-active{% endif %}" href="/web/settings">Настройки</a>
+      {% if show_templates %}
+      <a class="{% if is_templates %}top-nav-item-active{% endif %}" href="/web/ticket-templates">Шаблоны</a>
+      {% endif %}
+      {% if show_org %}
       <a class="{% if is_org %}top-nav-item-active{% endif %}" href="/web/org-structure">Оргструктура</a>
+      {% endif %}
+      {% if show_users %}
       <a class="{% if is_users %}top-nav-item-active{% endif %}" href="/web/users">Пользователи</a>
+      {% endif %}
+      {% if show_ticket_types %}
       <a class="{% if is_ticket_types %}top-nav-item-active{% endif %}" href="/web/ticket-types">Типы заявок</a>
+      {% endif %}
       <hr />
       <a class="danger-link" href="/web/logout">Выход</a>
     </div>
