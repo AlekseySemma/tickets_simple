@@ -546,7 +546,17 @@
                 <option value="" selected>Тип заявки (необязательно)</option>
                 {% for tt in ticket_types %}
                   {% if tt.is_active %}
-                    <option value="{{ tt.id }}">{{ tt.name }}</option>
+                    <option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}">{{ tt.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-6">
+              <select name="department_id" class="form-select" id="create-department-id">
+                <option value="" selected>Отдел (необязательно)</option>
+                {% for department in departments %}
+                  {% if department.is_active %}
+                    <option value="{{ department.id }}">{{ department.name }}</option>
                   {% endif %}
                 {% endfor %}
               </select>
@@ -592,7 +602,7 @@
             {% endif %}
             <div class="col-12 col-md-6">
               <label class="form-label mb-1">Исполнитель</label>
-              {% if user.role in ["ADMIN", "CURATOR"] %}
+              {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_view_all_tickets) %}
                 <select name="executor_id" class="form-select">
                   <option value="" selected>Исполнитель (необязательно)</option>
                   {% for e in executors %}
@@ -707,6 +717,15 @@
               </select>
             </div>
             <div class="col-6 col-md-3">
+              <label class="form-label mb-1">Отдел</label>
+              <select name="department_id" class="form-select">
+                <option value="" {% if not department_id_filter %}selected{% endif %}>Все</option>
+                {% for department in departments %}
+                  <option value="{{ department.id }}" {% if department_id_filter == department.id %}selected{% endif %}>{{ department.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
               <label class="form-label mb-1">Узел/поддерево</label>
               <select name="target_unit_id" class="form-select">
                 <option value="" {% if not target_unit_id_filter %}selected{% endif %}>Все</option>
@@ -779,6 +798,7 @@
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
         <input type="hidden" name="project_id" value="{{ project_id_filter }}">
         <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+        <input type="hidden" name="department_id" value="{{ department_id_filter }}">
         <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
         <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
         <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
@@ -799,6 +819,7 @@
      data-only-overdue="{{ only_overdue }}"
      data-project-id="{{ project_id_filter }}"
      data-ticket-type-id="{{ ticket_type_id_filter }}"
+     data-department-id="{{ department_id_filter }}"
      data-target-unit-id="{{ target_unit_id_filter }}"
      data-unit-executor-id="{{ unit_executor_id_filter }}"
      data-executor-id="{{ executor_id_filter }}"
@@ -896,6 +917,7 @@
                 {% endif %}
                 <th>Узел</th>
                 <th>Тип заявки</th>
+                <th>Отдел</th>
                 <th>Исполнитель</th>
                 <th>Статус</th>
                 <th>Заявка</th>
@@ -906,6 +928,9 @@
             {% for t in tickets %}
               {% set is_overdue = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and t.deadline < now %}
               {% set is_deadline_soon = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and (not is_overdue) and t.deadline <= now_plus_deadline_warning %}
+              {% set can_close_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_close_tickets and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id)) %}
+              {% set can_edit_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
+              {% set can_delete_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
               <tr id="ticket-{{ t.id }}" class="{% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
                 <td class="text-nowrap">#{{ t.id }}</td>
                 <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
@@ -915,6 +940,7 @@
                 {% endif %}
                 <td class="text-nowrap">{{ projects_by_id.get(t.project_id, "—") }}</td>
                 <td class="text-nowrap">{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</td>
+                <td class="text-nowrap">{{ departments_by_id.get(t.department_id, "—") }}</td>
                 <td class="text-nowrap">{{ users_by_id.get(t.executor_id, "—") }}</td>
                 <td>
                   {% set can_archive = (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) and t.status.value in ["DONE", "CANCELED"] %}
@@ -930,7 +956,7 @@
                     {% if t.is_legal_hold %}
                     <span class="badge text-bg-warning ms-1">Legal hold</span>
                     {% endif %}
-                    {% else %}
+                    {% elif can_close_current %}
                     <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
                       {{ status_labels[t.status.value] }} ▼
                     </span>
@@ -940,6 +966,10 @@
                       <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
                       <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
                     </div>
+                    {% else %}
+                    <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
+                      {{ status_labels[t.status.value] }}
+                    </span>
                     {% endif %}
                   </div>
                 </td>
@@ -949,7 +979,9 @@
                 <td class="text-nowrap">
                   <div class="d-flex gap-1">
                     {% if not is_archive_page %}
+                      {% if can_edit_current %}
                       <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
+                      {% endif %}
                     {% endif %}
                     {% if can_archive %}
                       <form method="post" action="/web/tickets/{{ t.id }}/archive" class="m-0" onsubmit="return confirm('Отправить заявку #{{ t.id }} в архив?');">
@@ -975,7 +1007,7 @@
                         <button class="btn btn-sm btn-outline-danger">Удалить навсегда</button>
                       </form>
                     {% endif %}
-                    {% if not is_archive_page %}
+                    {% if not is_archive_page and can_delete_current %}
                       <form method="post" action="/web/tickets/{{ t.id }}/delete" class="m-0" onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
                         <input type="hidden" name="next" value="{{ current_list_url }}">
                         <button class="btn btn-sm btn-outline-danger">Удалить</button>
@@ -993,6 +1025,9 @@
     {% for t in tickets %}
       {% set deadline_overdue = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and t.deadline < now %}
       {% set is_deadline_soon = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and (not deadline_overdue) and t.deadline <= now_plus_deadline_warning %}
+      {% set can_close_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_close_tickets and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id)) %}
+      {% set can_edit_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
+      {% set can_delete_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
       <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
         <div class="ticket-row">
           <div class="ticket-main">
@@ -1007,6 +1042,8 @@
 
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
+                <span class="meta-chip">Тип: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</b></span>
+                <span class="meta-chip">Отдел: <b>{{ departments_by_id.get(t.department_id, "—") }}</b></span>
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
                 <span class="meta-chip deadline-chip {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок: <b>{{ format_deadline(t.deadline) }}</b></span>
@@ -1039,7 +1076,7 @@
   {% if t.is_legal_hold %}
   <span class="badge text-bg-warning ms-1">Legal hold</span>
   {% endif %}
-  {% else %}
+  {% elif can_close_current %}
   <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
   {{ status_labels[t.status.value] }} ▼
 </span>
@@ -1052,6 +1089,10 @@
   <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
   <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
 </div>
+  {% else %}
+  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
+  {{ status_labels[t.status.value] }}
+</span>
   {% endif %}
 
 
@@ -1062,7 +1103,7 @@
             {% set can_archive = (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) and t.status.value in ["DONE", "CANCELED"] %}
             {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
 
-            {% if not is_archive_page and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id))) %}
+            {% if not is_archive_page and can_edit_current %}
   <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
 {% endif %}
 
@@ -1094,7 +1135,7 @@
             </form>
             {% endif %}
 
-            {% if not is_archive_page and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) %}
+            {% if not is_archive_page and can_delete_current %}
             <form method="post" action="/web/tickets/{{ t.id }}/delete" class="mt-2"
               onsubmit="return confirm('Удалить заявку #{{ t.id }}? Это действие нельзя отменить.');">
             <input type="hidden" name="next" value="{{ current_list_url }}">
@@ -1121,6 +1162,7 @@
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
             <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+            <input type="hidden" name="department_id" value="{{ department_id_filter }}">
             <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
             <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
@@ -1136,6 +1178,7 @@
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
             <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+            <input type="hidden" name="department_id" value="{{ department_id_filter }}">
             <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
             <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
             <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
@@ -1155,6 +1198,7 @@
           <input type="hidden" name="status_filter" value="{{ status_filter }}">
           <input type="hidden" name="project_id" value="{{ project_id_filter }}">
           <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+          <input type="hidden" name="department_id" value="{{ department_id_filter }}">
           <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
           <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
           <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
@@ -1276,6 +1320,25 @@
 
     checkboxes.forEach((cb) => cb.addEventListener("change", updateCaption));
     updateCaption();
+  });
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const ticketTypeSelect = document.querySelector('select[name="ticket_type_id"]');
+    const departmentSelect = document.getElementById("create-department-id");
+    if (!ticketTypeSelect || !departmentSelect) return;
+
+    function syncDepartmentFromType() {
+      const option = ticketTypeSelect.options[ticketTypeSelect.selectedIndex];
+      if (!option) return;
+      const departmentId = option.dataset.departmentId || "";
+      if (departmentId) {
+        departmentSelect.value = departmentId;
+      }
+    }
+
+    ticketTypeSelect.addEventListener("change", syncDepartmentFromType);
   });
 </script>
 
@@ -1603,6 +1666,7 @@ document.addEventListener("DOMContentLoaded", function () {
       only_overdue: dash.dataset.onlyOverdue || "",
       project_id: dash.dataset.projectId || "",
       ticket_type_id: dash.dataset.ticketTypeId || "",
+      department_id: dash.dataset.departmentId || "",
       target_unit_id: dash.dataset.targetUnitId || "",
       unit_executor_id: dash.dataset.unitExecutorId || "",
       executor_id: dash.dataset.executorId || "",
@@ -1618,6 +1682,7 @@ document.addEventListener("DOMContentLoaded", function () {
     p.set("status_filter", next.status_filter || "");
     p.set("project_id", next.project_id || "");
     p.set("ticket_type_id", next.ticket_type_id || "");
+    p.set("department_id", next.department_id || "");
     p.set("target_unit_id", next.target_unit_id || "");
     p.set("unit_executor_id", next.unit_executor_id || "");
     p.set("executor_id", next.executor_id || "");

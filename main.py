@@ -257,6 +257,15 @@ def _ticket_type_name(db: Session, ticket_type_id: int | None) -> str | None:
     return f"#{ticket_type_id}"
 
 
+def _department_name(db: Session, department_id: int | None) -> str | None:
+    if not department_id:
+        return None
+    row = db.get(Department, department_id)
+    if row and (row.name or "").strip():
+        return row.name
+    return f"#{department_id}"
+
+
 def _ticket_deadline_text(value: datetime | None) -> str | None:
     return format_deadline(value) if value else None
 
@@ -281,6 +290,21 @@ class User(Base):
         server_default=text("true"),
     )
     show_receipts_accounting_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
+    can_view_all_tickets: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+    )
+    can_create_tickets: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
+    can_close_tickets: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         server_default=text("true"),
@@ -321,6 +345,16 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
+
+
+class Department(Base):
+    __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_departments_company_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class PaymentCard(Base):
@@ -399,7 +433,8 @@ class UnitAssignment(Base):
             "unit_id",
             "user_id",
             "role_code",
-            name="uq_unit_assignments_company_unit_user_role",
+            "department_id",
+            name="uq_unit_assignments_company_unit_user_role_department",
         ),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -407,6 +442,7 @@ class UnitAssignment(Base):
     unit_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     role_code: Mapped[str] = mapped_column(String(64), index=True)
+    department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -418,6 +454,7 @@ class TicketType(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     archive_retention_days: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -451,6 +488,7 @@ class Ticket(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
     ticket_type_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ticket_types.id"), index=True, default=None)
+    department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     target_unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
     ticket_template_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ticket_templates.id"), index=True, default=None)
     period_key: Mapped[Optional[str]] = mapped_column(String(16), index=True, default=None)
@@ -591,7 +629,7 @@ def ensure_migrations_ready() -> None:
             inspector = sa_inspect(conn)
             required_tables = {"tickets", "projects", "users", "ticket_logs", "ticket_watchers"}
             if ORG_STRUCTURE_V2_ENABLED:
-                required_tables.update({"org_units", "ticket_types", "ticket_templates", "unit_assignments"})
+                required_tables.update({"departments", "org_units", "ticket_types", "ticket_templates", "unit_assignments"})
             missing_tables = sorted(table_name for table_name in required_tables if not inspector.has_table(table_name))
             if missing_tables:
                 raise RuntimeError(
@@ -605,6 +643,7 @@ def ensure_migrations_ready() -> None:
                 "project_id",
                 "executor_id",
                 "ticket_type_id",
+                "department_id",
                 "target_unit_id",
                 "ticket_template_id",
                 "period_key",
@@ -617,6 +656,20 @@ def ensure_migrations_ready() -> None:
                 raise RuntimeError(
                     "Database schema is outdated. Run 'alembic upgrade head'. Missing tickets columns: "
                     + ", ".join(missing_ticket_columns)
+                )
+            user_columns = {col["name"] for col in inspector.get_columns("users")}
+            required_user_columns = {
+                "show_receipts_accounting_mode",
+                "notify_receipt_created",
+                "can_view_all_tickets",
+                "can_create_tickets",
+                "can_close_tickets",
+            }
+            missing_user_columns = sorted(required_user_columns - user_columns)
+            if missing_user_columns:
+                raise RuntimeError(
+                    "Database schema is outdated. Run 'alembic upgrade head'. Missing users columns: "
+                    + ", ".join(missing_user_columns)
                 )
     except RuntimeError:
         raise
@@ -643,6 +696,9 @@ class UserCreate(BaseModel):
     preferred_payment_card_id: Optional[int] = None
     notify_receipt_created: Optional[bool] = None
     show_receipts_accounting_mode: Optional[bool] = None
+    can_view_all_tickets: Optional[bool] = None
+    can_create_tickets: Optional[bool] = None
+    can_close_tickets: Optional[bool] = None
 
 class UserOut(BaseModel):
     id: int
@@ -654,6 +710,9 @@ class UserOut(BaseModel):
     preferred_payment_card_id: Optional[int] = None
     notify_receipt_created: bool = True
     show_receipts_accounting_mode: bool = True
+    can_view_all_tickets: bool = False
+    can_create_tickets: bool = True
+    can_close_tickets: bool = True
     class Config:
         from_attributes = True
 
@@ -687,6 +746,25 @@ class ProjectOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+class DepartmentCreate(BaseModel):
+    name: str
+    is_active: bool = True
+
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class DepartmentOut(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
 class UnitTypeCreate(BaseModel):
     name: str
     code: Optional[str] = None
@@ -709,12 +787,14 @@ class UnitTypeOut(BaseModel):
 class TicketTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    department_id: Optional[int] = None
     archive_retention_days: Optional[int] = None
     is_active: bool = True
 
 class TicketTypeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    department_id: Optional[int] = None
     archive_retention_days: Optional[int] = None
     is_active: Optional[bool] = None
 
@@ -722,6 +802,7 @@ class TicketTypeOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    department_id: Optional[int]
     archive_retention_days: Optional[int]
     is_active: bool
     created_at: datetime
@@ -772,6 +853,7 @@ class TicketCreate(BaseModel):
     deadline: Optional[datetime] = None
     executor_id: Optional[int] = None
     ticket_type_id: Optional[int] = None
+    department_id: Optional[int] = None
     target_unit_id: Optional[int] = None
     ticket_template_id: Optional[int] = None
     period_key: Optional[str] = None
@@ -783,6 +865,7 @@ class TicketUpdate(BaseModel):
     deadline: Optional[datetime] = None
     executor_id: Optional[int] = None
     ticket_type_id: Optional[int] = None
+    department_id: Optional[int] = None
     target_unit_id: Optional[int] = None
     ticket_template_id: Optional[int] = None
     period_key: Optional[str] = None
@@ -798,6 +881,7 @@ class TicketOut(BaseModel):
     project_id: int
     executor_id: Optional[int]
     ticket_type_id: Optional[int]
+    department_id: Optional[int]
     target_unit_id: Optional[int]
     ticket_template_id: Optional[int]
     period_key: Optional[str]
@@ -887,6 +971,10 @@ def normalize_email(value: str | None) -> str | None:
     return v or None
 
 
+def normalize_department_name(value: str | None) -> str:
+    return " ".join((value or "").split()).strip()
+
+
 def normalize_origin(value: str | None) -> tuple[str, str, int] | None:
     raw = (value or "").strip()
     if not raw:
@@ -962,6 +1050,40 @@ def can_archive_ticket(user: User, ticket: Ticket) -> bool:
     return bool(user.role == Role.executor and ticket.created_by == user.id)
 
 
+def can_view_all_company_tickets(user: User) -> bool:
+    return bool(is_manager(user) or getattr(user, "can_view_all_tickets", False))
+
+
+def can_create_company_ticket(user: User) -> bool:
+    if is_platform_admin(user):
+        return False
+    if is_manager(user):
+        return True
+    return bool(user.role == Role.executor and getattr(user, "can_create_tickets", True))
+
+
+def can_close_ticket(user: User, ticket: Ticket) -> bool:
+    if is_manager(user):
+        return True
+    if user.role != Role.executor or not getattr(user, "can_close_tickets", True):
+        return False
+    if getattr(user, "can_view_all_tickets", False):
+        return True
+    return bool(ticket.executor_id == user.id or ticket.created_by == user.id)
+
+
+def can_edit_ticket(user: User, ticket: Ticket) -> bool:
+    if is_manager(user):
+        return True
+    return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
+
+
+def department_match_filter(column, department_id: int | None):
+    if department_id is None:
+        return column.is_(None)
+    return column == department_id
+
+
 def add_ticket_watcher(
     db: Session,
     ticket: Ticket,
@@ -1013,7 +1135,7 @@ def ensure_default_ticket_watchers(db: Session, ticket: Ticket) -> bool:
 def can_access_ticket(user: User, ticket: Ticket) -> bool:
     if is_platform_admin(user):
         return True
-    if is_manager(user):
+    if can_view_all_company_tickets(user):
         return True
     return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
 
@@ -1268,6 +1390,7 @@ def validate_ticket_links(
     ticket_type_id: int | None = None,
     target_unit_id: int | None = None,
     ticket_template_id: int | None = None,
+    department_id: int | None = None,
 ) -> None:
     if project_id is not None:
         project = db.get(Project, project_id)
@@ -1288,6 +1411,13 @@ def validate_ticket_links(
         if not ticket_type.is_active:
             raise HTTPException(400, "Ticket type is inactive")
 
+    if department_id is not None:
+        department = db.get(Department, department_id)
+        if not department or (company_id is not None and department.company_id != company_id):
+            raise HTTPException(400, "Department not found")
+        if not department.is_active:
+            raise HTTPException(400, "Department is inactive")
+
     if target_unit_id is not None:
         target_unit = db.get(OrgUnit, target_unit_id)
         if not target_unit or (company_id is not None and target_unit.company_id != company_id):
@@ -1299,6 +1429,37 @@ def validate_ticket_links(
         template = db.get(TicketTemplate, ticket_template_id)
         if not template or (company_id is not None and template.company_id != company_id):
             raise HTTPException(400, "Ticket template not found")
+
+
+def resolve_ticket_department_id(
+    db: Session,
+    *,
+    company_id: int,
+    ticket_type_id: int | None,
+    department_id: int | None,
+) -> int | None:
+    resolved_department_id = department_id
+    ticket_type_department_id: int | None = None
+
+    if ticket_type_id is not None:
+        ticket_type = db.get(TicketType, ticket_type_id)
+        if not ticket_type or ticket_type.company_id != company_id:
+            raise HTTPException(400, "Ticket type not found")
+        ticket_type_department_id = int(ticket_type.department_id) if ticket_type.department_id is not None else None
+
+    if resolved_department_id is not None:
+        department = db.get(Department, resolved_department_id)
+        if not department or department.company_id != company_id:
+            raise HTTPException(400, "Department not found")
+        if not department.is_active:
+            raise HTTPException(400, "Department is inactive")
+
+    if ticket_type_department_id is not None:
+        if resolved_department_id is not None and resolved_department_id != ticket_type_department_id:
+            raise HTTPException(400, "Department does not match ticket type")
+        return ticket_type_department_id
+
+    return resolved_department_id
 
 
 def resolve_scope_leaf_units(db: Session, company_id: int, scope_unit_id: int) -> list[int]:
@@ -1472,8 +1633,13 @@ def get_or_create_project_for_org_unit(db: Session, company_id: int, unit_id: in
     raise HTTPException(400, "Cannot resolve project for target unit")
 
 
-def get_preferred_executor_for_unit(db: Session, company_id: int, unit_id: int) -> int | None:
-    row = (
+def get_preferred_executor_for_unit(
+    db: Session,
+    company_id: int,
+    unit_id: int,
+    department_id: int | None = None,
+) -> int | None:
+    query = (
         db.query(UnitAssignment.user_id)
         .join(User, User.id == UnitAssignment.user_id)
         .filter(
@@ -1482,10 +1648,11 @@ def get_preferred_executor_for_unit(db: Session, company_id: int, unit_id: int) 
             UnitAssignment.role_code == "EXECUTOR",
             User.company_id == company_id,
             User.role == Role.executor,
+            department_match_filter(UnitAssignment.department_id, department_id),
         )
         .order_by(UnitAssignment.is_primary.desc(), UnitAssignment.id.asc())
-        .first()
     )
+    row = query.first()
     return int(row[0]) if row else None
 
 
@@ -1648,6 +1815,12 @@ def create_tickets_from_template(
     effective_period = (period_key or "").strip() or month_period_key()
     if template.scope_unit_id is None:
         return 0, 0, effective_period
+    template_ticket_type = db.get(TicketType, template.ticket_type_id) if template.ticket_type_id else None
+    template_department_id = (
+        int(template_ticket_type.department_id)
+        if template_ticket_type is not None and template_ticket_type.department_id is not None
+        else None
+    )
 
     leaf_unit_ids = resolve_scope_leaf_units(db, template.company_id, template.scope_unit_id)
     if not leaf_unit_ids:
@@ -1681,7 +1854,12 @@ def create_tickets_from_template(
         resolved_executor_id = (
             template.default_executor_id
             if template.default_executor_id is not None
-            else get_preferred_executor_for_unit(db, template.company_id, leaf_unit_id)
+            else get_preferred_executor_for_unit(
+                db,
+                template.company_id,
+                leaf_unit_id,
+                department_id=template_department_id,
+            )
         )
 
         try:
@@ -1703,6 +1881,7 @@ def create_tickets_from_template(
                     project_id=project_id,
                     executor_id=resolved_executor_id,
                     ticket_type_id=template.ticket_type_id,
+                    department_id=template_department_id,
                     target_unit_id=leaf_unit_id,
                     ticket_template_id=template.id,
                     period_key=effective_period,
@@ -2993,7 +3172,14 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
         db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).delete(synchronize_session=False)
         db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).delete(synchronize_session=False)
 
+    db.query(TicketGenerationKey).filter(TicketGenerationKey.company_id == company_id).delete(synchronize_session=False)
+    db.query(UnitAssignment).filter(UnitAssignment.company_id == company_id).delete(synchronize_session=False)
+    db.query(TicketTemplate).filter(TicketTemplate.company_id == company_id).delete(synchronize_session=False)
     db.query(Ticket).filter(Ticket.company_id == company_id).delete(synchronize_session=False)
+    db.query(TicketType).filter(TicketType.company_id == company_id).delete(synchronize_session=False)
+    db.query(OrgUnit).filter(OrgUnit.company_id == company_id).delete(synchronize_session=False)
+    db.query(UnitType).filter(UnitType.company_id == company_id).delete(synchronize_session=False)
+    db.query(Department).filter(Department.company_id == company_id).delete(synchronize_session=False)
     db.query(PaymentCard).filter(PaymentCard.company_id == company_id).delete(synchronize_session=False)
     db.query(Project).filter(Project.company_id == company_id).delete(synchronize_session=False)
     db.query(RegistrationInvite).filter(RegistrationInvite.company_id == company_id).delete(synchronize_session=False)
@@ -3378,6 +3564,21 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
             if payload.show_receipts_accounting_mode is not None
             else bool(payload.role != Role.executor)
         ),
+        can_view_all_tickets=(
+            bool(payload.can_view_all_tickets)
+            if payload.can_view_all_tickets is not None
+            else False
+        ),
+        can_create_tickets=(
+            bool(payload.can_create_tickets)
+            if payload.can_create_tickets is not None
+            else True
+        ),
+        can_close_tickets=(
+            bool(payload.can_close_tickets)
+            if payload.can_close_tickets is not None
+            else True
+        ),
     )
     db.add(u); db.commit(); db.refresh(u)
     return u
@@ -3400,6 +3601,106 @@ def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_
         return db.query(Project).order_by(Project.id.desc()).all()
     ensure_company_user(_u)
     return db.query(Project).filter(Project.company_id == _u.company_id).order_by(Project.id.desc()).all()
+
+
+@app.post("/departments", response_model=DepartmentOut)
+def create_department(
+    payload: DepartmentCreate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_role(Role.admin)),
+):
+    ensure_company_user(_admin)
+    name = normalize_department_name(payload.name)
+    if not name:
+        raise HTTPException(422, "Name is required")
+    exists = (
+        db.query(Department.id)
+        .filter(Department.company_id == _admin.company_id, func.lower(Department.name) == name.lower())
+        .first()
+    )
+    if exists:
+        raise HTTPException(400, "Department already exists")
+    item = Department(
+        company_id=_admin.company_id,
+        name=name,
+        is_active=bool(payload.is_active),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.get("/departments", response_model=list[DepartmentOut])
+def list_departments(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if is_platform_admin(user):
+        return db.query(Department).order_by(Department.id.desc()).all()
+    ensure_company_user(user)
+    return (
+        db.query(Department)
+        .filter(Department.company_id == user.company_id)
+        .order_by(Department.name.asc(), Department.id.asc())
+        .all()
+    )
+
+
+@app.patch("/departments/{department_id}", response_model=DepartmentOut)
+def update_department(
+    department_id: int,
+    patch: DepartmentUpdate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_role(Role.admin)),
+):
+    ensure_company_user(_admin)
+    item = db.get(Department, department_id)
+    if not item or item.company_id != _admin.company_id:
+        raise HTTPException(404, "Department not found")
+    incoming = patch.model_dump(exclude_unset=True)
+    if "name" in incoming:
+        next_name = normalize_department_name(incoming.get("name"))
+        if not next_name:
+            raise HTTPException(422, "Name is required")
+        exists = (
+            db.query(Department.id)
+            .filter(
+                Department.company_id == _admin.company_id,
+                func.lower(Department.name) == next_name.lower(),
+                Department.id != item.id,
+            )
+            .first()
+        )
+        if exists:
+            raise HTTPException(400, "Department already exists")
+        item.name = next_name
+    if "is_active" in incoming:
+        item.is_active = bool(incoming.get("is_active"))
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.delete("/departments/{department_id}")
+def delete_department(
+    department_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_role(Role.admin)),
+):
+    ensure_company_user(_admin)
+    item = db.get(Department, department_id)
+    if not item or item.company_id != _admin.company_id:
+        raise HTTPException(404, "Department not found")
+    in_use = any(
+        (
+            db.query(TicketType.id).filter(TicketType.department_id == item.id).first() is not None,
+            db.query(UnitAssignment.id).filter(UnitAssignment.department_id == item.id).first() is not None,
+            db.query(Ticket.id).filter(Ticket.department_id == item.id).first() is not None,
+        )
+    )
+    if in_use:
+        raise HTTPException(400, "Department is in use")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
 
 # =========================
 # UNIT TYPES API
@@ -3540,10 +3841,21 @@ def create_ticket_type(
     )
     if exists:
         raise HTTPException(400, "Ticket type already exists")
+    validate_ticket_links(
+        db,
+        _manager.company_id,
+        None,
+        None,
+        None,
+        None,
+        None,
+        payload.department_id,
+    )
     item = TicketType(
         company_id=_manager.company_id,
         name=name,
         description=(payload.description or "").strip() or None,
+        department_id=payload.department_id,
         archive_retention_days=normalize_ticket_type_archive_retention_days(payload.archive_retention_days),
         is_active=bool(payload.is_active),
     )
@@ -3595,6 +3907,18 @@ def update_ticket_type(
         item.name = next_name
     if "description" in incoming:
         item.description = (incoming.get("description") or "").strip() or None
+    if "department_id" in incoming:
+        validate_ticket_links(
+            db,
+            _manager.company_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            incoming.get("department_id"),
+        )
+        item.department_id = incoming.get("department_id")
     if "is_active" in incoming:
         item.is_active = bool(incoming.get("is_active"))
     if "archive_retention_days" in incoming:
@@ -3830,6 +4154,8 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
     if is_platform_admin(user):
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
+    if not can_create_company_ticket(user):
+        raise HTTPException(403, "Forbidden")
     title = normalize_ticket_title(payload.title)
     if not title:
         raise HTTPException(422, "Title is required")
@@ -3844,6 +4170,13 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         payload.ticket_type_id,
         payload.target_unit_id,
         payload.ticket_template_id,
+        payload.department_id,
+    )
+    resolved_department_id = resolve_ticket_department_id(
+        db,
+        company_id=user.company_id,
+        ticket_type_id=payload.ticket_type_id,
+        department_id=payload.department_id,
     )
     t = Ticket(
         title=title,
@@ -3852,6 +4185,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: Us
         company_id=user.company_id,
         executor_id=payload.executor_id,
         ticket_type_id=payload.ticket_type_id,
+        department_id=resolved_department_id,
         target_unit_id=payload.target_unit_id,
         ticket_template_id=payload.ticket_template_id,
         period_key=(payload.period_key or "").strip() or None,
@@ -3882,7 +4216,8 @@ def list_tickets(db: Session = Depends(get_db), user: User = Depends(get_current
         ensure_company_user(user)
         q = q.filter(Ticket.company_id == user.company_id)
     if user.role == Role.executor:
-        q = q.filter((Ticket.executor_id == user.id) | (Ticket.created_by == user.id))
+        if not getattr(user, "can_view_all_tickets", False):
+            q = q.filter((Ticket.executor_id == user.id) | (Ticket.created_by == user.id))
     return q.all()
 
 @app.patch("/tickets/{ticket_id}", response_model=TicketOut)
@@ -3896,9 +4231,11 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         raise HTTPException(400, "Use archive endpoint")
 
     if user.role == Role.executor:
-        if t.executor_id != user.id and t.created_by != user.id:
+        if not can_access_ticket(user, t):
             raise HTTPException(403, "Forbidden")
-        allowed = {"status", "description"}  # РјРѕР¶РЅРѕ СЂР°СЃС€РёСЂРёС‚СЊ
+        allowed = {"description"}
+        if can_close_ticket(user, t):
+            allowed.add("status")
         incoming = {k: v for k, v in incoming.items() if k in allowed}
 
     if "title" in incoming:
@@ -3914,12 +4251,14 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
         incoming.get("ticket_type_id"),
         incoming.get("target_unit_id"),
         incoming.get("ticket_template_id"),
+        incoming.get("department_id"),
     )
 
     old_deadline = t.deadline
     old_executor_id = t.executor_id
     old_project_id = t.project_id
     old_ticket_type_id = t.ticket_type_id
+    old_department_id = t.department_id
     old_target_unit_id = t.target_unit_id
     old_template_id = t.ticket_template_id
     old_period_key = t.period_key
@@ -3927,6 +4266,13 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
 
     for k, v in incoming.items():
         setattr(t, k, v)
+    if "ticket_type_id" in incoming or "department_id" in incoming:
+        t.department_id = resolve_ticket_department_id(
+            db,
+            company_id=t.company_id,
+            ticket_type_id=t.ticket_type_id,
+            department_id=t.department_id,
+        )
 
     has_specific_log = False
     if t.deadline != old_deadline:
@@ -3978,6 +4324,18 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
             ),
         )
         has_specific_log = True
+    if t.department_id != old_department_id:
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "отдела",
+                _department_name(db, old_department_id),
+                _department_name(db, t.department_id),
+            ),
+        )
+        has_specific_log = True
     if t.target_unit_id != old_target_unit_id:
         add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TARGET_UNIT_CHANGED)
         has_specific_log = True
@@ -4006,6 +4364,8 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
 def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_api_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
+        raise HTTPException(403, "Forbidden")
+    if not can_close_ticket(user, t):
         raise HTTPException(403, "Forbidden")
     if t.status == TicketStatus.archived:
         raise HTTPException(400, "Archived ticket is read-only")
@@ -4261,6 +4621,7 @@ def _render_web_tickets_page(
     status_filter: str | None = None,
     project_id: str | None = None,
     ticket_type_id: str | None = None,
+    department_id: str | None = None,
     executor_id: str | None = None,   # <-- Р”РћР‘РђР’РР›Р
     target_unit_id: str | None = None,
     unit_executor_id: str | None = None,
@@ -4283,11 +4644,11 @@ def _render_web_tickets_page(
     page_title = "Архив заявок" if archive_mode else "Заявки"
     empty_text = "В архиве пока нет заявок." if archive_mode else "Заявок пока нет."
     status_filter_options = ["ARCHIVED"] if archive_mode else ["NEW", "IN_PROGRESS", "DONE", "CANCELED"]
-    create_enabled = (not archive_mode) and user.role in (Role.admin, Role.curator, Role.executor)
+    create_enabled = (not archive_mode) and can_create_company_ticket(user)
     view_mode_storage_key = "tickets_view_mode_archive" if archive_mode else "tickets_view_mode"
     # 1) tickets СЃ СѓС‡РµС‚РѕРј СЂРѕР»Рё
     base_query = db.query(Ticket).filter(Ticket.company_id == user.company_id)
-    if user.role == Role.executor:
+    if user.role == Role.executor and not getattr(user, "can_view_all_tickets", False):
         base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
     if archive_mode:
         base_query = base_query.filter(Ticket.status == TicketStatus.archived)
@@ -4318,9 +4679,15 @@ def _render_web_tickets_page(
         .all()
     )
     ticket_types = (
-        db.query(TicketType.id, TicketType.name, TicketType.is_active)
+        db.query(TicketType.id, TicketType.name, TicketType.is_active, TicketType.department_id)
         .filter(TicketType.company_id == user.company_id)
         .order_by(TicketType.id.desc())
+        .all()
+    )
+    departments = (
+        db.query(Department.id, Department.name, Department.is_active)
+        .filter(Department.company_id == user.company_id)
+        .order_by(Department.name.asc(), Department.id.asc())
         .all()
     )
     org_unit_rows = (
@@ -4370,6 +4737,7 @@ def _render_web_tickets_page(
     users_by_id = {u.id: f"{u.name}" for u in users}
     projects_by_id = {p.id: p.name for p in projects}
     ticket_types_by_id = {tt.id: tt.name for tt in ticket_types}
+    departments_by_id = {d.id: d.name for d in departments}
 
     # 3) С„РёР»СЊС‚СЂС‹
     project_id_int: int | None = None
@@ -4385,6 +4753,13 @@ def _render_web_tickets_page(
             ticket_type_id_int = int(ticket_type_id)
         except ValueError:
             ticket_type_id_int = None
+
+    department_id_int: int | None = None
+    if department_id is not None and str(department_id).strip() != "":
+        try:
+            department_id_int = int(department_id)
+        except ValueError:
+            department_id_int = None
 
     target_unit_id_int: int | None = None
     if target_unit_id is not None and str(target_unit_id).strip() != "":
@@ -4426,6 +4801,8 @@ def _render_web_tickets_page(
         filtered_query = filtered_query.filter(Ticket.project_id == project_id_int)
     if ticket_type_id_int is not None:
         filtered_query = filtered_query.filter(Ticket.ticket_type_id == ticket_type_id_int)
+    if department_id_int is not None:
+        filtered_query = filtered_query.filter(Ticket.department_id == department_id_int)
     if target_unit_id_int is not None:
         subtree_unit_ids = resolve_scope_descendant_units(db, user.company_id, target_unit_id_int)
         if subtree_unit_ids:
@@ -4433,18 +4810,17 @@ def _render_web_tickets_page(
         else:
             filtered_query = filtered_query.filter(Ticket.id == -1)
     if unit_executor_id_int is not None:
-        assigned_unit_ids = [
-            int(row[0])
-            for row in (
-                db.query(UnitAssignment.unit_id)
-                .filter(
-                    UnitAssignment.company_id == user.company_id,
-                    UnitAssignment.user_id == unit_executor_id_int,
-                    UnitAssignment.role_code == "EXECUTOR",
-                )
-                .all()
+        assignment_query = (
+            db.query(UnitAssignment.unit_id)
+            .filter(
+                UnitAssignment.company_id == user.company_id,
+                UnitAssignment.user_id == unit_executor_id_int,
+                UnitAssignment.role_code == "EXECUTOR",
             )
-        ]
+        )
+        if department_id_int is not None:
+            assignment_query = assignment_query.filter(UnitAssignment.department_id == department_id_int)
+        assigned_unit_ids = [int(row[0]) for row in assignment_query.all()]
         if assigned_unit_ids:
             filtered_query = filtered_query.filter(Ticket.target_unit_id.in_(assigned_unit_ids))
         else:
@@ -4555,6 +4931,7 @@ def _render_web_tickets_page(
         (status_filter or "").strip()
         or project_id_int is not None
         or ticket_type_id_int is not None
+        or department_id_int is not None
         or target_unit_id_int is not None
         or unit_executor_id_int is not None
         or (executor_id or "").strip()
@@ -4609,16 +4986,19 @@ def _render_web_tickets_page(
             "executors": executors,
             "watcher_candidates": users,
             "ticket_types": ticket_types,
+            "departments": departments,
             "org_units": org_units,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,
             "ticket_types_by_id": ticket_types_by_id,
+            "departments_by_id": departments_by_id,
             "now": now,
             "now_plus_deadline_warning": now_plus_deadline_warning,
             "deadline_soon_warning_minutes": deadline_soon_warning_minutes,
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
+            "department_id_filter": department_id_int if department_id_int is not None else "",
             "target_unit_id_filter": target_unit_id_int if target_unit_id_int is not None else "",
             "unit_executor_id_filter": unit_executor_id_int if unit_executor_id_int is not None else "",
             "executor_id_filter": executor_id or "",  # <-- Р”РћР‘РђР’РР›Р (СЃС‚СЂРѕРєР°!)
@@ -4668,6 +5048,7 @@ def web_tickets(
     status_filter: str | None = None,
     project_id: str | None = None,
     ticket_type_id: str | None = None,
+    department_id: str | None = None,
     executor_id: str | None = None,
     target_unit_id: str | None = None,
     unit_executor_id: str | None = None,
@@ -4687,6 +5068,7 @@ def web_tickets(
         status_filter=status_filter,
         project_id=project_id,
         ticket_type_id=ticket_type_id,
+        department_id=department_id,
         executor_id=executor_id,
         target_unit_id=target_unit_id,
         unit_executor_id=unit_executor_id,
@@ -4710,6 +5092,7 @@ def web_archive_tickets(
     status_filter: str | None = None,
     project_id: str | None = None,
     ticket_type_id: str | None = None,
+    department_id: str | None = None,
     executor_id: str | None = None,
     target_unit_id: str | None = None,
     unit_executor_id: str | None = None,
@@ -4727,6 +5110,7 @@ def web_archive_tickets(
         status_filter=status_filter,
         project_id=project_id,
         ticket_type_id=ticket_type_id,
+        department_id=department_id,
         executor_id=executor_id,
         target_unit_id=target_unit_id,
         unit_executor_id=unit_executor_id,
@@ -5320,6 +5704,12 @@ def web_org_structure(
         .order_by(User.name.asc(), User.id.asc())
         .all()
     )
+    departments = (
+        db.query(Department.id, Department.name, Department.is_active)
+        .filter(Department.company_id == user.company_id)
+        .order_by(Department.name.asc(), Department.id.asc())
+        .all()
+    )
     unit_labels_by_id = {
         int(u["id"]): f"{'- ' * int(u['level'])}{u['name']}" for u in ordered_units
     }
@@ -5328,11 +5718,14 @@ def web_org_structure(
             UnitAssignment.id,
             UnitAssignment.unit_id,
             UnitAssignment.user_id,
+            UnitAssignment.department_id,
             UnitAssignment.is_primary,
+            Department.name,
             User.name,
             User.email,
         )
         .join(User, User.id == UnitAssignment.user_id)
+        .outerjoin(Department, Department.id == UnitAssignment.department_id)
         .filter(
             UnitAssignment.company_id == user.company_id,
             UnitAssignment.role_code == "EXECUTOR",
@@ -5345,9 +5738,11 @@ def web_org_structure(
             "id": int(r[0]),
             "unit_id": int(r[1]),
             "user_id": int(r[2]),
-            "is_primary": bool(r[3]),
-            "user_name": str(r[4] or ""),
-            "user_email": str(r[5] or ""),
+            "department_id": int(r[3]) if r[3] is not None else None,
+            "is_primary": bool(r[4]),
+            "department_name": str(r[5] or "").strip() or "Без отдела",
+            "user_name": str(r[6] or ""),
+            "user_email": str(r[7] or ""),
             "unit_label": unit_labels_by_id.get(int(r[1]), f"Unit #{int(r[1])}"),
         }
         for r in assignment_rows
@@ -5402,13 +5797,108 @@ def web_org_structure(
             "parents": ordered_units,
             "unit_type_names": unit_type_names,
             "executors": executors,
+            "departments": departments,
             "assignments": assignments,
             "edit_unit": edit_unit,
             "edit_forbidden_parent_ids": edit_forbidden_parent_ids,
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
             "import_report": import_report,
+            "can_manage_departments": is_admin(user),
         },
     )
+
+
+@app.post("/web/departments/create")
+async def web_departments_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin)),
+):
+    ensure_company_user(user)
+    form = await request.form()
+    name = normalize_department_name(form.get("name"))
+    is_active = (form.get("is_active") or "1").strip() in {"1", "on", "true", "yes"}
+    if not name:
+        return RedirectResponse(url="/web/org-structure?error=department_empty_name", status_code=HTTP_303_SEE_OTHER)
+    exists = (
+        db.query(Department.id)
+        .filter(Department.company_id == user.company_id, func.lower(Department.name) == name.lower())
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/org-structure?error=department_exists", status_code=HTTP_303_SEE_OTHER)
+    try:
+        db.add(Department(company_id=user.company_id, name=name, is_active=is_active))
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=department_save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/departments/{department_id}/update")
+async def web_departments_update(
+    department_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin)),
+):
+    ensure_company_user(user)
+    item = db.get(Department, department_id)
+    if not item or item.company_id != user.company_id:
+        return RedirectResponse(url="/web/org-structure?error=department_not_found", status_code=HTTP_303_SEE_OTHER)
+    form = await request.form()
+    name = normalize_department_name(form.get("name"))
+    is_active = (form.get("is_active") or "").strip() in {"1", "on", "true", "yes"}
+    if not name:
+        return RedirectResponse(url="/web/org-structure?error=department_empty_name", status_code=HTTP_303_SEE_OTHER)
+    exists = (
+        db.query(Department.id)
+        .filter(
+            Department.company_id == user.company_id,
+            func.lower(Department.name) == name.lower(),
+            Department.id != item.id,
+        )
+        .first()
+    )
+    if exists:
+        return RedirectResponse(url="/web/org-structure?error=department_exists", status_code=HTTP_303_SEE_OTHER)
+    item.name = name
+    item.is_active = is_active
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=department_save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/departments/{department_id}/delete")
+def web_departments_delete(
+    department_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.admin)),
+):
+    ensure_company_user(user)
+    item = db.get(Department, department_id)
+    if not item or item.company_id != user.company_id:
+        return RedirectResponse(url="/web/org-structure?error=department_not_found", status_code=HTTP_303_SEE_OTHER)
+    in_use = any(
+        (
+            db.query(TicketType.id).filter(TicketType.company_id == user.company_id, TicketType.department_id == item.id).first() is not None,
+            db.query(UnitAssignment.id).filter(UnitAssignment.company_id == user.company_id, UnitAssignment.department_id == item.id).first() is not None,
+            db.query(Ticket.id).filter(Ticket.company_id == user.company_id, Ticket.department_id == item.id).first() is not None,
+        )
+    )
+    if in_use:
+        return RedirectResponse(url="/web/org-structure?error=department_in_use", status_code=HTTP_303_SEE_OTHER)
+    try:
+        db.delete(item)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/org-structure?error=department_save_failed", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/org-structure/create")
@@ -5472,10 +5962,15 @@ async def web_org_structure_assign_executor(
         if fallback_unit_raw:
             unit_values_raw = [fallback_unit_raw]
     executor_raw = (form.get("executor_id") or "").strip()
+    department_raw = (form.get("department_id") or "").strip()
     is_primary = (form.get("is_primary") or "").strip() in {"1", "on", "true", "yes"}
 
     try:
         executor_id = int(executor_raw)
+    except ValueError:
+        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+    try:
+        department_id = int(department_raw) if department_raw else None
     except ValueError:
         return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
 
@@ -5496,6 +5991,10 @@ async def web_org_structure_assign_executor(
     executor = db.get(User, executor_id)
     if not executor or executor.company_id != user.company_id or executor.role != Role.executor:
         return RedirectResponse(url="/web/org-structure?error=assign_executor_not_found", status_code=HTTP_303_SEE_OTHER)
+    if department_id is not None:
+        department = db.get(Department, department_id)
+        if not department or department.company_id != user.company_id or not department.is_active:
+            return RedirectResponse(url="/web/org-structure?error=assign_department_not_found", status_code=HTTP_303_SEE_OTHER)
 
     found_unit_ids = {
         row[0]
@@ -5516,6 +6015,7 @@ async def web_org_structure_assign_executor(
                 UnitAssignment.unit_id.in_(unit_ids),
                 UnitAssignment.user_id == executor_id,
                 UnitAssignment.role_code == "EXECUTOR",
+                department_match_filter(UnitAssignment.department_id, department_id),
             )
             .all()
         )
@@ -5532,6 +6032,7 @@ async def web_org_structure_assign_executor(
                     unit_id=unit_id,
                     user_id=executor_id,
                     role_code="EXECUTOR",
+                    department_id=department_id,
                     is_primary=is_primary,
                 )
                 db.add(item)
@@ -5545,6 +6046,7 @@ async def web_org_structure_assign_executor(
                         UnitAssignment.company_id == user.company_id,
                         UnitAssignment.unit_id == unit_id,
                         UnitAssignment.role_code == "EXECUTOR",
+                        department_match_filter(UnitAssignment.department_id, department_id),
                         UnitAssignment.id != assignment_id,
                     )
                     .update({UnitAssignment.is_primary: False}, synchronize_session=False)
@@ -5578,6 +6080,7 @@ def web_org_structure_assignment_primary(
             UnitAssignment.company_id == user.company_id,
             UnitAssignment.unit_id == assignment.unit_id,
             UnitAssignment.role_code == "EXECUTOR",
+            department_match_filter(UnitAssignment.department_id, assignment.department_id),
         )
         .update({UnitAssignment.is_primary: False}, synchronize_session=False)
     )
@@ -6354,6 +6857,8 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
+    if not can_create_company_ticket(user):
+        raise HTTPException(403, "Forbidden")
 
     form = await request.form()
 
@@ -6373,7 +6878,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         except ValueError:
             return create_redirect("bad_input")
 
-    if user.role == Role.executor:
+    if user.role == Role.executor and not getattr(user, "can_view_all_tickets", False):
         executor_id = user.id
     else:
         executor_id_raw = (form.get("executor_id") or "").strip()
@@ -6385,6 +6890,11 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
     try:
         ticket_type_id = int(ticket_type_id_raw) if ticket_type_id_raw else None
+    except ValueError:
+        return create_redirect("bad_input")
+    department_id_raw = (form.get("department_id") or "").strip()
+    try:
+        department_id = int(department_id_raw) if department_id_raw else None
     except ValueError:
         return create_redirect("bad_input")
     target_unit_id_raw = (form.get("target_unit_id") or "").strip()
@@ -6435,7 +6945,22 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
 
     try:
-        validate_ticket_links(db, user.company_id, project_id, executor_id, ticket_type_id, target_unit_id)
+        validate_ticket_links(
+            db,
+            user.company_id,
+            project_id,
+            executor_id,
+            ticket_type_id,
+            target_unit_id,
+            None,
+            department_id,
+        )
+        resolved_department_id = resolve_ticket_department_id(
+            db,
+            company_id=user.company_id,
+            ticket_type_id=ticket_type_id,
+            department_id=department_id,
+        )
         created_tickets: list[Ticket] = []
         if target_unit_id is not None:
             leaf_unit_ids = resolve_scope_leaf_units(db, user.company_id, target_unit_id)
@@ -6444,7 +6969,16 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
             batch_id = uuid.uuid4().hex
             for leaf_unit_id in leaf_unit_ids:
                 resolved_project_id = get_or_create_project_for_org_unit(db, user.company_id, leaf_unit_id)
-                resolved_executor_id = executor_id if executor_id is not None else get_preferred_executor_for_unit(db, user.company_id, leaf_unit_id)
+                resolved_executor_id = (
+                    executor_id
+                    if executor_id is not None
+                    else get_preferred_executor_for_unit(
+                        db,
+                        user.company_id,
+                        leaf_unit_id,
+                        department_id=resolved_department_id,
+                    )
+                )
                 t = Ticket(
                     title=title,
                     description=description,
@@ -6452,6 +6986,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                     company_id=user.company_id,
                     executor_id=resolved_executor_id,
                     ticket_type_id=ticket_type_id,
+                    department_id=resolved_department_id,
                     target_unit_id=leaf_unit_id,
                     batch_id=batch_id,
                     project_id=resolved_project_id,
@@ -6473,6 +7008,7 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
                 company_id=user.company_id,
                 executor_id=executor_id,
                 ticket_type_id=ticket_type_id,
+                department_id=resolved_department_id,
                 project_id=project_id,
                 created_by=user.id,
             )
@@ -6806,13 +7342,9 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
     if t.status == TicketStatus.archived:
         return RedirectResponse(url=f"/web/tickets/{ticket_id}", status_code=HTTP_303_SEE_OTHER)
 
-    # РїСЂР°РІР° РЅР° РїСЂРѕСЃРјРѕС‚СЂ/СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ
-    if is_manager(user):
-        can_edit_full = True
-    elif user.role == Role.executor and (t.executor_id == user.id or t.created_by == user.id):
-        can_edit_full = True
-    else:
+    if not can_edit_ticket(user, t):
         raise HTTPException(403, "Forbidden")
+    can_edit_full = can_edit_ticket(user, t)
 
 
     projects = (
@@ -6828,9 +7360,15 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
         .all()
     )
     ticket_types = (
-        db.query(TicketType.id, TicketType.name, TicketType.is_active)
+        db.query(TicketType.id, TicketType.name, TicketType.is_active, TicketType.department_id)
         .filter(TicketType.company_id == user.company_id)
         .order_by(TicketType.id.desc())
+        .all()
+    )
+    departments = (
+        db.query(Department.id, Department.name, Department.is_active)
+        .filter(Department.company_id == user.company_id)
+        .order_by(Department.name.asc(), Department.id.asc())
         .all()
     )
     next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
@@ -6858,6 +7396,7 @@ def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends
             "projects": projects,
             "executors": executors,
             "ticket_types": ticket_types,
+            "departments": departments,
             "can_edit_full": can_edit_full,
             "deadline_date": deadline_date,
             "deadline_time4": deadline_time4,
@@ -6878,13 +7417,13 @@ async def web_ticket_edit_save(
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
 
-    # РїСЂР°РІР°: РєСѓСЂР°С‚РѕСЂ вЂ” РІСЃРµРіРґР°, РёСЃРїРѕР»РЅРёС‚РµР»СЊ вЂ” С‚РѕР»СЊРєРѕ СЃРІРѕРё (СЃРѕР·РґР°Р»/РЅР°Р·РЅР°С‡РµРЅ)
-    if not can_access_ticket(user, t):
+    if not can_edit_ticket(user, t):
         raise HTTPException(403, "Forbidden")
     if t.status == TicketStatus.archived:
         raise HTTPException(400, "Archived ticket is read-only")
 
     can_edit_full = is_manager(user)
+    can_change_status = can_close_ticket(user, t)
     form = await request.form()
     status_raw = (form.get("status") or "").strip()
     if status_raw == TicketStatus.archived.value:
@@ -6896,6 +7435,7 @@ async def web_ticket_edit_save(
     project_id_raw = (form.get("project_id") or "").strip()
     executor_id_raw = (form.get("executor_id") or "").strip()
     ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
+    department_id_raw = (form.get("department_id") or "").strip()
 
     if is_ticket_title_too_long(title):
         edit_url = f"/web/tickets/{ticket_id}/edit?error=title_too_long&next={quote(next_url, safe='')}"
@@ -6905,9 +7445,10 @@ async def web_ticket_edit_save(
     old_executor_id = t.executor_id
     old_project_id = t.project_id
     old_ticket_type_id = t.ticket_type_id
+    old_department_id = t.department_id
     old_status = t.status
 
-    if status_raw:
+    if status_raw and can_change_status:
         try:
             t.status = TicketStatus(status_raw)
         except ValueError:
@@ -6932,6 +7473,10 @@ async def web_ticket_edit_save(
             ticket_type_id_candidate = int(ticket_type_id_raw) if ticket_type_id_raw else None
         except ValueError:
             ticket_type_id_candidate = None
+        try:
+            department_id_candidate = int(department_id_raw) if department_id_raw else None
+        except ValueError:
+            department_id_candidate = None
 
         validate_ticket_links(
             db,
@@ -6939,12 +7484,22 @@ async def web_ticket_edit_save(
             project_id_candidate,
             executor_id_candidate,
             ticket_type_id_candidate,
+            None,
+            None,
+            department_id_candidate,
+        )
+        resolved_department_id = resolve_ticket_department_id(
+            db,
+            company_id=user.company_id,
+            ticket_type_id=ticket_type_id_candidate,
+            department_id=department_id_candidate,
         )
 
         if project_id_candidate is not None:
             t.project_id = project_id_candidate
         t.executor_id = executor_id_candidate
         t.ticket_type_id = ticket_type_id_candidate
+        t.department_id = resolved_department_id
 
     # Deadline (same parsing logic as create form)
     t.deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
@@ -6996,6 +7551,18 @@ async def web_ticket_edit_save(
                 "\u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
                 _ticket_type_name(db, old_ticket_type_id),
                 _ticket_type_name(db, t.ticket_type_id),
+            ),
+        )
+        has_specific_log = True
+    if t.department_id != old_department_id:
+        add_ticket_log(
+            db,
+            ticket_id=t.id,
+            actor_id=user.id,
+            action=ticket_field_change_log_action(
+                "\u043e\u0442\u0434\u0435\u043b\u0430",
+                _department_name(db, old_department_id),
+                _department_name(db, t.department_id),
             ),
         )
         has_specific_log = True
@@ -7814,11 +8381,20 @@ def web_ticket_types(request: Request, db: Session = Depends(get_db), user: User
             TicketType.id,
             TicketType.name,
             TicketType.description,
+            TicketType.department_id,
             TicketType.archive_retention_days,
             TicketType.is_active,
+            Department.name.label("department_name"),
         )
+        .outerjoin(Department, Department.id == TicketType.department_id)
         .filter(TicketType.company_id == user.company_id)
         .order_by(TicketType.id.desc())
+        .all()
+    )
+    departments = (
+        db.query(Department.id, Department.name, Department.is_active)
+        .filter(Department.company_id == user.company_id)
+        .order_by(Department.name.asc(), Department.id.asc())
         .all()
     )
     return templates.TemplateResponse(
@@ -7826,6 +8402,8 @@ def web_ticket_types(request: Request, db: Session = Depends(get_db), user: User
         {
             "request": request,
             "ticket_types": ticket_types,
+            "departments": departments,
+            "can_manage_departments": is_admin(user),
         },
     )
 
@@ -7837,12 +8415,20 @@ async def web_ticket_types_create(request: Request, db: Session = Depends(get_db
     form = await request.form()
     name = (form.get("name") or "").strip()
     description = (form.get("description") or "").strip() or None
+    department_raw = (form.get("department_id") or "").strip()
     archive_retention_days = parse_archive_retention_days(form.get("archive_retention_days"))
     if (form.get("archive_retention_days") or "").strip() and archive_retention_days is None:
         return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
     is_active = (form.get("is_active") or "1").strip() == "1"
     if not name:
         return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    department_id = int(department_raw) if department_raw.isdigit() else None
+    if department_raw and department_id is None:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    if department_id is not None:
+        department = db.get(Department, department_id)
+        if not department or department.company_id != user.company_id:
+            return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
     exists = (
         db.query(TicketType)
         .filter(TicketType.company_id == user.company_id, TicketType.name == name)
@@ -7854,6 +8440,7 @@ async def web_ticket_types_create(request: Request, db: Session = Depends(get_db
         company_id=user.company_id,
         name=name,
         description=description,
+        department_id=department_id,
         archive_retention_days=archive_retention_days,
         is_active=is_active,
     )
@@ -7878,12 +8465,20 @@ async def web_ticket_types_update(
     form = await request.form()
     name = (form.get("name") or "").strip()
     description = (form.get("description") or "").strip() or None
+    department_raw = (form.get("department_id") or "").strip()
     archive_retention_days = parse_archive_retention_days(form.get("archive_retention_days"))
     if (form.get("archive_retention_days") or "").strip() and archive_retention_days is None:
         return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
     is_active = (form.get("is_active") or "").strip() == "1"
     if not name:
         return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    department_id = int(department_raw) if department_raw.isdigit() else None
+    if department_raw and department_id is None:
+        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
+    if department_id is not None:
+        department = db.get(Department, department_id)
+        if not department or department.company_id != user.company_id:
+            return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
 
     exists = (
         db.query(TicketType)
@@ -7899,6 +8494,7 @@ async def web_ticket_types_update(
 
     item.name = name
     item.description = description
+    item.department_id = department_id
     item.archive_retention_days = archive_retention_days
     item.is_active = is_active
     db.commit()
@@ -8197,7 +8793,16 @@ def web_users(
         raise HTTPException(403, "Forbidden")
 
     users = (
-        db.query(User.id, User.name, User.email, User.role, User.show_receipts_accounting_mode)
+        db.query(
+            User.id,
+            User.name,
+            User.email,
+            User.role,
+            User.show_receipts_accounting_mode,
+            User.can_view_all_tickets,
+            User.can_create_tickets,
+            User.can_close_tickets,
+        )
         .filter(
             User.company_id == user.company_id,
             User.role.in_(allowed_roles),
@@ -8303,6 +8908,10 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
     role_raw = (form.get("role") or "").strip().upper()
+    show_receipts_accounting_mode = (form.get("show_receipts_accounting_mode") or "").strip() in {"1", "true", "on", "yes"}
+    can_view_all_tickets = (form.get("can_view_all_tickets") or "").strip() in {"1", "true", "on", "yes"}
+    can_create_tickets = (form.get("can_create_tickets") or "").strip() in {"1", "true", "on", "yes"}
+    can_close_tickets = (form.get("can_close_tickets") or "").strip() in {"1", "true", "on", "yes"}
     allowed_roles = manageable_roles_for_web_user_management(user)
     if not allowed_roles:
         raise HTTPException(403, "Forbidden")
@@ -8327,7 +8936,12 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
         password_hash=hash_password(password),
         role=role_value,
         company_id=user.company_id,
-        show_receipts_accounting_mode=bool(role_value != Role.executor),
+        show_receipts_accounting_mode=(
+            True if role_value == Role.curator else show_receipts_accounting_mode
+        ),
+        can_view_all_tickets=(False if role_value == Role.curator else can_view_all_tickets),
+        can_create_tickets=(True if role_value == Role.curator else can_create_tickets),
+        can_close_tickets=(True if role_value == Role.curator else can_close_tickets),
     )
     try:
         db.add(u)
@@ -8353,6 +8967,9 @@ async def web_users_update(
     email = (form.get("email") or "").strip()
     password = (form.get("password") or "").strip()
     show_receipts_accounting_mode = (form.get("show_receipts_accounting_mode") or "").strip() in {"1", "true", "on", "yes"}
+    can_view_all_tickets = (form.get("can_view_all_tickets") or "").strip() in {"1", "true", "on", "yes"}
+    can_create_tickets = (form.get("can_create_tickets") or "").strip() in {"1", "true", "on", "yes"}
+    can_close_tickets = (form.get("can_close_tickets") or "").strip() in {"1", "true", "on", "yes"}
     if not (name and email):
         return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
 
@@ -8367,6 +8984,14 @@ async def web_users_update(
     item.name = name
     item.email = email
     item.show_receipts_accounting_mode = show_receipts_accounting_mode
+    if item.role == Role.curator:
+        item.can_view_all_tickets = False
+        item.can_create_tickets = True
+        item.can_close_tickets = True
+    else:
+        item.can_view_all_tickets = can_view_all_tickets
+        item.can_create_tickets = can_create_tickets
+        item.can_close_tickets = can_close_tickets
     if password:
         item.password_hash = hash_password(password)
     try:
@@ -8498,6 +9123,15 @@ def web_ticket_detail(
             .first()
         )
     ticket_types_by_id = {ticket_type_row[0]: ticket_type_row[1]} if ticket_type_row else {}
+    departments_by_id: dict[int, str] = {}
+    if t.department_id is not None:
+        department_row = (
+            db.query(Department.id, Department.name)
+            .filter(Department.company_id == user.company_id, Department.id == t.department_id)
+            .first()
+        )
+        if department_row:
+            departments_by_id = {department_row[0]: department_row[1]}
 
     relevant_user_ids: set[int] = {t.created_by}
     if t.executor_id is not None:
@@ -8543,6 +9177,7 @@ def web_ticket_detail(
             "t": t,
             "projects_by_id": projects_by_id,
             "ticket_types_by_id": ticket_types_by_id,
+            "departments_by_id": departments_by_id,
             "users_by_id": users_by_id,
             "comments": comments,
             "attachments": attachments,
@@ -8555,6 +9190,7 @@ def web_ticket_detail(
             "next_url_encoded": next_url_encoded,
             "can_archive": can_archive,
             "can_restore": can_restore,
+            "can_close_ticket": can_close_ticket(user, t),
             "watcher_user_ids": watcher_user_ids,
             "is_current_user_watcher": is_current_user_watcher,
         },

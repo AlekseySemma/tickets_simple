@@ -173,7 +173,7 @@
           </div>
           {% if user.role == "ADMIN" %}
             <div class="col-12 col-md-4">
-              <select name="role" class="form-select" required>
+              <select name="role" class="form-select" id="create-user-role" required>
                 <option value="EXECUTOR">Исполнитель</option>
                 <option value="CURATOR">Куратор</option>
               </select>
@@ -184,6 +184,34 @@
               <div class="form-control bg-light">Будет создан пользователь с ролью: Исполнитель</div>
             </div>
           {% endif %}
+          <div class="col-12" id="create-executor-permissions">
+            <div class="row g-2">
+              <div class="col-12 col-md-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="show_receipts_accounting_mode" value="1" id="create-show-accounting" />
+                  <label class="form-check-label" for="create-show-accounting">Бухгалтерский режим</label>
+                </div>
+              </div>
+              <div class="col-12 col-md-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="can_view_all_tickets" value="1" id="create-view-all" />
+                  <label class="form-check-label" for="create-view-all">Видеть все заявки</label>
+                </div>
+              </div>
+              <div class="col-12 col-md-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="can_create_tickets" value="1" id="create-can-create" checked />
+                  <label class="form-check-label" for="create-can-create">Создавать заявки</label>
+                </div>
+              </div>
+              <div class="col-12 col-md-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="can_close_tickets" value="1" id="create-can-close" checked />
+                  <label class="form-check-label" for="create-can-close">Закрывать заявки</label>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="col-12">
             <button class="btn btn-primary">Создать пользователя</button>
           </div>
@@ -311,6 +339,24 @@
                     <label class="form-check-label" for="show-accounting-{{ u.id }}">Бухгалтерский режим</label>
                   </div>
                 </div>
+                  <div class="col-12 col-md-2">
+                    <div class="form-check mt-4">
+                      <input class="form-check-input" type="checkbox" name="can_view_all_tickets" value="1" id="view-all-{{ u.id }}" {% if u.can_view_all_tickets %}checked{% endif %} />
+                      <label class="form-check-label" for="view-all-{{ u.id }}">Все заявки</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-2">
+                    <div class="form-check mt-4">
+                      <input class="form-check-input" type="checkbox" name="can_create_tickets" value="1" id="can-create-{{ u.id }}" {% if u.can_create_tickets %}checked{% endif %} />
+                      <label class="form-check-label" for="can-create-{{ u.id }}">Создание</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-2">
+                    <div class="form-check mt-4">
+                      <input class="form-check-input" type="checkbox" name="can_close_tickets" value="1" id="can-close-{{ u.id }}" {% if u.can_close_tickets %}checked{% endif %} />
+                      <label class="form-check-label" for="can-close-{{ u.id }}">Закрытие</label>
+                    </div>
+                  </div>
                 <div class="col-12 col-md-2 d-grid">
                   <button class="btn btn-outline-primary">Сохранить</button>
                 </div>
@@ -327,6 +373,22 @@
       </div>
     </div>
   </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const roleSelect = document.getElementById("create-user-role");
+      const permissionsWrap = document.getElementById("create-executor-permissions");
+      if (!permissionsWrap) return;
+      if (!roleSelect) return;
+
+      function syncExecutorOptions() {
+        const isExecutor = roleSelect.value === "EXECUTOR";
+        permissionsWrap.classList.toggle("d-none", !isExecutor);
+      }
+
+      roleSelect.addEventListener("change", syncExecutorOptions);
+      syncExecutorOptions();
+    });
+  </script>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
 </body>

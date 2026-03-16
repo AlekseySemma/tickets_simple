@@ -270,6 +270,7 @@
       <div class="detail-badges">
         <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
         <span class="detail-badge">Узел <strong>{{ projects_by_id.get(t.project_id, "—") }}</strong></span>
+        <span class="detail-badge">Отдел <strong>{{ departments_by_id.get(t.department_id, "—") }}</strong></span>
         <span class="detail-badge">Исполнитель <strong>{{ users_by_id.get(t.executor_id, "—") }}</strong></span>
         {% if t.status.value == "ARCHIVED" %}
           <span class="detail-badge">Удаление <strong>{{ format_deadline(t.delete_at) }}</strong></span>
@@ -288,6 +289,7 @@
               <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
               <div class="ticket-head-project">Узел: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <div class="ticket-head-project">Тип заявки: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</b></div>
+              <div class="ticket-head-project">Отдел: <b>{{ departments_by_id.get(t.department_id, "—") }}</b></div>
               <h5 class="ticket-head-title">{{ t.title }}</h5>
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
@@ -314,7 +316,7 @@
                       class="badge badge-status st-{{ t.status.value }}">
                   {{ status_labels[t.status.value] }}
                 </span>
-                {% else %}
+                {% elif can_close_ticket %}
                 <span id="status-badge-{{ t.id }}"
                       class="badge badge-status st-{{ t.status.value }} status-toggle"
                       data-ticket-id="{{ t.id }}">
@@ -331,6 +333,11 @@
                   <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option"
                           data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
                 </div>
+                {% else %}
+                <span id="status-badge-{{ t.id }}"
+                      class="badge badge-status st-{{ t.status.value }}">
+                  {{ status_labels[t.status.value] }}
+                </span>
                 {% endif %}
               </div>
 
@@ -766,9 +773,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
-
-
 
 
 

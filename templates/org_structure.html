@@ -116,7 +116,13 @@
         {% if err == "assign_bad_input" %}Некорректные данные закрепления иИсполнителя.{% endif %}
         {% if err == "assign_unit_not_found" %}Узел для закрепления не найден.{% endif %}
         {% if err == "assign_executor_not_found" %}Исполнитель для закрепления не найден.{% endif %}
+        {% if err == "assign_department_not_found" %}Отдел для закрепления не найден.{% endif %}
         {% if err == "assign_failed" %}Не удалось сохранить закрепление иИсполнителя.{% endif %}
+        {% if err == "department_empty_name" %}Введите название отдела.{% endif %}
+        {% if err == "department_exists" %}Отдел с таким названием уже существует.{% endif %}
+        {% if err == "department_not_found" %}Отдел не найден.{% endif %}
+        {% if err == "department_in_use" %}Нельзя удалить отдел: он уже используется.{% endif %}
+        {% if err == "department_save_failed" %}Не удалось сохранить отдел.{% endif %}
         {% if err == "edit_not_found" %}Узел для редактирования не найден.{% endif %}
         {% if err == "edit_empty_name" %}Введите название узла при редактировании.{% endif %}
         {% if err == "edit_bad_parent" %}Некорректный родитель в редактировании.{% endif %}
@@ -138,6 +144,79 @@
         обновлено {{ import_report.updated }}, ошибок {{ import_report.errors }}.
       </div>
     {% endif %}
+
+    <div class="card shadow-sm mb-3 org-card">
+      <div class="card-body">
+        <h5 class="mb-3">Отделы компании</h5>
+        {% if can_manage_departments %}
+          <form method="post" action="/web/departments/create" class="row g-2 mb-3">
+            <div class="col-12 col-md-5">
+              <input class="form-control" name="name" placeholder="Название отдела" required />
+            </div>
+            <div class="col-12 col-md-3 d-flex align-items-center">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="department_is_active" checked />
+                <label class="form-check-label" for="department_is_active">Активен</label>
+              </div>
+            </div>
+            <div class="col-12 col-md-4 d-grid">
+              <button class="btn btn-outline-primary" type="submit">Добавить отдел</button>
+            </div>
+          </form>
+        {% endif %}
+
+        {% if departments %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Отдел</th>
+                  <th>Статус</th>
+                  {% if can_manage_departments %}<th></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for department in departments %}
+                  <tr>
+                    <td>
+                      {% if can_manage_departments %}
+                        <form method="post" action="/web/departments/{{ department.id }}/update" class="row g-2 align-items-center">
+                          <div class="col-12 col-md-6">
+                            <input class="form-control form-control-sm" name="name" value="{{ department.name }}" required />
+                          </div>
+                          <div class="col-12 col-md-3">
+                            <div class="form-check">
+                              <input class="form-check-input" type="checkbox" name="is_active" value="1" id="department-active-{{ department.id }}" {% if department.is_active %}checked{% endif %} />
+                              <label class="form-check-label" for="department-active-{{ department.id }}">Активен</label>
+                            </div>
+                          </div>
+                          <div class="col-12 col-md-3 d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button>
+                            <button class="btn btn-sm btn-outline-danger" formaction="/web/departments/{{ department.id }}/delete" formmethod="post" type="submit" onclick="return confirm('Удалить отдел {{ department.name }}?');">Удалить</button>
+                          </div>
+                        </form>
+                      {% else %}
+                        {{ department.name }}
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if department.is_active %}
+                        <span class="badge text-bg-success">Активен</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">Выключен</span>
+                      {% endif %}
+                    </td>
+                    {% if can_manage_departments %}<td></td>{% endif %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted">Отделов пока нет.</div>
+        {% endif %}
+      </div>
+    </div>
 
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
@@ -254,6 +333,14 @@
               {% endfor %}
             </select>
           </div>
+          <div class="col-12 col-md-2">
+            <select class="form-select" name="department_id">
+              <option value="" selected>Без отдела</option>
+              {% for department in departments %}
+                <option value="{{ department.id }}">{{ department.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
           <div class="col-12 col-md-2 d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-md-end gap-2">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="assign_primary" />
@@ -269,6 +356,7 @@
               <thead>
                 <tr>
                   <th>Узел</th>
+                  <th>Отдел</th>
                   <th>Исполнитель</th>
                   <th>Статус</th>
                   <th></th>
@@ -278,6 +366,7 @@
                 {% for a in assignments %}
                   <tr>
                     <td>{{ a.unit_label }}</td>
+                    <td>{{ a.department_name }}</td>
                     <td>{{ a.user_name }} ({{ a.user_email }})</td>
                     <td>
                       {% if a.is_primary %}
@@ -385,9 +474,6 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-
 
 
 

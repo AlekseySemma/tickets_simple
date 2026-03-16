@@ -134,6 +134,16 @@
             <input name="description" class="form-control" placeholder="Описание (необязательно)" />
           </div>
           <div class="col-12 col-md-2">
+            <select name="department_id" class="form-select">
+              <option value="">Отдел</option>
+              {% for department in departments %}
+                {% if department.is_active %}
+                  <option value="{{ department.id }}">{{ department.name }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
             <input name="archive_retention_days" type="number" min="1" max="3650" class="form-control" placeholder="Хранение, дн." />
           </div>
           <div class="col-12 col-md-2 d-flex align-items-center">
@@ -159,6 +169,9 @@
             {% else %}
               <span class="badge text-bg-secondary">Неактивен</span>
             {% endif %}
+            {% if tt.department_name %}
+              <span class="badge text-bg-light border">{{ tt.department_name }}</span>
+            {% endif %}
           </div>
           <form method="post" action="/web/ticket-types/{{ tt.id }}/update" class="row g-2">
             <div class="col-12 col-md-3">
@@ -168,6 +181,15 @@
             <div class="col-12 col-md-4">
               <label class="form-label">Описание</label>
               <input name="description" class="form-control" value="{{ tt.description or '' }}" />
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label">Отдел</label>
+              <select name="department_id" class="form-select">
+                <option value="">Без отдела</option>
+                {% for department in departments %}
+                  <option value="{{ department.id }}" {% if tt.department_id == department.id %}selected{% endif %}>{{ department.name }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="col-12 col-md-3">
               <label class="form-label">Хранение в архиве (дни)</label>
@@ -206,10 +228,6 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-
-
 
 
 

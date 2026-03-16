@@ -80,8 +80,22 @@
               <select name="ticket_type_id" class="form-select">
                 <option value="">— не выбран —</option>
                 {% for tt in ticket_types %}
-                  <option value="{{ tt.id }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>
+                  <option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}" {% if t.ticket_type_id == tt.id %}selected{% endif %}>
                     {{ tt.name }}{% if not tt.is_active %} (inactive){% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endif %}
+
+          {% if can_edit_full %}
+            <div class="col-12 col-md-6">
+              <label class="form-label">Отдел</label>
+              <select name="department_id" class="form-select" id="edit-department-id">
+                <option value="">— не выбран —</option>
+                {% for department in departments %}
+                  <option value="{{ department.id }}" {% if t.department_id == department.id %}selected{% endif %}>
+                    {{ department.name }}{% if not department.is_active %} (inactive){% endif %}
                   </option>
                 {% endfor %}
               </select>
@@ -232,13 +246,23 @@ document.addEventListener("DOMContentLoaded", function () {
   renderCounter();
 });
 </script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const ticketTypeSelect = document.querySelector('select[name="ticket_type_id"]');
+  const departmentSelect = document.getElementById("edit-department-id");
+  if (!ticketTypeSelect || !departmentSelect) return;
+
+  ticketTypeSelect.addEventListener("change", function () {
+    const option = ticketTypeSelect.options[ticketTypeSelect.selectedIndex];
+    if (!option) return;
+    const departmentId = option.dataset.departmentId || "";
+    if (departmentId) {
+      departmentSelect.value = departmentId;
+    }
+  });
+});
+</script>
 <script src="/static/sw-register.js"></script>
 <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-
-
-
-
