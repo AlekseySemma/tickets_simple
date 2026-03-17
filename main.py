@@ -3252,6 +3252,15 @@ def send_user_password_reset_email(
     return reset_url
 
 
+def delete_auth_cookie(response: Response, request: Request) -> None:
+    cookie_params = get_auth_cookie_params(request)
+    response.delete_cookie(
+        "access_token",
+        domain=cookie_params.get("domain"),
+        path=str(cookie_params.get("path") or "/"),
+    )
+
+
 def get_auth_cookie_params(request: Request) -> dict[str, object]:
     host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
     forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
@@ -4857,7 +4866,11 @@ def download_attachment(
 # =========================
 @app.get("/web/login")
 def web_login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    info = (request.query_params.get("info") or "").strip().lower()
+    info_message = None
+    if info == "logged_out_all":
+        info_message = "Сессии на всех устройствах завершены. Войдите снова."
+    return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info_message})
 
 @app.post("/web/login")
 async def web_login(request: Request, db: Session = Depends(get_db)):
@@ -4872,14 +4885,14 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
         audit_security_event("web_login", request, success=False, email=email, detail="rate_limited")
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u043f\u043e\u043f\u044b\u0442\u043e\u043a \u0432\u0445\u043e\u0434\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0437\u0436\u0435."},
+            {"request": request, "error": "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u043f\u043e\u043f\u044b\u0442\u043e\u043a \u0432\u0445\u043e\u0434\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0437\u0436\u0435.", "info": None},
             status_code=429,
         )
 
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.password_hash):
         audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
-        return templates.TemplateResponse("login.html", {"request": request, "error": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c"})
+        return templates.TemplateResponse("login.html", {"request": request, "error": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c", "info": None})
     if not is_user_email_verified(user):
         audit_security_event("web_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
         return templates.TemplateResponse(
@@ -4887,6 +4900,7 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
             {
                 "request": request,
                 "error": "Подтвердите email по ссылке из письма, затем повторите вход.",
+                "info": None,
             },
             status_code=403,
         )
@@ -5229,12 +5243,7 @@ async def web_password_reset_confirm_submit(request: Request, db: Session = Depe
 @app.get("/web/logout")
 def web_logout(request: Request):
     resp = RedirectResponse(url="/web/login", status_code=HTTP_303_SEE_OTHER)
-    cookie_params = get_auth_cookie_params(request)
-    resp.delete_cookie(
-        "access_token",
-        domain=cookie_params.get("domain"),
-        path=str(cookie_params.get("path") or "/"),
-    )
+    delete_auth_cookie(resp, request)
     return resp
 
 def _render_web_tickets_page(
@@ -5790,6 +5799,9 @@ def web_settings(
     card_delete_error = (request.query_params.get("card_delete_error") or "").strip().lower()
     if card_delete_error not in {"not_found", "in_use", "save_failed"}:
         card_delete_error = ""
+    session_revoke_error = (request.query_params.get("session_revoke_error") or "").strip().lower()
+    if session_revoke_error not in {"save_failed"}:
+        session_revoke_error = ""
     cards = (
         db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
         .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
@@ -5820,6 +5832,7 @@ def web_settings(
             "card_create_error": card_create_error,
             "card_deleted": card_deleted,
             "card_delete_error": card_delete_error,
+            "session_revoke_error": session_revoke_error,
             "cards": cards,
             "preferred_payment_card_id": user.preferred_payment_card_id,
             "can_manage_deadline_warning": can_manage_deadline_warning,
@@ -5831,6 +5844,24 @@ def web_settings(
             "max_archive_retention_days": MAX_ARCHIVE_RETENTION_DAYS,
         },
     )
+
+
+@app.post("/web/settings/logout-all")
+async def web_settings_logout_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        bump_user_auth_token_version(user)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/settings?session_revoke_error=save_failed", status_code=HTTP_303_SEE_OTHER)
+    audit_security_event("logout_all_devices", request, success=True, email=user.email, user_id=user.id)
+    resp = RedirectResponse(url="/web/login?info=logged_out_all", status_code=HTTP_303_SEE_OTHER)
+    delete_auth_cookie(resp, request)
+    return resp
 
 
 @app.post("/web/settings/deadline-warning")

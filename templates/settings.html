@@ -326,6 +326,16 @@
       </div>
     </div>
 
+    <div class="card shadow-sm mb-3 settings-card">
+      <div class="card-body">
+        <h5 class="mb-2">Безопасность</h5>
+        <div class="settings-note mt-0">Завершает все активные сессии аккаунта на других устройствах и в текущем браузере. После этого потребуется войти снова.</div>
+        <form method="post" action="/web/settings/logout-all" class="mt-2" onsubmit="return confirm('Завершить сессии на всех устройствах?');">
+          <button class="btn btn-outline-danger">Выйти на всех устройствах</button>
+        </form>
+      </div>
+    </div>
+
     <div class="card shadow-sm settings-card">
       <div class="card-body">
         <h5 class="mb-3">Система</h5>
@@ -356,7 +366,6 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
 
 
 

@@ -263,6 +263,41 @@ class EmailVerificationTests(unittest.TestCase):
         )
         self.assertEqual(api_login.status_code, 200)
 
+    def test_logout_all_devices_revokes_old_tokens_and_current_cookie(self):
+        self.seed_verified_user(email="logoutall@example.com", password="secret123")
+
+        api_login = self.client.post(
+            "/auth/login",
+            data={"username": "logoutall@example.com", "password": "secret123"},
+        )
+        self.assertEqual(api_login.status_code, 200)
+        old_token = api_login.json()["access_token"]
+
+        web_login = self.client.post(
+            "/web/login",
+            data={"email": "logoutall@example.com", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(web_login.status_code, 303)
+
+        logout_all = self.client.post(
+            "/web/settings/logout-all",
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+        self.assertEqual(logout_all.status_code, 303)
+        self.assertIn("/web/login?info=logged_out_all", logout_all.headers["location"])
+
+        old_token_me = self.client.get(
+            "/users/me",
+            headers={"Authorization": f"Bearer {old_token}"},
+        )
+        self.assertEqual(old_token_me.status_code, 401)
+
+        settings_after = self.client.get("/web/settings", follow_redirects=False)
+        self.assertEqual(settings_after.status_code, 303)
+        self.assertEqual(settings_after.headers["location"], "/web/login")
+
 
 if __name__ == "__main__":
     unittest.main()
