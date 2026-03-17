@@ -137,7 +137,7 @@
             <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
           </div>
           <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-4" data-project-combo>
             <label class="form-label">Объект</label>
             <input type="text" class="form-control project-combo-input" list="receipt-project-options" placeholder="Выберите или введите объект" autocomplete="off" />
             <input type="hidden" name="project_id" class="project-id-hidden" required />
