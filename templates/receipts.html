@@ -209,7 +209,7 @@
             <option value="REJECTED">Отклонён</option>
             <option value="NEW">Новый</option>
           </select>
-          <button class="btn btn-outline-primary">зменить статус выбранных</button>
+          <button class="btn btn-outline-primary">Изменить статус выбранных</button>
           <button
             class="btn btn-outline-danger"
             formaction="/web/receipts/delete/bulk"
@@ -316,7 +316,7 @@
               </div>
               {% if user.role in ["EXECUTOR", "ADMIN", "CURATOR"] and r.created_by == user.id %}
                 <div class="d-flex gap-2 flex-wrap mt-2">
-                  <a class="btn btn-sm btn-outline-primary" href="/web/receipts?mode={{ mode }}&edit_id={{ r.id }}">зменить</a>
+                  <a class="btn btn-sm btn-outline-primary" href="/web/receipts?mode={{ mode }}&edit_id={{ r.id }}">Изменить</a>
                   <form method="post" action="/web/receipts/{{ r.id }}/delete" class="m-0" onsubmit="return confirm('Удалить чек #{{ r.id }}?');">
                     <input type="hidden" name="next" value="/web/receipts?mode={{ mode }}" />
                     <button class="btn btn-sm btn-outline-danger">Удалить</button>

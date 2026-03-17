@@ -353,7 +353,7 @@
             <div class="ticket-actions">
               {% if can_edit and t.status.value != "ARCHIVED" %}
                 <a class="btn btn-sm btn-outline-secondary"
-                   href="/web/tickets/{{ t.id }}/edit?next={{ next_url_encoded }}">зменить</a>
+                   href="/web/tickets/{{ t.id }}/edit?next={{ next_url_encoded }}">Изменить</a>
               {% endif %}
               {% if can_archive %}
                 <form method="post"

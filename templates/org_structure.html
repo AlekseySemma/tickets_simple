@@ -140,7 +140,7 @@
     {% endif %}
     {% if import_report.ok == "1" %}
       <div class="alert alert-success py-2">
-        мпорт завершен: строк {{ import_report.rows }}, создано узлов {{ import_report.created }},
+        Импорт завершен: строк {{ import_report.rows }}, создано узлов {{ import_report.created }},
         обновлено {{ import_report.updated }}, ошибок {{ import_report.errors }}.
       </div>
     {% endif %}
@@ -290,13 +290,13 @@
 
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
-        <h5 class="mb-3">мпорт из CSV</h5>
+        <h5 class="mb-3">Импорт из CSV</h5>
         <form method="post" action="/web/org-structure/import-csv" enctype="multipart/form-data" class="row g-2">
           <div class="col-12 col-md-8">
             <input class="form-control" type="file" name="file" accept=".csv,text/csv" required />
           </div>
           <div class="col-12 col-md-4 d-grid">
-            <button class="btn btn-outline-primary" type="submit">мпортировать</button>
+            <button class="btn btn-outline-primary" type="submit">Импортировать</button>
           </div>
         </form>
         <div class="mt-2">
