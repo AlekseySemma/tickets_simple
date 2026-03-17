@@ -5719,6 +5719,11 @@ def web_org_structure(
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
     edit_unit_id: str | None = None,
+    assignment_unit_id: str | None = None,
+    assignment_executor_id: str | None = None,
+    assignment_department_id: str | None = None,
+    assignment_primary: str | None = None,
+    assignment_page: int = 1,
 ):
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
@@ -5796,10 +5801,33 @@ def web_org_structure(
         .order_by(Department.name.asc(), Department.id.asc())
         .all()
     )
+    unit_children_by_id: dict[int, list[int]] = {}
+    for item in items:
+        parent_id = item["parent_id"]
+        if parent_id is not None:
+            unit_children_by_id.setdefault(int(parent_id), []).append(int(item["id"]))
     unit_labels_by_id = {
         int(u["id"]): f"{'- ' * int(u['level'])}{u['name']}" for u in ordered_units
     }
-    assignment_rows = (
+    assignment_unit_id_int = int(assignment_unit_id) if (assignment_unit_id or "").strip().isdigit() else None
+    assignment_executor_id_int = int(assignment_executor_id) if (assignment_executor_id or "").strip().isdigit() else None
+    assignment_department_filter = (assignment_department_id or "").strip()
+    assignment_department_id_int = int(assignment_department_filter) if assignment_department_filter.isdigit() else None
+    assignment_without_department = assignment_department_filter == "__none__"
+    assignment_only_primary = (assignment_primary or "").strip() in {"1", "true", "on", "yes"}
+
+    filtered_unit_ids: set[int] | None = None
+    if assignment_unit_id_int is not None and assignment_unit_id_int in unit_labels_by_id:
+        filtered_unit_ids = set()
+        stack_ids = [assignment_unit_id_int]
+        while stack_ids:
+            current_id = stack_ids.pop()
+            if current_id in filtered_unit_ids:
+                continue
+            filtered_unit_ids.add(current_id)
+            stack_ids.extend(unit_children_by_id.get(current_id, []))
+
+    assignment_query = (
         db.query(
             UnitAssignment.id,
             UnitAssignment.unit_id,
@@ -5816,7 +5844,34 @@ def web_org_structure(
             UnitAssignment.company_id == user.company_id,
             UnitAssignment.role_code == "EXECUTOR",
         )
+    )
+    assignments_total_all = assignment_query.count()
+    if filtered_unit_ids is not None:
+        assignment_query = assignment_query.filter(UnitAssignment.unit_id.in_(sorted(filtered_unit_ids)))
+    if assignment_executor_id_int is not None:
+        assignment_query = assignment_query.filter(UnitAssignment.user_id == assignment_executor_id_int)
+    if assignment_without_department:
+        assignment_query = assignment_query.filter(UnitAssignment.department_id.is_(None))
+    elif assignment_department_id_int is not None:
+        assignment_query = assignment_query.filter(UnitAssignment.department_id == assignment_department_id_int)
+    if assignment_only_primary:
+        assignment_query = assignment_query.filter(UnitAssignment.is_primary.is_(True))
+
+    assignment_filters_active = bool(
+        assignment_unit_id_int is not None
+        or assignment_executor_id_int is not None
+        or assignment_department_filter
+        or assignment_only_primary
+    )
+    assignments_total = assignment_query.count()
+    assignments_per_page = 40
+    assignments_total_pages = max(1, (assignments_total + assignments_per_page - 1) // assignments_per_page)
+    assignment_page = max(1, min(assignment_page, assignments_total_pages))
+    assignment_rows = (
+        assignment_query
         .order_by(UnitAssignment.unit_id.asc(), UnitAssignment.is_primary.desc(), UnitAssignment.id.asc())
+        .offset((assignment_page - 1) * assignments_per_page)
+        .limit(assignments_per_page)
         .all()
     )
     assignments = [
@@ -5890,6 +5945,15 @@ def web_org_structure(
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
             "import_report": import_report,
             "can_manage_departments": is_admin(user),
+            "assignment_unit_id_filter": assignment_unit_id_int if assignment_unit_id_int is not None else "",
+            "assignment_executor_id_filter": assignment_executor_id_int if assignment_executor_id_int is not None else "",
+            "assignment_department_id_filter": assignment_department_filter,
+            "assignment_primary_filter": assignment_only_primary,
+            "assignment_filters_active": assignment_filters_active,
+            "assignments_total_all": assignments_total_all,
+            "assignments_total": assignments_total,
+            "assignments_page": assignment_page,
+            "assignments_total_pages": assignments_total_pages,
         },
     )
 

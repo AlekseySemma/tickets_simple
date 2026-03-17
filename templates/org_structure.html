@@ -85,7 +85,7 @@
       </div>
       <div class="org-kpi-card">
         <span>Закрепления</span>
-        <strong>{{ assignments|length }}</strong>
+        <strong>{{ assignments_total_all }}</strong>
       </div>
       <div class="org-kpi-card">
         <span>Исполнители</span>
@@ -350,6 +350,52 @@
           </div>
         </form>
 
+        <form method="get" action="/web/org-structure" class="row g-2 align-items-end mb-3">
+          <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1">Узел или поддерево</label>
+            <select class="form-select" name="assignment_unit_id">
+              <option value="" {% if not assignment_unit_id_filter %}selected{% endif %}>Все узлы</option>
+              {% for u in units %}
+                <option value="{{ u.id }}" {% if assignment_unit_id_filter == u.id %}selected{% endif %}>{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label mb-1">Исполнитель</label>
+            <select class="form-select" name="assignment_executor_id">
+              <option value="" {% if not assignment_executor_id_filter %}selected{% endif %}>Все исполнители</option>
+              {% for e in executors %}
+                <option value="{{ e.id }}" {% if assignment_executor_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label mb-1">Отдел</label>
+            <select class="form-select" name="assignment_department_id">
+              <option value="" {% if not assignment_department_id_filter %}selected{% endif %}>Все отделы</option>
+              <option value="__none__" {% if assignment_department_id_filter == "__none__" %}selected{% endif %}>Без отдела</option>
+              {% for department in departments %}
+                <option value="{{ department.id }}" {% if assignment_department_id_filter == (department.id ~ '') %}selected{% endif %}>{{ department.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="assignment_primary" value="1" id="assignment_primary_filter" {% if assignment_primary_filter %}checked{% endif %} />
+              <label class="form-check-label" for="assignment_primary_filter">Только основные</label>
+            </div>
+          </div>
+          <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+            <button class="btn btn-outline-primary btn-sm" type="submit">Применить</button>
+            <a class="btn btn-outline-secondary btn-sm" href="/web/org-structure{% if edit_unit %}?edit_unit_id={{ edit_unit.id }}{% endif %}">Сбросить</a>
+            <span class="text-muted small">Показано {{ assignments|length }} из {{ assignments_total }}</span>
+            {% if assignments_total_pages > 1 %}
+              <span class="text-muted small">Страница {{ assignments_page }} из {{ assignments_total_pages }}</span>
+            {% endif %}
+          </div>
+        </form>
+
         {% if assignments %}
           <div class="table-responsive">
             <table class="table table-sm align-middle">
@@ -392,8 +438,25 @@
               </tbody>
             </table>
           </div>
+          {% if assignments_total_pages > 1 %}
+            <form method="get" action="/web/org-structure" class="d-flex flex-wrap gap-2 align-items-center mt-3">
+              <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
+              <input type="hidden" name="assignment_unit_id" value="{{ assignment_unit_id_filter }}" />
+              <input type="hidden" name="assignment_executor_id" value="{{ assignment_executor_id_filter }}" />
+              <input type="hidden" name="assignment_department_id" value="{{ assignment_department_id_filter }}" />
+              {% if assignment_primary_filter %}
+                <input type="hidden" name="assignment_primary" value="1" />
+              {% endif %}
+              {% if assignments_page > 1 %}
+                <button class="btn btn-sm btn-outline-secondary" type="submit" name="assignment_page" value="{{ assignments_page - 1 }}">Назад</button>
+              {% endif %}
+              {% if assignments_page < assignments_total_pages %}
+                <button class="btn btn-sm btn-outline-secondary" type="submit" name="assignment_page" value="{{ assignments_page + 1 }}">Вперед</button>
+              {% endif %}
+            </form>
+          {% endif %}
         {% else %}
-          <div class="text-muted">Закреплений пока нет.</div>
+          <div class="text-muted">{% if assignment_filters_active %}По текущему фильтру закреплений нет.{% else %}Закреплений пока нет.{% endif %}</div>
         {% endif %}
       </div>
     </div>
@@ -474,7 +537,4 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-
 
