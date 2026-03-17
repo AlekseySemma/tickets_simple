@@ -315,6 +315,11 @@ class User(Base):
     password_reset_token: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, default=None)
     password_reset_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     password_reset_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    auth_token_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+    )
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
     preferred_payment_card_id: Mapped[Optional[int]] = mapped_column(ForeignKey("payment_cards.id"), index=True, default=None)
@@ -716,6 +721,7 @@ def ensure_migrations_ready() -> None:
                 "password_reset_token",
                 "password_reset_expires_at",
                 "password_reset_sent_at",
+                "auth_token_version",
                 "show_receipts_accounting_mode",
                 "notify_receipt_created",
                 "can_view_all_tickets",
@@ -3051,9 +3057,21 @@ def hash_password(p: str) -> str:
 def verify_password(p: str, ph: str) -> bool:
     return pwd_context.verify(p, ph)
 
-def create_access_token(subject: str) -> str:
+def get_user_auth_token_version(user: User | None) -> int:
+    if not user:
+        return 0
+    return int(getattr(user, "auth_token_version", 0) or 0)
+
+
+def bump_user_auth_token_version(user: User) -> int:
+    next_value = get_user_auth_token_version(user) + 1
+    user.auth_token_version = next_value
+    return next_value
+
+
+def create_access_token(subject: str, token_version: int = 0) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": subject, "exp": exp}, JWT_SECRET, algorithm=ALGORITHM)
+    return jwt.encode({"sub": subject, "exp": exp, "tv": int(token_version)}, JWT_SECRET, algorithm=ALGORITHM)
 
 
 class EmailDeliveryError(RuntimeError):
@@ -3262,12 +3280,15 @@ def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme
     try:
         payload = jwt.decode(final_token, JWT_SECRET, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub"))
+        token_version = int(payload.get("tv", 0) or 0)
     except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if token_version != get_user_auth_token_version(user):
+        raise HTTPException(status_code=401, detail="Token is no longer valid")
     ensure_user_can_authenticate(user)
     return user
 
@@ -3570,16 +3591,28 @@ async def sliding_session_middleware(request: Request, call_next):
     raw_token = (request.cookies.get("access_token") or "").strip()
     if not raw_token:
         return response
+    if response.status_code >= 400:
+        return response
 
     try:
         payload = jwt.decode(raw_token, JWT_SECRET, algorithms=[ALGORITHM])
         subject = str(payload.get("sub") or "").strip()
+        token_version = int(payload.get("tv", 0) or 0)
         if not subject:
             return response
     except JWTError:
         return response
 
-    refreshed_token = create_access_token(subject)
+    user = None
+    with SessionLocal() as db:
+        try:
+            user = db.get(User, int(subject))
+        except (TypeError, ValueError):
+            return response
+    if not user or token_version != get_user_auth_token_version(user):
+        return response
+
+    refreshed_token = create_access_token(subject, get_user_auth_token_version(user))
     response.set_cookie(
         "access_token",
         refreshed_token,
@@ -3883,7 +3916,7 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
         audit_security_event("auth_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
         raise
     audit_security_event("auth_login", request, success=True, email=email, user_id=user.id)
-    return TokenOut(access_token=create_access_token(str(user.id)))
+    return TokenOut(access_token=create_access_token(str(user.id), get_user_auth_token_version(user)))
 
 # =========================
 # USERS API
@@ -4858,7 +4891,7 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
             status_code=403,
         )
 
-    token = create_access_token(str(user.id))
+    token = create_access_token(str(user.id), get_user_auth_token_version(user))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
     resp.set_cookie(
@@ -5184,6 +5217,7 @@ async def web_password_reset_confirm_submit(request: Request, db: Session = Depe
             status_code=400,
         )
     user.password_hash = hash_password(password)
+    bump_user_auth_token_version(user)
     clear_password_reset_state(user)
     db.commit()
     audit_security_event("password_reset_confirm", request, success=True, email=user.email, user_id=user.id)
@@ -7416,6 +7450,7 @@ async def web_admin_company_user_update(
     item.role = Role(role_raw)
     if password:
         item.password_hash = hash_password(password)
+        bump_user_auth_token_version(item)
     if email_changed:
         prepare_user_email_verification(item, force_new_token=True)
     try:
@@ -9741,6 +9776,7 @@ async def web_users_update(
         item.can_close_tickets = can_close_tickets
     if password:
         item.password_hash = hash_password(password)
+        bump_user_auth_token_version(item)
     if email_changed:
         prepare_user_email_verification(item, force_new_token=True)
     try:

@@ -213,6 +213,13 @@ class EmailVerificationTests(unittest.TestCase):
     def test_password_reset_changes_password_and_allows_login(self):
         self.seed_verified_user(email="reset2@example.com", password="oldpassword")
 
+        old_login = self.client.post(
+            "/auth/login",
+            data={"username": "reset2@example.com", "password": "oldpassword"},
+        )
+        self.assertEqual(old_login.status_code, 200)
+        old_token = old_login.json()["access_token"]
+
         self.client.post(
             "/web/password-reset",
             data={"email": "reset2@example.com"},
@@ -242,6 +249,13 @@ class EmailVerificationTests(unittest.TestCase):
             self.assertIsNone(user.password_reset_token)
             self.assertIsNone(user.password_reset_expires_at)
             self.assertIsNone(user.password_reset_sent_at)
+            self.assertEqual(user.auth_token_version, 1)
+
+        old_token_me = self.client.get(
+            "/users/me",
+            headers={"Authorization": f"Bearer {old_token}"},
+        )
+        self.assertEqual(old_token_me.status_code, 401)
 
         api_login = self.client.post(
             "/auth/login",
