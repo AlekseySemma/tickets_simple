@@ -60,7 +60,7 @@ def upgrade() -> None:
             """
             UPDATE users
             SET email_verified_at = CURRENT_TIMESTAMP
-            WHERE email_verified = 1 AND email_verified_at IS NULL
+            WHERE email_verified = true AND email_verified_at IS NULL
             """
         )
     )
