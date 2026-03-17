@@ -62,19 +62,25 @@
     .status-menu.show { opacity: 1; pointer-events: auto; }
     .status-toggle { cursor: pointer; }
 
-    .comments-list { display: flex; flex-direction: column; gap: 8px; }
+    .comments-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 90px;
+    }
     .comment-row { display: flex; }
     .comment-row.theirs { justify-content: flex-start; }
     .comment-row.mine { justify-content: flex-end; }
     .comment-bubble {
-      max-width: 85%;
-      border-radius: 12px;
-      padding: .5rem .65rem;
-      border: 1px solid #e9ecef;
+      max-width: 88%;
+      border-radius: 16px;
+      padding: .65rem .8rem;
+      border: 1px solid #e1ece7;
       background: #fff;
+      box-shadow: 0 10px 20px rgba(20, 68, 70, 0.05);
     }
     .comment-row.mine .comment-bubble {
-      background: #e3f2ec;
+      background: linear-gradient(180deg, #effaf5, #e4f4ed);
       border-color: #b9e3d5;
     }
 
@@ -120,8 +126,19 @@
     .section-card {
       background: #fbfefc;
       border: 1px solid #ddebe4;
-      border-radius: 12px;
-      padding: 12px;
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .section-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .section-heading p {
+      margin: 4px 0 0;
     }
     .log-item.hidden { display: none; }
     .page-head {
@@ -214,6 +231,252 @@
     .ticket-actions .btn {
       width: 100%;
     }
+    .ticket-tabs-shell {
+      margin-top: 6px;
+    }
+    .ticket-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .ticket-tab-btn {
+      border: 1px solid #cfe2da;
+      background: linear-gradient(180deg, #ffffff, #f3faf6);
+      color: #2f5f66;
+      border-radius: 16px;
+      padding: 12px 14px;
+      min-width: 180px;
+      text-align: left;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+      box-shadow: 0 8px 18px rgba(20, 68, 70, 0.05);
+    }
+    .ticket-tab-btn:hover {
+      border-color: #b6d8cb;
+      box-shadow: 0 12px 24px rgba(20, 68, 70, 0.08);
+    }
+    .ticket-tab-btn.active {
+      background: linear-gradient(180deg, #eaf8f2, #dff3eb);
+      border-color: #98cfbe;
+      color: #164e49;
+      box-shadow: 0 14px 28px rgba(20, 68, 70, 0.1);
+    }
+    .ticket-tab-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+    .ticket-tab-copy {
+      display: block;
+      font-size: 12px;
+      color: #5c7276;
+    }
+    .tab-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(20, 109, 98, 0.1);
+      color: #14594f;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .ticket-panel {
+      display: none;
+    }
+    .ticket-panel.active {
+      display: block;
+    }
+    .overview-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .overview-stat {
+      border-radius: 14px;
+      border: 1px solid #dcebe4;
+      padding: 14px;
+      background: linear-gradient(180deg, #ffffff, #f6fbf8);
+    }
+    .overview-stat-label {
+      display: block;
+      font-size: 12px;
+      color: #648084;
+      margin-bottom: 4px;
+    }
+    .overview-stat strong {
+      font-size: 1.3rem;
+      color: #164b4c;
+    }
+    .people-card {
+      height: 100%;
+    }
+    .people-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #e4eee9;
+    }
+    .people-item:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .people-label {
+      font-size: 12px;
+      color: #6a8084;
+      margin-bottom: 4px;
+    }
+    .watcher-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .comments-card {
+      margin-top: 16px;
+    }
+    .attachment-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .attachment-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .attachment-card {
+      border: 1px solid #dbe9e3;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff, #f7fcf9);
+      overflow: hidden;
+      box-shadow: 0 14px 28px rgba(20, 68, 70, 0.06);
+      display: flex;
+      flex-direction: column;
+    }
+    .attachment-preview {
+      min-height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      background:
+        radial-gradient(220px 110px at 100% 0, rgba(31, 157, 143, 0.12), transparent 58%),
+        linear-gradient(180deg, #eef8f3, #e5f3ed);
+      border-bottom: 1px solid #d8e8e1;
+    }
+    .attachment-thumb {
+      max-width: 100%;
+      max-height: 210px;
+      border-radius: 14px;
+      box-shadow: 0 10px 22px rgba(20, 68, 70, 0.12);
+      cursor: zoom-in;
+    }
+    .attachment-placeholder {
+      width: 100%;
+      min-height: 150px;
+      border-radius: 16px;
+      border: 1px dashed #b9d7cc;
+      background: rgba(255, 255, 255, 0.72);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-align: center;
+      padding: 16px;
+    }
+    .attachment-ext {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 68px;
+      min-height: 68px;
+      padding: 10px;
+      border-radius: 18px;
+      background: #dff3eb;
+      border: 1px solid #b8ddce;
+      color: #15584f;
+      font-weight: 800;
+      font-size: 1rem;
+      letter-spacing: .05em;
+    }
+    .attachment-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .attachment-title {
+      font-weight: 700;
+      color: #194f51;
+      overflow-wrap: anywhere;
+    }
+    .attachment-title a {
+      text-decoration: none;
+    }
+    .attachment-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 12px;
+      color: #688084;
+    }
+    .attachment-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+    .attachment-actions form {
+      margin: 0;
+    }
+    .log-toolbar {
+      margin-bottom: 14px;
+    }
+    .log-timeline {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .log-timeline::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: 14px;
+      width: 2px;
+      background: linear-gradient(180deg, #bcdccf, #e0efe8);
+    }
+    .log-item {
+      position: relative;
+      margin-left: 34px;
+      border: 1px solid #dce9e3;
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: linear-gradient(180deg, #ffffff, #f8fcfa);
+      box-shadow: 0 10px 20px rgba(20, 68, 70, 0.04);
+    }
+    .log-item::before {
+      content: "";
+      position: absolute;
+      left: -27px;
+      top: 14px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #1f9d8f;
+      border: 3px solid #e7f6f0;
+      box-shadow: 0 0 0 3px rgba(31, 157, 143, 0.12);
+    }
     @media (max-width: 991.98px) {
       .container {
         padding-left: 10px;
@@ -231,6 +494,9 @@
         right: auto;
         left: 0;
       }
+      .overview-stats {
+        grid-template-columns: 1fr;
+      }
     }
     @media (max-width: 575.98px) {
       .meta-chip {
@@ -247,11 +513,31 @@
         width: 100%;
         justify-content: flex-start;
       }
+      .ticket-tab-btn {
+        min-width: 0;
+        width: 100%;
+      }
+      .attachment-grid {
+        grid-template-columns: 1fr;
+      }
+      .log-item {
+        margin-left: 28px;
+      }
+      .log-timeline::before {
+        left: 10px;
+      }
+      .log-item::before {
+        left: -23px;
+      }
     }
   </style>
 </head>
 
 <body class="bg-light">
+  {% set requested_tab = request.query_params.get("tab", "overview") %}
+  {% set active_tab = requested_tab if requested_tab in ["overview", "files", "history"] else "overview" %}
+  {% set overview_url = "/web/tickets/" ~ t.id ~ "?tab=overview&next=" ~ next_url_encoded %}
+  {% set files_url = "/web/tickets/" ~ t.id ~ "?tab=files&next=" ~ next_url_encoded %}
   <div class="container py-4 service-shell" style="max-width: 1000px;">
     <div class="page-head mb-3">
       <div>
@@ -261,10 +547,11 @@
       {% set top_nav_class = "page-actions" %}
       {% include "_top_nav.html" %}
     </div>
+
     <div class="detail-banner mb-3">
       <div>
         <span class="detail-kicker">Карточка исполнения</span>
-        <p class="detail-title">Заявка в работе: комментарии, файлы, статус и полный лог действий.</p>
+        <p class="detail-title">Информация по заявке остается наверху, а ниже все разбито на отдельные вкладки: обсуждение, файлы и история изменений.</p>
       </div>
       <div class="detail-badges">
         <span class="detail-badge">Статус <strong>{{ status_labels[t.status.value] }}</strong></span>
@@ -294,7 +581,8 @@
               <div class="ticket-meta">
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
-                <span class="meta-chip deadline-chip {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок:
+                <span class="meta-chip deadline-chip {% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
+                  Крайний срок:
                   <b>
                     {% if t.deadline %}
                       {{ format_deadline(t.deadline) }}
@@ -392,177 +680,304 @@
 
         <hr class="my-4"/>
 
-        <div class="row g-4">
-          <div class="col-12 col-lg-7">
-            <h5>Комментарии</h5>
-
-            <div class="mb-2 comments-list section-card">
-              {% for c in comments %}
-                {% set is_mine = c.author_id == user.id %}
-                <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
-                  <div class="comment-bubble">
-                    <div class="small muted">
-                      <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
-                    </div>
-                    <div>{{ c.text }}</div>
-                  </div>
-                </div>
-              {% endfor %}
-              {% if comments|length == 0 %}
-                <div class="muted small">Нет комментариев</div>
-              {% endif %}
-            </div>
-
-            {% if t.status.value == "ARCHIVED" %}
-              <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
-            {% else %}
-              <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
-                <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
-                <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
-                <button class="btn btn-outline-secondary">Отправить</button>
-              </form>
-            {% endif %}
-
+        <div class="ticket-tabs-shell" data-ticket-tabs data-initial-tab="{{ active_tab }}">
+          <div class="ticket-tabs" role="tablist" aria-label="Разделы заявки">
+            <button
+              type="button"
+              class="ticket-tab-btn {% if active_tab == 'overview' %}active{% endif %}"
+              data-ticket-tab="overview"
+              role="tab"
+              aria-selected="{% if active_tab == 'overview' %}true{% else %}false{% endif %}"
+              aria-controls="ticket-panel-overview"
+            >
+              <span class="ticket-tab-label">Обзор <span class="tab-count">{{ comments|length }}</span></span>
+              <span class="ticket-tab-copy">Основная информация и комментарии внизу.</span>
+            </button>
+            <button
+              type="button"
+              class="ticket-tab-btn {% if active_tab == 'files' %}active{% endif %}"
+              data-ticket-tab="files"
+              role="tab"
+              aria-selected="{% if active_tab == 'files' %}true{% else %}false{% endif %}"
+              aria-controls="ticket-panel-files"
+            >
+              <span class="ticket-tab-label">Файлы <span class="tab-count">{{ attachments|length }}</span></span>
+              <span class="ticket-tab-copy">Отдельная красивая галерея вложений и загрузка.</span>
+            </button>
+            <button
+              type="button"
+              class="ticket-tab-btn {% if active_tab == 'history' %}active{% endif %}"
+              data-ticket-tab="history"
+              role="tab"
+              aria-selected="{% if active_tab == 'history' %}true{% else %}false{% endif %}"
+              aria-controls="ticket-panel-history"
+            >
+              <span class="ticket-tab-label">Лог изменений <span class="tab-count">{{ ticket_logs|length }}</span></span>
+              <span class="ticket-tab-copy">История действий с поиском и фильтрами.</span>
+            </button>
           </div>
 
-          <div class="col-12 col-lg-5">
-            <h5>Ответственные</h5>
-            <div class="mb-3 section-card">
-              <div class="small text-muted mb-2">Создал</div>
-              <div class="mb-2"><b>{{ users_by_id.get(t.created_by, "—") }}</b></div>
-              <div class="small text-muted mb-2">Исполнитель</div>
-              <div class="mb-3"><b>{{ users_by_id.get(t.executor_id, "—") }}</b></div>
-              <div class="small text-muted mb-2">Наблюдатели</div>
-              {% if watcher_user_ids %}
-                <div class="d-flex flex-wrap gap-1 mb-3">
-                  {% for watcher_id in watcher_user_ids %}
-                    <span class="badge text-bg-light">{{ users_by_id.get(watcher_id, "#" ~ watcher_id) }}</span>
-                  {% endfor %}
+          <section
+            id="ticket-panel-overview"
+            class="ticket-panel {% if active_tab == 'overview' %}active{% endif %}"
+            data-ticket-panel="overview"
+            role="tabpanel"
+          >
+            <div class="row g-3">
+              <div class="col-12 col-lg-5">
+                <div class="section-card people-card">
+                  <div class="section-heading">
+                    <div>
+                      <h5 class="mb-0">Ответственные</h5>
+                      <p class="small muted">Кто создал заявку, кто ведет ее сейчас и кто следит за обновлениями.</p>
+                    </div>
+                  </div>
+
+                  <div class="people-item">
+                    <div class="people-label">Создал</div>
+                    <div><b>{{ users_by_id.get(t.created_by, "—") }}</b></div>
+                  </div>
+                  <div class="people-item">
+                    <div class="people-label">Исполнитель</div>
+                    <div><b>{{ users_by_id.get(t.executor_id, "—") }}</b></div>
+                  </div>
+                  <div class="people-item">
+                    <div class="people-label">Наблюдатели</div>
+                    {% if watcher_user_ids %}
+                      <div class="watcher-list">
+                        {% for watcher_id in watcher_user_ids %}
+                          <span class="badge text-bg-light">{{ users_by_id.get(watcher_id, "#" ~ watcher_id) }}</span>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <div class="small text-muted">Наблюдателей пока нет.</div>
+                    {% endif %}
+                  </div>
+
+                  {% if not is_current_user_watcher %}
+                    <form method="post" action="/web/tickets/{{ t.id }}/watchers/self" class="mt-3">
+                      <input type="hidden" name="next" value="{{ overview_url }}">
+                      <button class="btn btn-sm btn-outline-secondary">Добавить себя</button>
+                    </form>
+                  {% endif %}
                 </div>
+              </div>
+
+              <div class="col-12 col-lg-7">
+                <div class="section-card">
+                  <div class="section-heading">
+                    <div>
+                      <h5 class="mb-0">Сводка</h5>
+                      <p class="small muted">Быстрый обзор активности по заявке.</p>
+                    </div>
+                  </div>
+                  <div class="overview-stats">
+                    <div class="overview-stat">
+                      <span class="overview-stat-label">Комментарии</span>
+                      <strong>{{ comments|length }}</strong>
+                    </div>
+                    <div class="overview-stat">
+                      <span class="overview-stat-label">Файлы</span>
+                      <strong>{{ attachments|length }}</strong>
+                    </div>
+                    <div class="overview-stat">
+                      <span class="overview-stat-label">Записи в логе</span>
+                      <strong>{{ ticket_logs|length }}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-card comments-card">
+              <div class="section-heading">
+                <div>
+                  <h5 class="mb-0">Комментарии</h5>
+                  <p class="small muted">Переписка по заявке остается на главной вкладке и идет ниже информации.</p>
+                </div>
+                <span class="tab-count">{{ comments|length }}</span>
+              </div>
+
+              <div class="comments-list mb-3">
+                {% for c in comments %}
+                  {% set is_mine = c.author_id == user.id %}
+                  <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
+                    <div class="comment-bubble">
+                      <div class="small muted">
+                        <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
+                      </div>
+                      <div>{{ c.text }}</div>
+                    </div>
+                  </div>
+                {% endfor %}
+                {% if comments|length == 0 %}
+                  <div class="muted small">Пока нет комментариев.</div>
+                {% endif %}
+              </div>
+
+              {% if t.status.value == "ARCHIVED" %}
+                <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
               {% else %}
-                <div class="small text-muted mb-3">Наблюдателей пока нет.</div>
-              {% endif %}
-              {% if not is_current_user_watcher %}
-                <form method="post" action="/web/tickets/{{ t.id }}/watchers/self">
-                  <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
-                  <button class="btn btn-sm btn-outline-secondary">Добавить себя</button>
+                <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
+                  <input type="hidden" name="next" value="{{ overview_url }}">
+                  <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
+                  <button class="btn btn-outline-secondary">Отправить</button>
                 </form>
               {% endif %}
             </div>
+          </section>
 
-            <h5>Файлы</h5>
-
-                        <div class="mb-2 section-card">
-              {% for a in attachments %}
-                {% set p = a.file_path or "" %}
-                {% set file_url = "/attachments/" ~ a.id %}
-                {% set file_download_url = file_url ~ "?download=1" %}
-                {% set file_label = a.original_name or p %}
-                {% set lower = (a.original_name or p)|lower %}
-                {% set is_img = lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".gif") or lower.endswith(".webp") %}
-                {% set can_delete_file = (t.status.value != "ARCHIVED") and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and a.uploader_id == user.id)) %}
-
-                <div class="border rounded p-2 mb-2 bg-white">
-                  <div class="small mb-2">
-                    <a href="{{ file_url }}" target="_blank">{{ file_label }}</a>
-                    <span class="muted">· загрузил: {{ users_by_id.get(a.uploader_id, "—") }}</span>
-                  </div>
-
-                  {% if is_img %}
-                    <img
-                      src="{{ file_url }}"
-                      class="img-fluid rounded"
-                      style="max-height: 260px; cursor: zoom-in;"
-                      data-preview-src="{{ file_url }}"
-                      data-preview-alt="{{ file_label }}"
-                    />
-                  {% endif %}
-
-                  <div class="mt-2 d-flex gap-2 flex-wrap">
-                    {% if is_img %}
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline-primary"
-                        data-preview-src="{{ file_url }}"
-                        data-preview-alt="{{ file_label }}"
-                      >
-                        Превью
-                      </button>
-                    {% endif %}
-                    <a href="{{ file_download_url }}" class="btn btn-sm btn-outline-primary" download>Скачать</a>
-                    {% if can_delete_file %}
-                      <form method="post" action="/web/attachments/{{ a.id }}/delete" class="m-0" onsubmit="return confirm('Удалить файл {{ file_label }}?');">
-                        <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}" />
-                        <button class="btn btn-sm btn-outline-danger">Удалить</button>
-                      </form>
-                    {% endif %}
-                  </div>
+          <section
+            id="ticket-panel-files"
+            class="ticket-panel {% if active_tab == 'files' %}active{% endif %}"
+            data-ticket-panel="files"
+            role="tabpanel"
+          >
+            <div class="section-card">
+              <div class="attachment-toolbar">
+                <div>
+                  <h5 class="mb-1">Файлы</h5>
+                  <div class="small text-muted">Все вложения собраны на отдельной вкладке в виде карточек.</div>
                 </div>
-              {% endfor %}
+                <span class="tab-count">{{ attachments|length }}</span>
+              </div>
 
-              {% if attachments|length == 0 %}
-                <div class="muted small">Нет файлов</div>
+              {% if attachments|length %}
+                <div class="attachment-grid mb-3">
+                  {% for a in attachments %}
+                    {% set p = a.file_path or "" %}
+                    {% set file_url = "/attachments/" ~ a.id %}
+                    {% set file_download_url = file_url ~ "?download=1" %}
+                    {% set file_label = a.original_name or p %}
+                    {% set lower = (a.original_name or p)|lower %}
+                    {% set is_img = lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".gif") or lower.endswith(".webp") %}
+                    {% set can_delete_file = (t.status.value != "ARCHIVED") and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and a.uploader_id == user.id)) %}
+                    {% set ext = (file_label.rsplit(".", 1)[1] if "." in file_label else "FILE")|upper %}
+
+                    <article class="attachment-card">
+                      <div class="attachment-preview">
+                        {% if is_img %}
+                          <img
+                            src="{{ file_url }}"
+                            alt="{{ file_label }}"
+                            class="attachment-thumb"
+                            data-preview-src="{{ file_url }}"
+                            data-preview-alt="{{ file_label }}"
+                          />
+                        {% else %}
+                          <div class="attachment-placeholder">
+                            <span class="attachment-ext">{{ ext[:5] }}</span>
+                            <div class="small text-muted">Документ или вложение без встроенного превью</div>
+                          </div>
+                        {% endif %}
+                      </div>
+
+                      <div class="attachment-body">
+                        <div class="attachment-title">
+                          <a href="{{ file_url }}" target="_blank" rel="noreferrer">{{ file_label }}</a>
+                        </div>
+                        <div class="attachment-meta">
+                          <span>Загрузил {{ users_by_id.get(a.uploader_id, "—") }}</span>
+                          <span>{{ format_dt(a.created_at) }}</span>
+                          {% if a.file_size_bytes %}
+                            <span>{{ a.file_size_bytes }} Б</span>
+                          {% endif %}
+                        </div>
+
+                        <div class="attachment-actions">
+                          {% if is_img %}
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-outline-primary"
+                              data-preview-src="{{ file_url }}"
+                              data-preview-alt="{{ file_label }}"
+                            >
+                              Превью
+                            </button>
+                          {% endif %}
+                          <a href="{{ file_download_url }}" class="btn btn-sm btn-outline-primary" download>Скачать</a>
+                          {% if can_delete_file %}
+                            <form method="post" action="/web/attachments/{{ a.id }}/delete" onsubmit="return confirm('Удалить файл {{ file_label }}?');">
+                              <input type="hidden" name="next" value="{{ files_url }}" />
+                              <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                            </form>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="muted small mb-3">Пока нет файлов.</div>
+              {% endif %}
+
+              {% if t.status.value != "ARCHIVED" %}
+                <form method="post" action="/web/tickets/{{ t.id }}/attachments"
+                      enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
+                  <input type="hidden" name="next" value="{{ files_url }}">
+                  <input type="file" name="files" class="form-control" multiple required />
+                  <button class="btn btn-outline-secondary">Загрузить</button>
+                </form>
+              {% else %}
+                <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
               {% endif %}
             </div>
+          </section>
 
-
-        {% if t.status.value != "ARCHIVED" %}
-          <form method="post" action="/web/tickets/{{ t.id }}/attachments"
-                enctype="multipart/form-data" class="d-flex gap-2 flex-column flex-sm-row">
-            <input type="hidden" name="next" value="/web/tickets/{{ t.id }}?next={{ next_url_encoded }}">
-            <input type="file" name="files" class="form-control" multiple required />
-            <button class="btn btn-outline-secondary">Загрузить</button>
-          </form>
-        {% endif %}
-
-
-          </div>
-        </div>
-
-        <hr class="my-4"/>
-
-        <div>
-          <h5>Лог изменений</h5>
-          <div class="mb-0 section-card">
-            <div class="row g-2 mb-3">
-              <div class="col-12 col-md-4">
-                <label class="form-label mb-1" for="log-action-filter">Фильтр по действию</label>
-                <select id="log-action-filter" class="form-select form-select-sm">
-                  <option value="">Все действия</option>
-                  <option value="создание">Создание</option>
-                  <option value="изменение">зменение</option>
-                  <option value="изменение срока">зменение срока</option>
-                  <option value="изменение исполнителя">зменение исполнителя</option>
-                  <option value="изменение проекта">изменение узла</option>
-                  <option value="добавление файла">Добавление файла</option>
-                  <option value="архивирование">Архивирование</option>
-                  <option value="восстановление">Восстановление</option>
-                </select>
-              </div>
-              <div class="col-12 col-md-8">
-                <label class="form-label mb-1" for="log-search">Поиск по логу</label>
-                <input id="log-search" class="form-control form-control-sm" placeholder="Текст действия или имя пользователя" />
-              </div>
-            </div>
-
-            <div id="log-list">
-              {% for log in ticket_logs %}
-                <div class="border rounded p-2 mb-2 bg-white log-item" data-action="{{ fix_mojibake_text(log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ (fix_mojibake_text(log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
-                  <div class="small muted">
-                    <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
-                  </div>
-                  <div>{{ fix_mojibake_text(log.action) }}</div>
+          <section
+            id="ticket-panel-history"
+            class="ticket-panel {% if active_tab == 'history' %}active{% endif %}"
+            data-ticket-panel="history"
+            role="tabpanel"
+          >
+            <div class="section-card">
+              <div class="section-heading">
+                <div>
+                  <h5 class="mb-0">Лог изменений</h5>
+                  <p class="small muted">История действий по заявке с быстрым поиском и фильтрацией.</p>
                 </div>
-              {% endfor %}
+                <span class="tab-count">{{ ticket_logs|length }}</span>
+              </div>
+
+              <div class="row g-2 mb-3 log-toolbar">
+                <div class="col-12 col-md-4">
+                  <label class="form-label mb-1" for="log-action-filter">Фильтр по действию</label>
+                  <select id="log-action-filter" class="form-select form-select-sm">
+                    <option value="">Все действия</option>
+                    <option value="создание">Создание</option>
+                    <option value="изменение">Изменение</option>
+                    <option value="изменение срока">Изменение срока</option>
+                    <option value="изменение исполнителя">Изменение исполнителя</option>
+                    <option value="изменение проекта">Изменение узла</option>
+                    <option value="добавление файла">Добавление файла</option>
+                    <option value="архивирование">Архивирование</option>
+                    <option value="восстановление">Восстановление</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-8">
+                  <label class="form-label mb-1" for="log-search">Поиск по логу</label>
+                  <input id="log-search" class="form-control form-control-sm" placeholder="Текст действия или имя пользователя" />
+                </div>
+              </div>
+
+              <div id="log-list" class="log-timeline">
+                {% for log in ticket_logs %}
+                  <div class="log-item" data-action="{{ fix_mojibake_text(log.action or '')|lower }}" data-author="{{ (users_by_id.get(log.actor_id, '—') or '')|lower }}" data-text="{{ (fix_mojibake_text(log.action or '') ~ ' ' ~ (users_by_id.get(log.actor_id, '—') or ''))|lower }}">
+                    <div class="small muted">
+                      <b>{{ users_by_id.get(log.actor_id, "—") }}</b> · {{ format_dt(log.created_at) }}
+                    </div>
+                    <div>{{ fix_mojibake_text(log.action) }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+
+              <div id="log-empty-filter" class="muted small d-none mt-3">По выбранным параметрам записей нет.</div>
+              {% if ticket_logs|length == 0 %}
+                <div class="muted small mt-3">Изменений пока нет.</div>
+              {% endif %}
             </div>
-
-            <div id="log-empty-filter" class="muted small d-none">По выбранным параметрам записей нет</div>
-            {% if ticket_logs|length == 0 %}
-              <div class="muted small">зменений пока нет</div>
-            {% endif %}
-          </div>
+          </section>
         </div>
-
       </div>
     </div>
   </div>
@@ -658,7 +1073,45 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Фильтр и поиск по логу изменений
+  const tabRoot = document.querySelector("[data-ticket-tabs]");
+  const tabButtons = Array.from(document.querySelectorAll("[data-ticket-tab]"));
+  const tabPanels = Array.from(document.querySelectorAll("[data-ticket-panel]"));
+
+  function activateTab(tabName, updateUrl = true) {
+    if (!tabButtons.length || !tabPanels.length) return;
+    const tabExists = tabButtons.some(button => button.dataset.ticketTab === tabName);
+    const targetTab = tabExists ? tabName : "overview";
+
+    tabButtons.forEach(button => {
+      const isActive = button.dataset.ticketTab === targetTab;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    tabPanels.forEach(panel => {
+      panel.classList.toggle("active", panel.dataset.ticketPanel === targetTab);
+    });
+
+    if (updateUrl) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", targetTab);
+      window.history.replaceState({}, "", url);
+    }
+  }
+
+  if (tabRoot) {
+    const initialTab = tabRoot.dataset.initialTab || "overview";
+    tabButtons.forEach(button => {
+      button.addEventListener("click", () => activateTab(button.dataset.ticketTab));
+    });
+    activateTab(initialTab, false);
+
+    window.addEventListener("popstate", () => {
+      const url = new URL(window.location.href);
+      activateTab(url.searchParams.get("tab") || "overview", false);
+    });
+  }
+
   const logActionFilter = document.getElementById("log-action-filter");
   const logSearch = document.getElementById("log-search");
   const logItems = Array.from(document.querySelectorAll("#log-list .log-item"));
@@ -772,7 +1225,3 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
-
-
-
