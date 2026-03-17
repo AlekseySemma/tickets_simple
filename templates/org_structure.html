@@ -375,10 +375,12 @@
             <label class="form-label mb-1">Узел или поддерево</label>
             <input
               class="form-control org-select-search"
+              name="assignment_unit_q"
               type="text"
               placeholder="Поиск узла в фильтре..."
               data-select-filter-for="assignment-unit-filter-select"
               data-select-filter-count="assignment-unit-filter-count"
+              value="{{ assignment_unit_q_filter }}"
             />
             <div class="form-text pt-1" id="assignment-unit-filter-count"></div>
             <select class="form-select" id="assignment-unit-filter-select" name="assignment_unit_id">
@@ -392,10 +394,12 @@
             <label class="form-label mb-1">Исполнитель</label>
             <input
               class="form-control org-select-search"
+              name="assignment_executor_q"
               type="text"
               placeholder="Поиск исполнителя в фильтре..."
               data-select-filter-for="assignment-executor-filter-select"
               data-select-filter-count="assignment-executor-filter-count"
+              value="{{ assignment_executor_q_filter }}"
             />
             <div class="form-text pt-1" id="assignment-executor-filter-count"></div>
             <select class="form-select" id="assignment-executor-filter-select" name="assignment_executor_id">
@@ -479,6 +483,8 @@
               <input type="hidden" name="assignment_unit_id" value="{{ assignment_unit_id_filter }}" />
               <input type="hidden" name="assignment_executor_id" value="{{ assignment_executor_id_filter }}" />
               <input type="hidden" name="assignment_department_id" value="{{ assignment_department_id_filter }}" />
+              <input type="hidden" name="assignment_unit_q" value="{{ assignment_unit_q_filter }}" />
+              <input type="hidden" name="assignment_executor_q" value="{{ assignment_executor_q_filter }}" />
               {% if assignment_primary_filter %}
                 <input type="hidden" name="assignment_primary" value="1" />
               {% endif %}

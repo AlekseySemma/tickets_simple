@@ -5722,6 +5722,8 @@ def web_org_structure(
     assignment_unit_id: str | None = None,
     assignment_executor_id: str | None = None,
     assignment_department_id: str | None = None,
+    assignment_unit_q: str | None = None,
+    assignment_executor_q: str | None = None,
     assignment_primary: str | None = None,
     assignment_page: int = 1,
 ):
@@ -5812,6 +5814,8 @@ def web_org_structure(
     assignment_unit_id_int = int(assignment_unit_id) if (assignment_unit_id or "").strip().isdigit() else None
     assignment_executor_id_int = int(assignment_executor_id) if (assignment_executor_id or "").strip().isdigit() else None
     assignment_department_filter = (assignment_department_id or "").strip()
+    assignment_unit_query = " ".join((assignment_unit_q or "").split()).strip().lower()
+    assignment_executor_query = " ".join((assignment_executor_q or "").split()).strip().lower()
     assignment_department_id_int = int(assignment_department_filter) if assignment_department_filter.isdigit() else None
     assignment_without_department = assignment_department_filter == "__none__"
     assignment_only_primary = (assignment_primary or "").strip() in {"1", "true", "on", "yes"}
@@ -5848,8 +5852,26 @@ def web_org_structure(
     assignments_total_all = assignment_query.count()
     if filtered_unit_ids is not None:
         assignment_query = assignment_query.filter(UnitAssignment.unit_id.in_(sorted(filtered_unit_ids)))
+    if assignment_unit_query:
+        matched_unit_ids = [
+            int(unit["id"])
+            for unit in ordered_units
+            if assignment_unit_query in str(unit["name"] or "").strip().lower()
+            or assignment_unit_query in unit_labels_by_id.get(int(unit["id"]), "").lower()
+        ]
+        if matched_unit_ids:
+            assignment_query = assignment_query.filter(UnitAssignment.unit_id.in_(matched_unit_ids))
+        else:
+            assignment_query = assignment_query.filter(UnitAssignment.id == -1)
     if assignment_executor_id_int is not None:
         assignment_query = assignment_query.filter(UnitAssignment.user_id == assignment_executor_id_int)
+    if assignment_executor_query:
+        assignment_query = assignment_query.filter(
+            or_(
+                func.lower(User.name).like(f"%{assignment_executor_query}%"),
+                func.lower(User.email).like(f"%{assignment_executor_query}%"),
+            )
+        )
     if assignment_without_department:
         assignment_query = assignment_query.filter(UnitAssignment.department_id.is_(None))
     elif assignment_department_id_int is not None:
@@ -5861,6 +5883,8 @@ def web_org_structure(
         assignment_unit_id_int is not None
         or assignment_executor_id_int is not None
         or assignment_department_filter
+        or bool(assignment_unit_query)
+        or bool(assignment_executor_query)
         or assignment_only_primary
     )
     assignments_total = assignment_query.count()
@@ -5948,6 +5972,8 @@ def web_org_structure(
             "assignment_unit_id_filter": assignment_unit_id_int if assignment_unit_id_int is not None else "",
             "assignment_executor_id_filter": assignment_executor_id_int if assignment_executor_id_int is not None else "",
             "assignment_department_id_filter": assignment_department_filter,
+            "assignment_unit_q_filter": assignment_unit_query,
+            "assignment_executor_q_filter": assignment_executor_query,
             "assignment_primary_filter": assignment_only_primary,
             "assignment_filters_active": assignment_filters_active,
             "assignments_total_all": assignments_total_all,
