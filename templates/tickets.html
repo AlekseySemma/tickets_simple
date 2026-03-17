@@ -308,9 +308,12 @@
     .tickets-table-wrap {
       border: 1px solid #d9e8df;
       border-radius: 12px;
-      overflow: hidden;
+      overflow: visible;
       background: #fff;
       box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .05);
+    }
+    .tickets-table-wrap .table-responsive {
+      overflow: visible;
     }
     .tickets-table thead th {
       background: #edf6f2;
@@ -424,6 +427,13 @@
       .tickets-shell {
         padding-left: 10px;
         padding-right: 10px;
+      }
+      .tickets-table-wrap {
+        overflow: hidden;
+      }
+      .tickets-table-wrap .table-responsive {
+        overflow-x: auto;
+        overflow-y: visible;
       }
       .view-switch {
         width: 100%;
