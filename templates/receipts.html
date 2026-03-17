@@ -13,6 +13,63 @@
     .receipt-thumb { width: 100%; max-height: 240px; object-fit: cover; border-radius: 10px; border: 1px solid #deede7; cursor: zoom-in; }
     .meta-chip { display: inline-flex; border-radius: 999px; border: 1px solid #d3e4dc; padding: 4px 10px; margin: 2px; font-size: 12px; background: #f8fcfa; }
     .status-badge { border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+    .receipt-combobox { position: relative; }
+    .receipt-combobox-input { padding-right: 34px; }
+    .receipt-combobox-clear {
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #6c757d;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0;
+    }
+    .receipt-combobox-clear:hover,
+    .receipt-combobox-clear:focus {
+      background: #edf6f2;
+      color: #1f5558;
+      outline: none;
+    }
+    .receipt-combobox-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 35;
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid #c9ddd4;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .08);
+      padding: 4px;
+    }
+    .receipt-combobox-option {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      text-align: left;
+      background: transparent;
+      color: #2d5f62;
+      padding: 8px 10px;
+    }
+    .receipt-combobox-option:hover,
+    .receipt-combobox-option:focus {
+      background: #edf6f2;
+      color: #1f5558;
+      outline: none;
+    }
+    .receipt-combobox-empty {
+      padding: 8px 10px;
+      color: #5c6f72;
+      font-size: 12px;
+    }
     .st-NEW { background: #eef2f3; color: #42585e; border: 1px solid #ced7da; }
     .st-IN_PROCESSING { background: #fff6dc; color: #6f5200; border: 1px solid #f3d98f; }
     .st-ACCEPTED { background: #e3f6ef; color: #195a50; border: 1px solid #b6e0d0; }
@@ -66,12 +123,6 @@
         <a class="btn {% if mode == 'accounting' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/web/receipts?mode=accounting">Бухгалтерский режим</a>
       </div>
     {% endif %}
-    <datalist id="receipt-project-options">
-      {% for p in projects %}
-        <option value="{{ p.name }} (#{{ p.id }})"></option>
-      {% endfor %}
-    </datalist>
-
     <div class="card shadow-sm mb-3">
       <div class="card-body">
         <details {% if mode == "field" %}open{% endif %}>
@@ -86,7 +137,7 @@
             <div class="small text-muted mt-1">По умолчанию — короткая форма: карта, объект, комментарий и файл.</div>
           </div>
           <form method="post" action="/web/receipts/create" enctype="multipart/form-data" class="row g-2">
-          <div class="col-12 col-md-4" data-project-combo>
+          <div class="col-12 col-md-4">
             <label class="form-label">Объект</label>
             <input type="text" class="form-control project-combo-input" list="receipt-project-options" placeholder="Выберите или введите объект" autocomplete="off" />
             <input type="hidden" name="project_id" class="project-id-hidden" required />
@@ -421,20 +472,288 @@
         syncFormVariant();
       }
 
+      const receiptProjectOptions = [
+        {% for p in projects %}
+          { value: "{{ p.id }}", label: {{ (p.name ~ ' (#' ~ p.id ~ ')') | tojson }} },
+        {% endfor %}
+      ];
+
+      function normalizeText(value) {
+        return (value || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+      }
+
+      function isSameLabel(a, b) {
+        return normalizeText(a) === normalizeText(b);
+      }
+
+      function attachComboboxBehavior(config) {
+        const wrap = config.wrap;
+        const textInput = config.textInput;
+        const clearBtn = config.clearBtn;
+        const dropdown = config.dropdown;
+        const emptyHint = config.emptyHint;
+        const options = config.options;
+        const onSelect = config.onSelect;
+        const onClear = config.onClear;
+        const getCurrentValue = config.getCurrentValue;
+        const setInvalid = config.setInvalid;
+        const required = Boolean(config.required);
+        let selectedLabel = config.initialLabel || '';
+
+        function syncValidation() {
+          const hasText = Boolean((textInput.value || '').trim());
+          clearBtn.classList.toggle('d-none', !hasText);
+          if (required && !getCurrentValue()) {
+            setInvalid('Выберите значение из выпадающего списка');
+            return;
+          }
+          setInvalid('');
+        }
+
+        function filterOptions(queryText) {
+          const query = normalizeText(queryText);
+          let visibleCount = 0;
+          options.forEach((btn) => {
+            const label = btn.dataset.optionLabel || btn.textContent || '';
+            const visible = !query || normalizeText(label).includes(query);
+            btn.classList.toggle('d-none', !visible);
+            if (visible) visibleCount += 1;
+          });
+          emptyHint.classList.toggle('d-none', visibleCount > 0);
+        }
+
+        function openDropdown() {
+          dropdown.classList.remove('d-none');
+          filterOptions(textInput.value);
+        }
+
+        function closeDropdown() {
+          dropdown.classList.add('d-none');
+        }
+
+        function selectOption(btn) {
+          const value = btn.dataset.optionValue || '';
+          const label = (btn.dataset.optionLabel || btn.textContent || '').trim();
+          onSelect(value, label);
+          selectedLabel = label;
+          textInput.value = label;
+          syncValidation();
+          closeDropdown();
+        }
+
+        function trySelectExactMatch() {
+          const typed = normalizeText(textInput.value);
+          if (!typed) return false;
+          const exact = options.find((btn) => normalizeText(btn.dataset.optionLabel || btn.textContent || '') === typed);
+          if (!exact) return false;
+          selectOption(exact);
+          return true;
+        }
+
+        textInput.addEventListener('focus', openDropdown);
+        textInput.addEventListener('click', openDropdown);
+        textInput.addEventListener('input', () => {
+          if (!isSameLabel(textInput.value, selectedLabel)) {
+            onClear();
+          }
+          syncValidation();
+          openDropdown();
+        });
+        textInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            closeDropdown();
+            return;
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            openDropdown();
+            const firstVisible = options.find((btn) => !btn.classList.contains('d-none'));
+            if (firstVisible) firstVisible.focus();
+          }
+        });
+
+        options.forEach((btn) => {
+          btn.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            selectOption(btn);
+          });
+          btn.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              selectOption(btn);
+            }
+          });
+        });
+
+        clearBtn.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+        });
+        clearBtn.addEventListener('click', () => {
+          textInput.value = '';
+          selectedLabel = '';
+          onClear();
+          syncValidation();
+          openDropdown();
+          textInput.focus();
+        });
+
+        document.addEventListener('click', (event) => {
+          if (!wrap.contains(event.target)) {
+            closeDropdown();
+          }
+        });
+
+        const form = textInput.closest('form');
+        if (form) {
+          form.addEventListener('submit', () => {
+            if (!isSameLabel(textInput.value, selectedLabel)) {
+              if (!trySelectExactMatch()) {
+                onClear();
+              }
+            }
+            syncValidation();
+          }, true);
+        }
+
+        syncValidation();
+        filterOptions(textInput.value);
+      }
+
+      function buildDropdownOptions(dropdown, items) {
+        const optionButtons = items.map((item) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'receipt-combobox-option';
+          button.dataset.optionValue = String(item.value || '');
+          button.dataset.optionLabel = item.label || '';
+          button.textContent = item.label || '';
+          dropdown.appendChild(button);
+          return button;
+        });
+
+        const emptyHint = document.createElement('div');
+        emptyHint.className = 'receipt-combobox-empty d-none';
+        emptyHint.textContent = 'Ничего не найдено';
+        dropdown.appendChild(emptyHint);
+        return { optionButtons, emptyHint };
+      }
+
       document.querySelectorAll('[data-project-combo]').forEach((block) => {
         const input = block.querySelector('.project-combo-input');
         const hidden = block.querySelector('.project-id-hidden');
         if (!input || !hidden) return;
-        const syncProjectId = () => {
-          const value = (input.value || '').trim();
-          const match = value.match(/\(#(\d+)\)\s*$/);
-          hidden.value = match ? match[1] : '';
-        };
-        input.addEventListener('input', syncProjectId);
-        input.addEventListener('change', syncProjectId);
-        input.addEventListener('blur', syncProjectId);
-        syncProjectId();
+
+        const comboWrap = document.createElement('div');
+        comboWrap.className = 'receipt-combobox';
+        input.parentNode.insertBefore(comboWrap, input);
+        comboWrap.appendChild(input);
+        comboWrap.appendChild(hidden);
+        input.classList.add('receipt-combobox-input');
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'receipt-combobox-clear d-none';
+        clearBtn.setAttribute('aria-label', 'Очистить объект');
+        clearBtn.innerHTML = '&times;';
+        comboWrap.appendChild(clearBtn);
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'receipt-combobox-dropdown d-none';
+        comboWrap.appendChild(dropdown);
+
+        const { optionButtons, emptyHint } = buildDropdownOptions(dropdown, receiptProjectOptions);
+        const initialLabel = (input.value || '').trim();
+
+        attachComboboxBehavior({
+          wrap: comboWrap,
+          textInput: input,
+          clearBtn,
+          dropdown,
+          emptyHint,
+          options: optionButtons,
+          required: hidden.required,
+          initialLabel,
+          onSelect: (value, label) => {
+            hidden.value = value;
+            input.value = label;
+          },
+          onClear: () => {
+            hidden.value = '';
+          },
+          getCurrentValue: () => hidden.value,
+          setInvalid: (message) => {
+            input.setCustomValidity(message);
+          },
+        });
       });
+
+      function enhanceSelectCombobox(select) {
+        if (!select || select.dataset.comboboxEnhanced === '1') return;
+        select.dataset.comboboxEnhanced = '1';
+
+        const items = Array.from(select.options)
+          .filter((option) => option.value)
+          .map((option) => ({
+            value: option.value,
+            label: option.textContent || '',
+          }));
+        const placeholderOption = Array.from(select.options).find((option) => !option.value);
+        const placeholder = placeholderOption ? (placeholderOption.textContent || '').trim() : '';
+        const selectedOption = select.selectedOptions && select.selectedOptions[0] ? select.selectedOptions[0] : null;
+
+        const comboWrap = document.createElement('div');
+        comboWrap.className = 'receipt-combobox';
+        const textInput = document.createElement('input');
+        textInput.type = 'text';
+        textInput.className = 'form-control receipt-combobox-input';
+        textInput.placeholder = placeholder;
+        textInput.autocomplete = 'off';
+        textInput.value = selectedOption && selectedOption.value ? (selectedOption.textContent || '').trim() : '';
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = textInput.value ? 'receipt-combobox-clear' : 'receipt-combobox-clear d-none';
+        clearBtn.setAttribute('aria-label', 'Очистить выбор');
+        clearBtn.innerHTML = '&times;';
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'receipt-combobox-dropdown d-none';
+        const { optionButtons, emptyHint } = buildDropdownOptions(dropdown, items);
+
+        select.classList.add('d-none');
+        select.parentNode.insertBefore(comboWrap, select);
+        comboWrap.appendChild(textInput);
+        comboWrap.appendChild(clearBtn);
+        comboWrap.appendChild(dropdown);
+
+        attachComboboxBehavior({
+          wrap: comboWrap,
+          textInput,
+          clearBtn,
+          dropdown,
+          emptyHint,
+          options: optionButtons,
+          required: select.required,
+          initialLabel: textInput.value,
+          onSelect: (value, label) => {
+            select.value = value;
+            textInput.value = label;
+          },
+          onClear: () => {
+            select.value = '';
+          },
+          getCurrentValue: () => select.value,
+          setInvalid: (message) => {
+            textInput.setCustomValidity(message);
+          },
+        });
+      }
+
+      document.querySelectorAll('form[action="/web/receipts/create"] select[name="card_id"]').forEach(enhanceSelectCombobox);
+      document.querySelectorAll('form[action="/web/receipts"] select[name="project_id"]').forEach(enhanceSelectCombobox);
+      document.querySelectorAll('form[action="/web/receipts"] select[name="card_id"]').forEach(enhanceSelectCombobox);
+      document.querySelectorAll('form[action="/web/receipts"] select[name="employee_id"]').forEach(enhanceSelectCombobox);
+      document.querySelectorAll('form[action$="/edit"] select[name="card_id"]').forEach(enhanceSelectCombobox);
 
       const modalEl = document.getElementById('receiptPreviewModal');
       const previewImg = document.getElementById('receiptPreviewImage');
@@ -495,5 +814,3 @@
   </script>
 </body>
 </html>
-
-
