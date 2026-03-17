@@ -74,6 +74,8 @@ PUBLIC_WEB_PATHS = {
     "/web/logout",
     "/web/verify-email",
     "/web/verify-email/resend",
+    "/web/password-reset",
+    "/web/password-reset/confirm",
 }
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 if DB_URL.startswith("postgres://"):
@@ -135,6 +137,8 @@ RL_REGISTER_LIMIT = int(os.getenv("RL_REGISTER_LIMIT", "8"))
 RL_REGISTER_WINDOW_SEC = int(os.getenv("RL_REGISTER_WINDOW_SEC", "3600"))
 RL_EMAIL_VERIFICATION_LIMIT = int(os.getenv("RL_EMAIL_VERIFICATION_LIMIT", "6"))
 RL_EMAIL_VERIFICATION_WINDOW_SEC = int(os.getenv("RL_EMAIL_VERIFICATION_WINDOW_SEC", "3600"))
+RL_PASSWORD_RESET_LIMIT = int(os.getenv("RL_PASSWORD_RESET_LIMIT", "6"))
+RL_PASSWORD_RESET_WINDOW_SEC = int(os.getenv("RL_PASSWORD_RESET_WINDOW_SEC", "3600"))
 RL_PUSH_TEST_LIMIT = int(os.getenv("RL_PUSH_TEST_LIMIT", "10"))
 RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
 SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip()
@@ -147,6 +151,7 @@ SMTP_USE_TLS = (os.getenv("SMTP_USE_TLS", "1").strip().lower() in {"1", "true", 
 SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL", "0").strip().lower() in {"1", "true", "yes", "on"})
 SMTP_TIMEOUT_SEC = max(5, int(os.getenv("SMTP_TIMEOUT_SEC", "20")))
 EMAIL_VERIFICATION_EXPIRE_HOURS = max(1, int(os.getenv("EMAIL_VERIFICATION_EXPIRE_HOURS", "24")))
+PASSWORD_RESET_EXPIRE_HOURS = max(1, int(os.getenv("PASSWORD_RESET_EXPIRE_HOURS", "2")))
 ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
@@ -307,6 +312,9 @@ class User(Base):
     email_verification_token: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, default=None)
     email_verification_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     email_verification_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    password_reset_token: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, default=None)
+    password_reset_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    password_reset_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
     preferred_payment_card_id: Mapped[Optional[int]] = mapped_column(ForeignKey("payment_cards.id"), index=True, default=None)
@@ -705,6 +713,9 @@ def ensure_migrations_ready() -> None:
                 "email_verification_token",
                 "email_verification_expires_at",
                 "email_verification_sent_at",
+                "password_reset_token",
+                "password_reset_expires_at",
+                "password_reset_sent_at",
                 "show_receipts_accounting_mode",
                 "notify_receipt_created",
                 "can_view_all_tickets",
@@ -3088,6 +3099,23 @@ def prepare_user_email_verification(user: User, *, force_new_token: bool = False
     return token_value
 
 
+def clear_password_reset_state(user: User) -> None:
+    user.password_reset_token = None
+    user.password_reset_expires_at = None
+    user.password_reset_sent_at = None
+
+
+def prepare_user_password_reset(user: User, *, force_new_token: bool = False) -> str:
+    now = datetime.utcnow()
+    token_value = (user.password_reset_token or "").strip()
+    token_expired = bool(user.password_reset_expires_at and user.password_reset_expires_at <= now)
+    if force_new_token or not token_value or token_expired:
+        token_value = secrets.token_urlsafe(32)
+        user.password_reset_token = token_value
+        user.password_reset_expires_at = now + timedelta(hours=PASSWORD_RESET_EXPIRE_HOURS)
+    return token_value
+
+
 def format_email_sender() -> str:
     sender_email = SMTP_FROM_EMAIL or SMTP_USERNAME or "no-reply@localhost"
     if SMTP_FROM_NAME:
@@ -3136,6 +3164,10 @@ def build_email_verification_url(request: Request, token: str) -> str:
     return f"{str(request.base_url).rstrip('/')}/web/verify-email?token={quote(token)}"
 
 
+def build_password_reset_url(request: Request, token: str) -> str:
+    return f"{str(request.base_url).rstrip('/')}/web/password-reset/confirm?token={quote(token)}"
+
+
 def send_user_verification_email(
     request: Request,
     db: Session,
@@ -3168,6 +3200,38 @@ def send_user_verification_email(
     db.commit()
     db.refresh(user)
     return verification_url
+
+
+def send_user_password_reset_email(
+    request: Request,
+    db: Session,
+    user: User,
+    *,
+    force_new_token: bool = False,
+) -> str:
+    token_value = prepare_user_password_reset(user, force_new_token=force_new_token)
+    reset_url = build_password_reset_url(request, token_value)
+    ttl_hours_text = str(PASSWORD_RESET_EXPIRE_HOURS)
+    subject = "Сброс пароля в servora"
+    text_body = (
+        f"Здравствуйте, {user.name}!\n\n"
+        "Чтобы задать новый пароль для аккаунта servora, перейдите по ссылке:\n"
+        f"{reset_url}\n\n"
+        f"Ссылка действует {ttl_hours_text} ч."
+    )
+    html_body = (
+        f"<p>Здравствуйте, {user.name}!</p>"
+        "<p>Чтобы задать новый пароль для аккаунта servora, перейдите по ссылке:</p>"
+        f'<p><a href="{reset_url}">{reset_url}</a></p>'
+        f"<p>Ссылка действует {ttl_hours_text} ч.</p>"
+    )
+    sent = send_email_message(user.email, subject, text_body, html_body=html_body)
+    if not sent:
+        logger.warning("Password reset link for %s: %s", user.email, reset_url)
+    user.password_reset_sent_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return reset_url
 
 
 def get_auth_cookie_params(request: Request) -> dict[str, object]:
@@ -3460,7 +3524,14 @@ def root(request: Request):
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
-        if request.url.path in {"/web/login", "/web/register", "/web/register-company", "/web/verify-email/resend"}:
+        if request.url.path in {
+            "/web/login",
+            "/web/register",
+            "/web/register-company",
+            "/web/verify-email/resend",
+            "/web/password-reset",
+            "/web/password-reset/confirm",
+        }:
             return await call_next(request)
         expected_origin = request_origin(request)
         if not expected_origin:
@@ -5001,6 +5072,124 @@ async def web_resend_verification_submit(request: Request, db: Session = Depends
             "success": True,
             "message": "Если аккаунт существует и ещё не подтверждён, мы отправили новое письмо.",
         },
+    )
+
+
+@app.get("/web/password-reset")
+def web_password_reset_page(request: Request):
+    return templates.TemplateResponse(
+        "password_reset_request.html",
+        {"request": request, "success": False, "message": None},
+    )
+
+
+@app.post("/web/password-reset")
+async def web_password_reset_submit(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    email = (form.get("email") or "").strip()
+    ip = get_client_ip(request)
+    limited_ip, _ = hit_rate_limit(
+        f"password-reset-ip:{ip}",
+        RL_PASSWORD_RESET_LIMIT * 2,
+        RL_PASSWORD_RESET_WINDOW_SEC,
+    )
+    limited_email, _ = hit_rate_limit(
+        f"password-reset-email:{(email or '').lower()}",
+        RL_PASSWORD_RESET_LIMIT,
+        RL_PASSWORD_RESET_WINDOW_SEC,
+    )
+    if not limited_ip and not limited_email and email:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            try:
+                send_user_password_reset_email(request, db, user, force_new_token=True)
+                audit_security_event("password_reset_request", request, success=True, email=email, user_id=user.id)
+            except EmailDeliveryError:
+                logger.exception("Could not send password reset email to %s", user.email)
+        else:
+            audit_security_event("password_reset_request", request, success=True, email=email, detail="ignored")
+    else:
+        audit_security_event("password_reset_request", request, success=False, email=email, detail="rate_limited")
+    return templates.TemplateResponse(
+        "password_reset_request.html",
+        {
+            "request": request,
+            "success": True,
+            "message": "Если аккаунт существует, мы отправили письмо со ссылкой для сброса пароля.",
+        },
+    )
+
+
+@app.get("/web/password-reset/confirm")
+def web_password_reset_confirm_page(request: Request, token: str | None = None, db: Session = Depends(get_db)):
+    token_value = (token or "").strip()
+    user = None
+    if token_value:
+        user = db.query(User).filter(User.password_reset_token == token_value).first()
+    if not user:
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
+            status_code=400,
+        )
+    if user.password_reset_expires_at and user.password_reset_expires_at <= datetime.utcnow():
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "password_reset_confirm.html",
+        {"request": request, "token": token_value, "success": False, "error": None},
+    )
+
+
+@app.post("/web/password-reset/confirm")
+async def web_password_reset_confirm_submit(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    token_value = (form.get("token") or "").strip()
+    password = (form.get("password") or "").strip()
+    password_confirm = (form.get("password_confirm") or "").strip()
+    user = None
+    if token_value:
+        user = db.query(User).filter(User.password_reset_token == token_value).first()
+    if not user:
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
+            status_code=400,
+        )
+    if user.password_reset_expires_at and user.password_reset_expires_at <= datetime.utcnow():
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
+            status_code=400,
+        )
+    if not password:
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": token_value, "success": False, "error": "Введите новый пароль."},
+            status_code=400,
+        )
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": token_value, "success": False, "error": "Пароль должен быть не короче 8 символов."},
+            status_code=400,
+        )
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": token_value, "success": False, "error": "Пароли не совпадают."},
+            status_code=400,
+        )
+    user.password_hash = hash_password(password)
+    clear_password_reset_state(user)
+    db.commit()
+    audit_security_event("password_reset_confirm", request, success=True, email=user.email, user_id=user.id)
+    return templates.TemplateResponse(
+        "password_reset_confirm.html",
+        {"request": request, "token": "", "success": True, "error": None},
     )
 
 @app.get("/web/logout")

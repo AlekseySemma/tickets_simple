@@ -65,6 +65,23 @@ class EmailVerificationTests(unittest.TestCase):
             db.commit()
             return invite.token
 
+    def seed_verified_user(self, email: str = "user@example.com", password: str = "secret123") -> int:
+        with main.SessionLocal() as db:
+            company = main.Company(name=f"Company-{email}")
+            db.add(company)
+            db.flush()
+            user = main.User(
+                email=email,
+                name="User",
+                password_hash=main.hash_password(password),
+                role=main.Role.admin,
+                company_id=company.id,
+                email_verified=True,
+            )
+            db.add(user)
+            db.commit()
+            return user.id
+
     def test_invite_registration_blocks_login_until_email_verified(self):
         invite_token = self.seed_invite()
 
@@ -176,6 +193,61 @@ class EmailVerificationTests(unittest.TestCase):
             self.assertFalse(user.email_verified)
             self.assertEqual(user.role, main.Role.admin)
             self.assertIsNotNone(user.email_verification_token)
+
+    def test_password_reset_request_creates_token(self):
+        self.seed_verified_user(email="reset1@example.com")
+
+        response = self.client.post(
+            "/web/password-reset",
+            data={"email": "reset1@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with main.SessionLocal() as db:
+            user = db.query(main.User).filter(main.User.email == "reset1@example.com").first()
+            self.assertIsNotNone(user)
+            self.assertIsNotNone(user.password_reset_token)
+            self.assertIsNotNone(user.password_reset_expires_at)
+            self.assertIsNotNone(user.password_reset_sent_at)
+
+    def test_password_reset_changes_password_and_allows_login(self):
+        self.seed_verified_user(email="reset2@example.com", password="oldpassword")
+
+        self.client.post(
+            "/web/password-reset",
+            data={"email": "reset2@example.com"},
+        )
+
+        with main.SessionLocal() as db:
+            user = db.query(main.User).filter(main.User.email == "reset2@example.com").first()
+            self.assertIsNotNone(user)
+            token = user.password_reset_token
+            self.assertTrue(main.verify_password("oldpassword", user.password_hash))
+
+        confirm_response = self.client.post(
+            "/web/password-reset/confirm",
+            data={
+                "token": token,
+                "password": "newpassword",
+                "password_confirm": "newpassword",
+            },
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+
+        with main.SessionLocal() as db:
+            user = db.query(main.User).filter(main.User.email == "reset2@example.com").first()
+            self.assertIsNotNone(user)
+            self.assertTrue(main.verify_password("newpassword", user.password_hash))
+            self.assertFalse(main.verify_password("oldpassword", user.password_hash))
+            self.assertIsNone(user.password_reset_token)
+            self.assertIsNone(user.password_reset_expires_at)
+            self.assertIsNone(user.password_reset_sent_at)
+
+        api_login = self.client.post(
+            "/auth/login",
+            data={"username": "reset2@example.com", "password": "newpassword"},
+        )
+        self.assertEqual(api_login.status_code, 200)
 
 
 if __name__ == "__main__":
