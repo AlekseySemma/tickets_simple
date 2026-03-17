@@ -46,7 +46,15 @@ def upgrade() -> None:
     if "ix_users_email_verification_token" not in indexes:
         op.create_index("ix_users_email_verification_token", "users", ["email_verification_token"], unique=True)
 
-    bind.execute(sa.text("UPDATE users SET email_verified = 1 WHERE COALESCE(email_verified, 0) = 0"))
+    bind.execute(
+        sa.text(
+            """
+            UPDATE users
+            SET email_verified = true
+            WHERE email_verified = false OR email_verified IS NULL
+            """
+        )
+    )
     bind.execute(
         sa.text(
             """
