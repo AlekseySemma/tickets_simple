@@ -204,7 +204,7 @@
       padding: 0.45rem 0.6rem;
     }
     .badge-status:hover { filter: brightness(0.95); }
-    .badge-status:active { transform: translateY(1px); }
+    .badge-status:active { transform: none; }
     .st-NEW { background: #5c6f72 !important; }          /* серый */
     .st-IN_PROGRESS { background: #1f9d8f !important; }  /* бирюзовый */
     .st-DONE { background: #2f9a76 !important; }         /* зелёный */
@@ -229,7 +229,7 @@
       transform: translateY(0);
       pointer-events: auto;
     }
-    .dash-card { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+    .dash-card { cursor: pointer; transition: box-shadow .12s ease; }
     .dash-body { padding: 0.42rem 0.62rem !important; }
     .dash-line {
       display: flex;
@@ -250,8 +250,8 @@
       font-weight: 700;
       color: #1f5558;
     }
-  .dash-card:hover { transform: translateY(-1px); }
-  .dash-card:active { transform: translateY(0); }
+  .dash-card:hover { transform: none; }
+  .dash-card:active { transform: none; }
   /* Цветные рамки + лёгкий фон (взято по смыслу из цветов бейджей) */
   .dash-NEW { border-left: 6px solid #5c6f72; }
   .dash-IN_PROGRESS { border-left: 6px solid #1f9d8f; }
