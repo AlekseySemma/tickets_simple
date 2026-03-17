@@ -13,7 +13,8 @@
     .receipt-thumb { width: 100%; max-height: 240px; object-fit: cover; border-radius: 10px; border: 1px solid #deede7; cursor: zoom-in; }
     .meta-chip { display: inline-flex; border-radius: 999px; border: 1px solid #d3e4dc; padding: 4px 10px; margin: 2px; font-size: 12px; background: #f8fcfa; }
     .status-badge { border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
-    .receipt-combobox { position: relative; }
+    .receipt-combobox { position: relative; z-index: 20; }
+    .receipt-combobox:focus-within { z-index: 1600; }
     .receipt-combobox-input { padding-right: 34px; }
     .receipt-combobox-clear {
       position: absolute;
@@ -41,7 +42,7 @@
       top: calc(100% + 4px);
       left: 0;
       right: 0;
-      z-index: 35;
+      z-index: 1650;
       max-height: 260px;
       overflow-y: auto;
       border: 1px solid #c9ddd4;
@@ -69,6 +70,10 @@
       padding: 8px 10px;
       color: #5c6f72;
       font-size: 12px;
+    }
+    .service-shell > .card,
+    .service-shell > .card > .card-body {
+      overflow: visible;
     }
     .st-NEW { background: #eef2f3; color: #42585e; border: 1px solid #ced7da; }
     .st-IN_PROCESSING { background: #fff6dc; color: #6f5200; border: 1px solid #f3d98f; }
