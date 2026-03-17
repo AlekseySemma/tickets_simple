@@ -880,7 +880,7 @@
                           <span>Загрузил {{ users_by_id.get(a.uploader_id, "—") }}</span>
                           <span>{{ format_dt(a.created_at) }}</span>
                           {% if a.file_size_bytes %}
-                            <span>{{ a.file_size_bytes }} Б</span>
+                            <span>{{ "%.2f"|format(a.file_size_bytes / 1048576) }} МБ</span>
                           {% endif %}
                         </div>
 
