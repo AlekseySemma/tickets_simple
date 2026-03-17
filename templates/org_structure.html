@@ -568,17 +568,36 @@
         const selectId = input.getAttribute("data-select-filter-for");
         const select = selectId ? document.getElementById(selectId) : null;
         if (!select) return;
+        const originalOptions = Array.from(select.options).map(function (option) {
+          return {
+            value: option.value,
+            text: option.textContent || "",
+            selected: option.selected,
+            disabled: option.disabled,
+          };
+        });
 
         const applyFilter = function () {
           const query = normalizeText(input.value);
-          Array.from(select.options).forEach(function (option) {
-            if (!query) {
-              option.hidden = false;
-              return;
-            }
-            const optionText = normalizeText(option.textContent);
-            const shouldShow = !option.value || option.selected || optionText.includes(query);
-            option.hidden = !shouldShow;
+          const selectedValues = new Set(
+            Array.from(select.selectedOptions).map(function (option) {
+              return option.value;
+            })
+          );
+
+          select.innerHTML = "";
+
+          originalOptions.forEach(function (item) {
+            const optionText = normalizeText(item.text);
+            const shouldShow = !query || !item.value || selectedValues.has(item.value) || optionText.includes(query);
+            if (!shouldShow) return;
+
+            const option = document.createElement("option");
+            option.value = item.value;
+            option.textContent = item.text;
+            option.disabled = item.disabled;
+            option.selected = selectedValues.has(item.value) || (!selectedValues.size && item.selected);
+            select.appendChild(option);
           });
         };
 
