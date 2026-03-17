@@ -56,6 +56,67 @@
     .org-select-search {
       margin-bottom: 8px;
     }
+    .filter-combobox {
+      position: relative;
+    }
+    .filter-combobox-input {
+      padding-right: 34px;
+    }
+    .filter-combobox-clear {
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #6c757d;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0;
+    }
+    .filter-combobox-clear:hover,
+    .filter-combobox-clear:focus {
+      background: #edf6f2;
+      color: #1f5558;
+      outline: none;
+    }
+    .filter-combobox-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 35;
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid #c9ddd4;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .08);
+      padding: 4px;
+    }
+    .filter-combobox-option {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      text-align: left;
+      background: transparent;
+      color: #2d5f62;
+      padding: 8px 10px;
+    }
+    .filter-combobox-option:hover,
+    .filter-combobox-option:focus {
+      background: #edf6f2;
+      color: #1f5558;
+      outline: none;
+    }
+    .filter-combobox-empty {
+      padding: 8px 10px;
+      color: #5c6f72;
+      font-size: 12px;
+    }
     .org-card-focus {
       border-color: #9fd5c6 !important;
       box-shadow: 0 14px 30px rgba(31, 157, 143, 0.18);
@@ -373,27 +434,67 @@
           <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
           <div class="col-12 col-md-4">
             <label class="form-label mb-1">Узел или поддерево</label>
-            <input
-              class="form-control"
-              name="assignment_unit_q"
-              type="text"
-              list="assignment-unit-options"
-              placeholder="Введите узел или выберите из подсказок..."
-              value="{{ assignment_unit_q_filter }}"
-            />
-            <div class="form-text">Можно ввести часть названия или выбрать точный узел из подсказок.</div>
+            <div id="assignment-unit-filter-combobox" class="filter-combobox">
+              <input
+                class="form-control filter-combobox-input"
+                id="assignment-unit-filter-input"
+                name="assignment_unit_q"
+                type="text"
+                placeholder="Введите узел или выберите из списка..."
+                value="{{ assignment_unit_q_filter }}"
+                autocomplete="off"
+              />
+              <button
+                class="filter-combobox-clear d-none"
+                id="assignment-unit-filter-clear"
+                type="button"
+                aria-label="Очистить поиск узла"
+              >&times;</button>
+              <div id="assignment-unit-filter-dropdown" class="filter-combobox-dropdown d-none">
+                {% for u in units %}
+                  <button
+                    type="button"
+                    class="filter-combobox-option"
+                    data-filter-label="{{ '- ' * u.level }}{{ u.name }} (#{{ u.id }})"
+                  >{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})</button>
+                {% endfor %}
+                <div id="assignment-unit-filter-empty" class="filter-combobox-empty d-none">Ничего не найдено</div>
+              </div>
+            </div>
+            <div class="form-text pt-1" id="assignment-unit-filter-count"></div>
+            <div class="form-text">Можно ввести часть названия или выбрать точный узел из списка.</div>
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label mb-1">Исполнитель</label>
-            <input
-              class="form-control"
-              name="assignment_executor_q"
-              type="text"
-              list="assignment-executor-options"
-              placeholder="Введите имя или выберите из подсказок..."
-              value="{{ assignment_executor_q_filter }}"
-            />
-            <div class="form-text">Можно искать по имени или email, а также выбрать исполнителя из подсказок.</div>
+            <div id="assignment-executor-filter-combobox" class="filter-combobox">
+              <input
+                class="form-control filter-combobox-input"
+                id="assignment-executor-filter-input"
+                name="assignment_executor_q"
+                type="text"
+                placeholder="Введите имя или выберите из списка..."
+                value="{{ assignment_executor_q_filter }}"
+                autocomplete="off"
+              />
+              <button
+                class="filter-combobox-clear d-none"
+                id="assignment-executor-filter-clear"
+                type="button"
+                aria-label="Очистить поиск исполнителя"
+              >&times;</button>
+              <div id="assignment-executor-filter-dropdown" class="filter-combobox-dropdown d-none">
+                {% for e in executors %}
+                  <button
+                    type="button"
+                    class="filter-combobox-option"
+                    data-filter-label="{{ e.name }} ({{ e.email }}) (#{{ e.id }})"
+                  >{{ e.name }} ({{ e.email }}) (#{{ e.id }})</button>
+                {% endfor %}
+                <div id="assignment-executor-filter-empty" class="filter-combobox-empty d-none">Ничего не найдено</div>
+              </div>
+            </div>
+            <div class="form-text pt-1" id="assignment-executor-filter-count"></div>
+            <div class="form-text">Можно искать по имени или email, а также выбрать исполнителя из списка.</div>
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label mb-1">Отдел</label>
@@ -540,16 +641,6 @@
       </div>
     </div>
   </div>
-  <datalist id="assignment-unit-options">
-    {% for u in units %}
-      <option value="{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})"></option>
-    {% endfor %}
-  </datalist>
-  <datalist id="assignment-executor-options">
-    {% for e in executors %}
-      <option value="{{ e.name }} ({{ e.email }}) (#{{ e.id }})"></option>
-    {% endfor %}
-  </datalist>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const scrollKey = "org_structure_scroll_y";
@@ -569,7 +660,7 @@
       });
 
       function normalizeText(value) {
-        return (value || "").toString().trim().toLowerCase();
+        return (value || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
       }
 
       document.querySelectorAll("[data-select-filter-for]").forEach(function (input) {
@@ -625,6 +716,132 @@
 
         input.addEventListener("input", applyFilter);
         applyFilter();
+      });
+
+      function bindFilterCombobox(config) {
+        const wrap = document.getElementById(config.wrapId);
+        const input = document.getElementById(config.inputId);
+        const clearBtn = document.getElementById(config.clearId);
+        const dropdown = document.getElementById(config.dropdownId);
+        const emptyHint = document.getElementById(config.emptyId);
+        const countEl = document.getElementById(config.countId);
+        if (!wrap || !input || !clearBtn || !dropdown || !emptyHint) return;
+
+        const options = Array.from(dropdown.querySelectorAll(".filter-combobox-option"));
+
+        function setCount(visibleCount) {
+          if (!countEl) return;
+          countEl.textContent = input.value.trim()
+            ? ("Найдено вариантов: " + visibleCount)
+            : ("Всего вариантов: " + visibleCount);
+        }
+
+        function syncClear() {
+          clearBtn.classList.toggle("d-none", !input.value.trim());
+        }
+
+        function filterOptions() {
+          const query = normalizeText(input.value);
+          let visibleCount = 0;
+
+          options.forEach(function (option) {
+            const label = option.getAttribute("data-filter-label") || option.textContent || "";
+            const visible = !query || normalizeText(label).includes(query);
+            option.classList.toggle("d-none", !visible);
+            if (visible) visibleCount += 1;
+          });
+
+          emptyHint.classList.toggle("d-none", visibleCount > 0);
+          setCount(visibleCount);
+        }
+
+        function openDropdown() {
+          dropdown.classList.remove("d-none");
+          filterOptions();
+        }
+
+        function closeDropdown() {
+          dropdown.classList.add("d-none");
+        }
+
+        function selectOption(option) {
+          input.value = (option.getAttribute("data-filter-label") || option.textContent || "").trim();
+          syncClear();
+          filterOptions();
+          closeDropdown();
+          input.focus();
+        }
+
+        input.addEventListener("focus", openDropdown);
+        input.addEventListener("click", openDropdown);
+        input.addEventListener("input", function () {
+          syncClear();
+          openDropdown();
+        });
+        input.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") {
+            closeDropdown();
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            openDropdown();
+            const firstVisible = options.find(function (option) {
+              return !option.classList.contains("d-none");
+            });
+            if (firstVisible) firstVisible.focus();
+          }
+        });
+
+        options.forEach(function (option) {
+          option.addEventListener("mousedown", function (event) {
+            event.preventDefault();
+            selectOption(option);
+          });
+          option.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              selectOption(option);
+            }
+          });
+        });
+
+        clearBtn.addEventListener("mousedown", function (event) {
+          event.preventDefault();
+        });
+        clearBtn.addEventListener("click", function () {
+          input.value = "";
+          syncClear();
+          openDropdown();
+          input.focus();
+        });
+
+        document.addEventListener("click", function (event) {
+          if (!wrap.contains(event.target)) {
+            closeDropdown();
+          }
+        });
+
+        syncClear();
+        filterOptions();
+      }
+
+      bindFilterCombobox({
+        wrapId: "assignment-unit-filter-combobox",
+        inputId: "assignment-unit-filter-input",
+        clearId: "assignment-unit-filter-clear",
+        dropdownId: "assignment-unit-filter-dropdown",
+        emptyId: "assignment-unit-filter-empty",
+        countId: "assignment-unit-filter-count",
+      });
+
+      bindFilterCombobox({
+        wrapId: "assignment-executor-filter-combobox",
+        inputId: "assignment-executor-filter-input",
+        clearId: "assignment-executor-filter-clear",
+        dropdownId: "assignment-executor-filter-dropdown",
+        emptyId: "assignment-executor-filter-empty",
+        countId: "assignment-executor-filter-count",
       });
     });
   </script>
