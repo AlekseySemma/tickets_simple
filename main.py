@@ -1578,6 +1578,43 @@ def resolve_target_unit_id_from_form_input(db: Session, company_id: int, raw_val
         return matched_ids[0]
     return None
 
+
+def resolve_executor_id_from_form_input(db: Session, company_id: int, raw_value: str | None) -> int | None:
+    value = " ".join(str(raw_value or "").split()).strip()
+    if not value:
+        return None
+
+    id_match = re.search(r"#(\d+)\)?\s*$", value)
+    if id_match:
+        user_id = int(id_match.group(1))
+        row = (
+            db.query(User.id)
+            .filter(
+                User.company_id == company_id,
+                User.id == user_id,
+                User.role == Role.executor,
+            )
+            .first()
+        )
+        if row:
+            return int(row[0])
+
+    rows = (
+        db.query(User.id, User.name, User.email)
+        .filter(User.company_id == company_id, User.role == Role.executor)
+        .all()
+    )
+    normalized_value = value.casefold()
+    matched_ids = [
+        int(user_id)
+        for user_id, user_name, user_email in rows
+        if " ".join(str(user_name or "").split()).strip().casefold() == normalized_value
+        or str(user_email or "").strip().casefold() == normalized_value
+    ]
+    if len(matched_ids) == 1:
+        return matched_ids[0]
+    return None
+
 def validate_template_links(
     db: Session,
     company_id: int,
@@ -5814,8 +5851,24 @@ def web_org_structure(
     assignment_unit_id_int = int(assignment_unit_id) if (assignment_unit_id or "").strip().isdigit() else None
     assignment_executor_id_int = int(assignment_executor_id) if (assignment_executor_id or "").strip().isdigit() else None
     assignment_department_filter = (assignment_department_id or "").strip()
-    assignment_unit_query = " ".join((assignment_unit_q or "").split()).strip().lower()
-    assignment_executor_query = " ".join((assignment_executor_q or "").split()).strip().lower()
+    assignment_unit_lookup = " ".join((assignment_unit_q or "").split()).strip()
+    assignment_executor_lookup = " ".join((assignment_executor_q or "").split()).strip()
+    resolved_unit_id_from_lookup = (
+        resolve_target_unit_id_from_form_input(db, user.company_id, assignment_unit_lookup)
+        if assignment_unit_lookup
+        else None
+    )
+    resolved_executor_id_from_lookup = (
+        resolve_executor_id_from_form_input(db, user.company_id, assignment_executor_lookup)
+        if assignment_executor_lookup
+        else None
+    )
+    if assignment_unit_id_int is None and resolved_unit_id_from_lookup is not None:
+        assignment_unit_id_int = resolved_unit_id_from_lookup
+    if assignment_executor_id_int is None and resolved_executor_id_from_lookup is not None:
+        assignment_executor_id_int = resolved_executor_id_from_lookup
+    assignment_unit_query = assignment_unit_lookup.lower() if assignment_unit_id_int is None else ""
+    assignment_executor_query = assignment_executor_lookup.lower() if assignment_executor_id_int is None else ""
     assignment_department_id_int = int(assignment_department_filter) if assignment_department_filter.isdigit() else None
     assignment_without_department = assignment_department_filter == "__none__"
     assignment_only_primary = (assignment_primary or "").strip() in {"1", "true", "on", "yes"}
@@ -5972,8 +6025,8 @@ def web_org_structure(
             "assignment_unit_id_filter": assignment_unit_id_int if assignment_unit_id_int is not None else "",
             "assignment_executor_id_filter": assignment_executor_id_int if assignment_executor_id_int is not None else "",
             "assignment_department_id_filter": assignment_department_filter,
-            "assignment_unit_q_filter": assignment_unit_query,
-            "assignment_executor_q_filter": assignment_executor_query,
+            "assignment_unit_q_filter": assignment_unit_lookup,
+            "assignment_executor_q_filter": assignment_executor_lookup,
             "assignment_primary_filter": assignment_only_primary,
             "assignment_filters_active": assignment_filters_active,
             "assignments_total_all": assignments_total_all,

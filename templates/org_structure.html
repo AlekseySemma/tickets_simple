@@ -374,40 +374,26 @@
           <div class="col-12 col-md-4">
             <label class="form-label mb-1">Узел или поддерево</label>
             <input
-              class="form-control org-select-search"
+              class="form-control"
               name="assignment_unit_q"
               type="text"
-              placeholder="Поиск узла в фильтре..."
-              data-select-filter-for="assignment-unit-filter-select"
-              data-select-filter-count="assignment-unit-filter-count"
+              list="assignment-unit-options"
+              placeholder="Введите узел или выберите из подсказок..."
               value="{{ assignment_unit_q_filter }}"
             />
-            <div class="form-text pt-1" id="assignment-unit-filter-count"></div>
-            <select class="form-select" id="assignment-unit-filter-select" name="assignment_unit_id">
-              <option value="" {% if not assignment_unit_id_filter %}selected{% endif %}>Все узлы</option>
-              {% for u in units %}
-                <option value="{{ u.id }}" {% if assignment_unit_id_filter == u.id %}selected{% endif %}>{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})</option>
-              {% endfor %}
-            </select>
+            <div class="form-text">Можно ввести часть названия или выбрать точный узел из подсказок.</div>
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label mb-1">Исполнитель</label>
             <input
-              class="form-control org-select-search"
+              class="form-control"
               name="assignment_executor_q"
               type="text"
-              placeholder="Поиск исполнителя в фильтре..."
-              data-select-filter-for="assignment-executor-filter-select"
-              data-select-filter-count="assignment-executor-filter-count"
+              list="assignment-executor-options"
+              placeholder="Введите имя или выберите из подсказок..."
               value="{{ assignment_executor_q_filter }}"
             />
-            <div class="form-text pt-1" id="assignment-executor-filter-count"></div>
-            <select class="form-select" id="assignment-executor-filter-select" name="assignment_executor_id">
-              <option value="" {% if not assignment_executor_id_filter %}selected{% endif %}>Все исполнители</option>
-              {% for e in executors %}
-                <option value="{{ e.id }}" {% if assignment_executor_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
-              {% endfor %}
-            </select>
+            <div class="form-text">Можно искать по имени или email, а также выбрать исполнителя из подсказок.</div>
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label mb-1">Отдел</label>
@@ -480,8 +466,6 @@
           {% if assignments_total_pages > 1 %}
             <form method="get" action="/web/org-structure" class="d-flex flex-wrap gap-2 align-items-center mt-3">
               <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
-              <input type="hidden" name="assignment_unit_id" value="{{ assignment_unit_id_filter }}" />
-              <input type="hidden" name="assignment_executor_id" value="{{ assignment_executor_id_filter }}" />
               <input type="hidden" name="assignment_department_id" value="{{ assignment_department_id_filter }}" />
               <input type="hidden" name="assignment_unit_q" value="{{ assignment_unit_q_filter }}" />
               <input type="hidden" name="assignment_executor_q" value="{{ assignment_executor_q_filter }}" />
@@ -556,6 +540,16 @@
       </div>
     </div>
   </div>
+  <datalist id="assignment-unit-options">
+    {% for u in units %}
+      <option value="{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="assignment-executor-options">
+    {% for e in executors %}
+      <option value="{{ e.name }} ({{ e.email }}) (#{{ e.id }})"></option>
+    {% endfor %}
+  </datalist>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const scrollKey = "org_structure_scroll_y";
