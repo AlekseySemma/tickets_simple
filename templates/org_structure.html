@@ -53,6 +53,9 @@
     .org-card .table {
       margin-bottom: 0;
     }
+    .org-select-search {
+      margin-bottom: 8px;
+    }
     .org-card-focus {
       border-color: #9fd5c6 !important;
       box-shadow: 0 14px 30px rgba(31, 157, 143, 0.18);
@@ -315,7 +318,13 @@
         <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
         <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
           <div class="col-12 col-md-6">
-            <select class="form-select" name="unit_ids" multiple size="8" required>
+            <input
+              class="form-control org-select-search"
+              type="text"
+              placeholder="Поиск узла для закрепления..."
+              data-select-filter-for="assign-unit-select"
+            />
+            <select class="form-select" id="assign-unit-select" name="unit_ids" multiple size="8" required>
               <option value="" selected disabled>Узел</option>
               {% for u in units %}
                 {% if u.is_active %}
@@ -326,7 +335,13 @@
             <div class="form-text">Можно выбрать несколько узлов (Ctrl/Cmd + клик).</div>
           </div>
           <div class="col-12 col-md-4">
-            <select class="form-select" name="executor_id" required>
+            <input
+              class="form-control org-select-search"
+              type="text"
+              placeholder="Поиск исполнителя..."
+              data-select-filter-for="assign-executor-select"
+            />
+            <select class="form-select" id="assign-executor-select" name="executor_id" required>
               <option value="" selected disabled>Исполнитель</option>
               {% for e in executors %}
                 <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
@@ -354,7 +369,13 @@
           <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
           <div class="col-12 col-md-4">
             <label class="form-label mb-1">Узел или поддерево</label>
-            <select class="form-select" name="assignment_unit_id">
+            <input
+              class="form-control org-select-search"
+              type="text"
+              placeholder="Поиск узла в фильтре..."
+              data-select-filter-for="assignment-unit-filter-select"
+            />
+            <select class="form-select" id="assignment-unit-filter-select" name="assignment_unit_id">
               <option value="" {% if not assignment_unit_id_filter %}selected{% endif %}>Все узлы</option>
               {% for u in units %}
                 <option value="{{ u.id }}" {% if assignment_unit_id_filter == u.id %}selected{% endif %}>{{ "- " * u.level }}{{ u.name }} (#{{ u.id }})</option>
@@ -363,7 +384,13 @@
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label mb-1">Исполнитель</label>
-            <select class="form-select" name="assignment_executor_id">
+            <input
+              class="form-control org-select-search"
+              type="text"
+              placeholder="Поиск исполнителя в фильтре..."
+              data-select-filter-for="assignment-executor-filter-select"
+            />
+            <select class="form-select" id="assignment-executor-filter-select" name="assignment_executor_id">
               <option value="" {% if not assignment_executor_id_filter %}selected{% endif %}>Все исполнители</option>
               {% for e in executors %}
                 <option value="{{ e.id }}" {% if assignment_executor_id_filter == e.id %}selected{% endif %}>{{ e.name }}</option>
@@ -532,9 +559,34 @@
           sessionStorage.setItem(scrollKey, String(window.scrollY || 0));
         });
       });
+
+      function normalizeText(value) {
+        return (value || "").toString().trim().toLowerCase();
+      }
+
+      document.querySelectorAll("[data-select-filter-for]").forEach(function (input) {
+        const selectId = input.getAttribute("data-select-filter-for");
+        const select = selectId ? document.getElementById(selectId) : null;
+        if (!select) return;
+
+        const applyFilter = function () {
+          const query = normalizeText(input.value);
+          Array.from(select.options).forEach(function (option) {
+            if (!query) {
+              option.hidden = false;
+              return;
+            }
+            const optionText = normalizeText(option.textContent);
+            const shouldShow = !option.value || option.selected || optionText.includes(query);
+            option.hidden = !shouldShow;
+          });
+        };
+
+        input.addEventListener("input", applyFilter);
+        applyFilter();
+      });
     });
   </script>
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
