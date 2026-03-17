@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, date
 import csv
 from decimal import Decimal, InvalidOperation
+from email.message import EmailMessage
 from enum import Enum
 import hashlib
 import io
@@ -12,6 +13,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import smtplib
 import threading
 import time
 import zipfile
@@ -65,7 +67,14 @@ if len(JWT_SECRET) < 32:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 РґРЅРµР№
 ACCESS_TOKEN_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_MINUTES * 60
-PUBLIC_WEB_PATHS = {"/web/login", "/web/register", "/web/register-company", "/web/logout"}
+PUBLIC_WEB_PATHS = {
+    "/web/login",
+    "/web/register",
+    "/web/register-company",
+    "/web/logout",
+    "/web/verify-email",
+    "/web/verify-email/resend",
+}
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
@@ -124,8 +133,20 @@ RL_LOGIN_LIMIT = int(os.getenv("RL_LOGIN_LIMIT", "10"))
 RL_LOGIN_WINDOW_SEC = int(os.getenv("RL_LOGIN_WINDOW_SEC", "300"))
 RL_REGISTER_LIMIT = int(os.getenv("RL_REGISTER_LIMIT", "8"))
 RL_REGISTER_WINDOW_SEC = int(os.getenv("RL_REGISTER_WINDOW_SEC", "3600"))
+RL_EMAIL_VERIFICATION_LIMIT = int(os.getenv("RL_EMAIL_VERIFICATION_LIMIT", "6"))
+RL_EMAIL_VERIFICATION_WINDOW_SEC = int(os.getenv("RL_EMAIL_VERIFICATION_WINDOW_SEC", "3600"))
 RL_PUSH_TEST_LIMIT = int(os.getenv("RL_PUSH_TEST_LIMIT", "10"))
 RL_PUSH_TEST_WINDOW_SEC = int(os.getenv("RL_PUSH_TEST_WINDOW_SEC", "3600"))
+SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = (os.getenv("SMTP_FROM_EMAIL") or SMTP_USERNAME or "").strip()
+SMTP_FROM_NAME = (os.getenv("SMTP_FROM_NAME") or "servora").strip()
+SMTP_USE_TLS = (os.getenv("SMTP_USE_TLS", "1").strip().lower() in {"1", "true", "yes", "on"})
+SMTP_USE_SSL = (os.getenv("SMTP_USE_SSL", "0").strip().lower() in {"1", "true", "yes", "on"})
+SMTP_TIMEOUT_SEC = max(5, int(os.getenv("SMTP_TIMEOUT_SEC", "20")))
+EMAIL_VERIFICATION_EXPIRE_HOURS = max(1, int(os.getenv("EMAIL_VERIFICATION_EXPIRE_HOURS", "24")))
 ORG_STRUCTURE_V2_ENABLED = (os.getenv("ORG_STRUCTURE_V2_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_ENABLED = (os.getenv("TEMPLATE_AUTOGEN_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 TEMPLATE_AUTOGEN_POLL_SECONDS = max(30, int(os.getenv("TEMPLATE_AUTOGEN_POLL_SECONDS", "300")))
@@ -277,6 +298,15 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+    )
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    email_verification_token: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, default=None)
+    email_verification_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    email_verification_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
     preferred_payment_card_id: Mapped[Optional[int]] = mapped_column(ForeignKey("payment_cards.id"), index=True, default=None)
@@ -670,6 +700,11 @@ def ensure_migrations_ready() -> None:
                     )
             user_columns = {col["name"] for col in inspector.get_columns("users")}
             required_user_columns = {
+                "email_verified",
+                "email_verified_at",
+                "email_verification_token",
+                "email_verification_expires_at",
+                "email_verification_sent_at",
                 "show_receipts_accounting_mode",
                 "notify_receipt_created",
                 "can_view_all_tickets",
@@ -717,6 +752,7 @@ class UserOut(BaseModel):
     name: str
     role: Role
     company_id: Optional[int] = None
+    email_verified: bool = False
     bk_last4: Optional[str] = None
     preferred_payment_card_id: Optional[int] = None
     notify_receipt_created: bool = True
@@ -3009,6 +3045,131 @@ def create_access_token(subject: str) -> str:
     return jwt.encode({"sub": subject, "exp": exp}, JWT_SECRET, algorithm=ALGORITHM)
 
 
+class EmailDeliveryError(RuntimeError):
+    pass
+
+
+def is_email_verification_required(user: User | None) -> bool:
+    return bool(user and user.role != Role.platform_admin)
+
+
+def is_user_email_verified(user: User | None) -> bool:
+    if not user:
+        return False
+    if not is_email_verification_required(user):
+        return True
+    return bool(getattr(user, "email_verified", False))
+
+
+def ensure_user_can_authenticate(user: User) -> None:
+    if not is_user_email_verified(user):
+        raise HTTPException(status_code=403, detail="Email address is not verified")
+
+
+def mark_user_email_verified(user: User) -> None:
+    now = datetime.utcnow()
+    user.email_verified = True
+    user.email_verified_at = now
+    user.email_verification_token = None
+    user.email_verification_expires_at = None
+    user.email_verification_sent_at = None
+
+
+def prepare_user_email_verification(user: User, *, force_new_token: bool = False) -> str:
+    now = datetime.utcnow()
+    token_value = (user.email_verification_token or "").strip()
+    token_expired = bool(user.email_verification_expires_at and user.email_verification_expires_at <= now)
+    if force_new_token or not token_value or token_expired:
+        token_value = secrets.token_urlsafe(32)
+        user.email_verification_token = token_value
+        user.email_verification_expires_at = now + timedelta(hours=EMAIL_VERIFICATION_EXPIRE_HOURS)
+    user.email_verified = False
+    user.email_verified_at = None
+    return token_value
+
+
+def format_email_sender() -> str:
+    sender_email = SMTP_FROM_EMAIL or SMTP_USERNAME or "no-reply@localhost"
+    if SMTP_FROM_NAME:
+        return f"{SMTP_FROM_NAME} <{sender_email}>"
+    return sender_email
+
+
+def send_email_message(recipient: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = format_email_sender()
+    msg["To"] = recipient
+    if html_body:
+        msg.set_content(text_body)
+        msg.add_alternative(html_body, subtype="html")
+    else:
+        msg.set_content(text_body)
+
+    if not SMTP_HOST:
+        logger.warning("SMTP_HOST is not configured. Email to %s was not sent.", recipient)
+        return False
+
+    smtp = None
+    try:
+        if SMTP_USE_SSL:
+            smtp = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SEC)
+        else:
+            smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SEC)
+            if SMTP_USE_TLS:
+                smtp.starttls()
+        if SMTP_USERNAME:
+            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+        smtp.send_message(msg)
+        return True
+    except Exception as exc:
+        raise EmailDeliveryError("Could not send email") from exc
+    finally:
+        if smtp is not None:
+            try:
+                smtp.quit()
+            except Exception:
+                pass
+
+
+def build_email_verification_url(request: Request, token: str) -> str:
+    return f"{str(request.base_url).rstrip('/')}/web/verify-email?token={quote(token)}"
+
+
+def send_user_verification_email(
+    request: Request,
+    db: Session,
+    user: User,
+    *,
+    force_new_token: bool = False,
+) -> str:
+    if not is_email_verification_required(user):
+        return ""
+    token_value = prepare_user_email_verification(user, force_new_token=force_new_token)
+    verification_url = build_email_verification_url(request, token_value)
+    subject = "Подтвердите email в servora"
+    ttl_hours_text = str(EMAIL_VERIFICATION_EXPIRE_HOURS)
+    text_body = (
+        f"Здравствуйте, {user.name}!\n\n"
+        "Подтвердите ваш email, чтобы завершить регистрацию и войти в servora:\n"
+        f"{verification_url}\n\n"
+        f"Ссылка действует {ttl_hours_text} ч."
+    )
+    html_body = (
+        f"<p>Здравствуйте, {user.name}!</p>"
+        "<p>Подтвердите ваш email, чтобы завершить регистрацию и войти в servora:</p>"
+        f'<p><a href="{verification_url}">{verification_url}</a></p>'
+        f"<p>Ссылка действует {ttl_hours_text} ч.</p>"
+    )
+    sent = send_email_message(user.email, subject, text_body, html_body=html_body)
+    if not sent:
+        logger.warning("Verification link for %s: %s", user.email, verification_url)
+    user.email_verification_sent_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return verification_url
+
+
 def get_auth_cookie_params(request: Request) -> dict[str, object]:
     host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
     forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
@@ -3043,6 +3204,7 @@ def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    ensure_user_can_authenticate(user)
     return user
 
 def require_role(*roles: Role):
@@ -3298,7 +3460,7 @@ def root(request: Request):
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
-        if request.url.path in {"/web/login", "/web/register", "/web/register-company"}:
+        if request.url.path in {"/web/login", "/web/register", "/web/register-company", "/web/verify-email/resend"}:
             return await call_next(request)
         expected_origin = request_origin(request)
         if not expected_origin:
@@ -3396,6 +3558,8 @@ def app_startup() -> None:
                     password_hash=hash_password(platform_password),
                     role=Role.platform_admin,
                     company_id=None,
+                    email_verified=True,
+                    email_verified_at=datetime.utcnow(),
                     show_receipts_accounting_mode=True,
                 )
                 db.add(user)
@@ -3571,6 +3735,8 @@ def bootstrap_platform_admin(payload: BootstrapSetupIn, db: Session = Depends(ge
         password_hash=hash_password(payload.admin_password),
         role=Role.platform_admin,
         company_id=None,
+        email_verified=True,
+        email_verified_at=datetime.utcnow(),
         show_receipts_accounting_mode=True,
     )
     try:
@@ -3615,10 +3781,15 @@ def register_company_and_owner(payload: BootstrapSetupIn, request: Request, db: 
         company_id=company.id,
         show_receipts_accounting_mode=True,
     )
+    prepare_user_email_verification(owner, force_new_token=True)
     db.add(owner)
     db.commit()
     db.refresh(owner)
     db.refresh(company)
+    try:
+        send_user_verification_email(request, db, owner)
+    except EmailDeliveryError:
+        logger.exception("Could not send verification email to %s", owner.email)
     audit_security_event("register_company", request, success=True, email=payload.admin_email, user_id=owner.id)
     return BootstrapSetupOut(company=company, admin=owner)
 
@@ -3635,6 +3806,11 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
     if not user or not verify_password(form.password, user.password_hash):
         audit_security_event("auth_login", request, success=False, email=email, detail="invalid_credentials")
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    try:
+        ensure_user_can_authenticate(user)
+    except HTTPException:
+        audit_security_event("auth_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
+        raise
     audit_security_event("auth_login", request, success=True, email=email, user_id=user.id)
     return TokenOut(access_token=create_access_token(str(user.id)))
 
@@ -3646,7 +3822,12 @@ def me(user: User = Depends(get_current_user)):
     return user
 
 @app.post("/users", response_model=UserOut)
-def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User = Depends(require_role(Role.admin))):
+def create_user(
+    payload: UserCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_role(Role.admin)),
+):
     ensure_company_user(_admin)
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400, "Email already exists")
@@ -3690,7 +3871,14 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _admin: User
             else True
         ),
     )
-    db.add(u); db.commit(); db.refresh(u)
+    prepare_user_email_verification(u, force_new_token=True)
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    try:
+        send_user_verification_email(request, db, u)
+    except EmailDeliveryError:
+        logger.exception("Could not send verification email to %s", u.email)
     return u
 
 # =========================
@@ -4588,6 +4776,16 @@ async def web_login(request: Request, db: Session = Depends(get_db)):
     if not user or not verify_password(password, user.password_hash):
         audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
         return templates.TemplateResponse("login.html", {"request": request, "error": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c"})
+    if not is_user_email_verified(user):
+        audit_security_event("web_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Подтвердите email по ссылке из письма, затем повторите вход.",
+            },
+            status_code=403,
+        )
 
     token = create_access_token(str(user.id))
     resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
@@ -4706,6 +4904,7 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
             company_id=invite.company_id,
             show_receipts_accounting_mode=bool(invite.role != Role.executor),
         )
+        prepare_user_email_verification(user, force_new_token=True)
         db.add(user)
         db.flush()
 
@@ -4719,11 +4918,89 @@ async def web_register_submit(request: Request, db: Session = Depends(get_db)):
             "register.html",
             {"request": request, "token": token, "role_value": role_value, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РІРµСЂС€РёС‚СЊ СЂРµРіРёСЃС‚СЂР°С†РёСЋ", "success": False},
         )
+    try:
+        send_user_verification_email(request, db, user)
+    except EmailDeliveryError:
+        logger.exception("Could not send verification email to %s", user.email)
 
     audit_security_event("web_register", request, success=True, email=email, user_id=user.id)
     return templates.TemplateResponse(
         "register.html",
         {"request": request, "token": "", "role_value": invite.role.value, "error": None, "success": True},
+    )
+
+
+@app.get("/web/verify-email")
+def web_verify_email_page(request: Request, token: str | None = None, db: Session = Depends(get_db)):
+    token_value = (token or "").strip()
+    user = None
+    if token_value:
+        user = db.query(User).filter(User.email_verification_token == token_value).first()
+
+    if not user:
+        return templates.TemplateResponse(
+            "verify_email.html",
+            {"request": request, "success": False, "error": "Ссылка подтверждения недействительна или уже использована."},
+            status_code=400,
+        )
+    if user.email_verification_expires_at and user.email_verification_expires_at <= datetime.utcnow():
+        return templates.TemplateResponse(
+            "verify_email.html",
+            {"request": request, "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
+            status_code=400,
+        )
+
+    mark_user_email_verified(user)
+    db.commit()
+    audit_security_event("email_verify", request, success=True, email=user.email, user_id=user.id)
+    return templates.TemplateResponse(
+        "verify_email.html",
+        {"request": request, "success": True, "error": None},
+    )
+
+
+@app.get("/web/verify-email/resend")
+def web_resend_verification_page(request: Request):
+    return templates.TemplateResponse(
+        "verify_email_resend.html",
+        {"request": request, "success": False, "message": None},
+    )
+
+
+@app.post("/web/verify-email/resend")
+async def web_resend_verification_submit(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    email = (form.get("email") or "").strip()
+    ip = get_client_ip(request)
+    limited_ip, _ = hit_rate_limit(
+        f"email-verify-resend-ip:{ip}",
+        RL_EMAIL_VERIFICATION_LIMIT * 2,
+        RL_EMAIL_VERIFICATION_WINDOW_SEC,
+    )
+    limited_email, _ = hit_rate_limit(
+        f"email-verify-resend-email:{(email or '').lower()}",
+        RL_EMAIL_VERIFICATION_LIMIT,
+        RL_EMAIL_VERIFICATION_WINDOW_SEC,
+    )
+    if not limited_ip and not limited_email and email:
+        user = db.query(User).filter(User.email == email).first()
+        if user and not is_user_email_verified(user):
+            try:
+                send_user_verification_email(request, db, user, force_new_token=True)
+                audit_security_event("email_verify_resend", request, success=True, email=email, user_id=user.id)
+            except EmailDeliveryError:
+                logger.exception("Could not resend verification email to %s", user.email)
+        else:
+            audit_security_event("email_verify_resend", request, success=True, email=email, detail="ignored")
+    else:
+        audit_security_event("email_verify_resend", request, success=False, email=email, detail="rate_limited")
+    return templates.TemplateResponse(
+        "verify_email_resend.html",
+        {
+            "request": request,
+            "success": True,
+            "message": "Если аккаунт существует и ещё не подтверждён, мы отправили новое письмо.",
+        },
     )
 
 @app.get("/web/logout")
@@ -6877,15 +7154,20 @@ async def web_admin_company_user_create(
         company_id=company_id,
         show_receipts_accounting_mode=bool(role_value != Role.executor),
     )
+    prepare_user_email_verification(item, force_new_token=True)
     try:
         db.add(item)
         db.commit()
+        db.refresh(item)
+        send_user_verification_email(request, db, item)
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
             url=f"/web/admin/companies/{company_id}/settings?err=save_failed",
             status_code=HTTP_303_SEE_OTHER,
         )
+    except EmailDeliveryError:
+        logger.exception("Could not send verification email to %s", item.email)
     return RedirectResponse(
         url=f"/web/admin/companies/{company_id}/settings?ok=user_created",
         status_code=HTTP_303_SEE_OTHER,
@@ -6939,11 +7221,14 @@ async def web_admin_company_user_update(
             status_code=HTTP_303_SEE_OTHER,
         )
 
+    email_changed = (item.email or "").strip() != email
     item.name = name
     item.email = email
     item.role = Role(role_raw)
     if password:
         item.password_hash = hash_password(password)
+    if email_changed:
+        prepare_user_email_verification(item, force_new_token=True)
     try:
         db.commit()
     except SQLAlchemyError:
@@ -6952,6 +7237,11 @@ async def web_admin_company_user_update(
             url=f"/web/admin/companies/{company_id}/settings?err=save_failed",
             status_code=HTTP_303_SEE_OTHER,
         )
+    if email_changed:
+        try:
+            send_user_verification_email(request, db, item)
+        except EmailDeliveryError:
+            logger.exception("Could not send verification email to %s", item.email)
     return RedirectResponse(
         url=f"/web/admin/companies/{company_id}/settings?ok=user_updated",
         status_code=HTTP_303_SEE_OTHER,
@@ -9205,12 +9495,17 @@ async def web_users_create(request: Request, db: Session = Depends(get_db), user
         can_create_tickets=(True if role_value == Role.curator else can_create_tickets),
         can_close_tickets=(True if role_value == Role.curator else can_close_tickets),
     )
+    prepare_user_email_verification(u, force_new_token=True)
     try:
         db.add(u)
         db.commit()
+        db.refresh(u)
+        send_user_verification_email(request, db, u)
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    except EmailDeliveryError:
+        logger.exception("Could not send verification email to %s", u.email)
     return RedirectResponse(url="/web/users?ok=created", status_code=HTTP_303_SEE_OTHER)
 
 
@@ -9243,6 +9538,7 @@ async def web_users_update(
     if email_owner:
         return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
 
+    email_changed = (item.email or "").strip() != email
     item.name = name
     item.email = email
     item.show_receipts_accounting_mode = show_receipts_accounting_mode
@@ -9256,11 +9552,18 @@ async def web_users_update(
         item.can_close_tickets = can_close_tickets
     if password:
         item.password_hash = hash_password(password)
+    if email_changed:
+        prepare_user_email_verification(item, force_new_token=True)
     try:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
+    if email_changed:
+        try:
+            send_user_verification_email(request, db, item)
+        except EmailDeliveryError:
+            logger.exception("Could not send verification email to %s", item.email)
     return RedirectResponse(url="/web/users?ok=updated", status_code=HTTP_303_SEE_OTHER)
 
 
