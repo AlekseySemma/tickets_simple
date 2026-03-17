@@ -92,12 +92,12 @@
     </div>
     <div class="exec-hero mb-3">
       <div>
-        <span class="exec-kicker">ИИсполнительский контур</span>
-        <p class="exec-title">Поддерживайте актуальную команду: быстро добавляйте иИсполнителей и обновляйте доступы.</p>
+        <span class="exec-kicker">Исполнительский контур</span>
+        <p class="exec-title">Поддерживайте актуальную команду: быстро добавляйте исполнителей и обновляйте доступы.</p>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-card">
-          <span>Всего иИсполнителей</span>
+          <span>Всего исполнителей</span>
           <strong>{{ executors|length }}</strong>
         </div>
         <div class="exec-kpi-card">
@@ -114,7 +114,7 @@
     {% if ok == "created" %}
       <div class="alert alert-success">Исполнитель создан.</div>
     {% elif ok == "updated" %}
-      <div class="alert alert-success">Данные иИсполнителя обновлены.</div>
+      <div class="alert alert-success">Данные исполнителя обновлены.</div>
     {% endif %}
 
     {% if err == "bad_input" %}
@@ -129,7 +129,7 @@
 
     <div class="card shadow-sm mb-3 exec-card">
       <div class="card-body">
-        <h5 class="mb-3">Добавить иИсполнителя</h5>
+        <h5 class="mb-3">Добавить исполнителя</h5>
         <form method="post" action="/web/executors/create" class="row g-2">
           <div class="col-12 col-md-4">
             <input name="name" class="form-control" placeholder="мя" required />
@@ -141,7 +141,7 @@
             <input name="password" type="password" class="form-control" placeholder="Пароль" required />
           </div>
           <div class="col-12">
-            <button class="btn btn-primary">Создать иИсполнителя</button>
+            <button class="btn btn-primary">Создать исполнителя</button>
           </div>
         </form>
       </div>

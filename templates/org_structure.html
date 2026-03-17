@@ -113,11 +113,11 @@
         {% if err == "import_headers" %}Не удалось прочитать заголовки CSV.{% endif %}
         {% if err == "import_need_path" %}В CSV обязательна колонка path.{% endif %}
         {% if err == "import_failed" %}мпорт завершился с ошибкой, изменения откатились.{% endif %}
-        {% if err == "assign_bad_input" %}Некорректные данные закрепления иИсполнителя.{% endif %}
+        {% if err == "assign_bad_input" %}Некорректные данные закрепления Исполнителя.{% endif %}
         {% if err == "assign_unit_not_found" %}Узел для закрепления не найден.{% endif %}
         {% if err == "assign_executor_not_found" %}Исполнитель для закрепления не найден.{% endif %}
         {% if err == "assign_department_not_found" %}Отдел для закрепления не найден.{% endif %}
-        {% if err == "assign_failed" %}Не удалось сохранить закрепление иИсполнителя.{% endif %}
+        {% if err == "assign_failed" %}Не удалось сохранить закрепление Исполнителя.{% endif %}
         {% if err == "department_empty_name" %}Введите название отдела.{% endif %}
         {% if err == "department_exists" %}Отдел с таким названием уже существует.{% endif %}
         {% if err == "department_not_found" %}Отдел не найден.{% endif %}
@@ -131,7 +131,7 @@
         {% if err == "edit_failed" %}Не удалось сохранить изменения узла.{% endif %}
         {% if err == "delete_not_found" %}Узел для удаления не найден.{% endif %}
         {% if err == "delete_has_children" %}Нельзя удалить узел: сначала удалите или перенесите дочерние узлы.{% endif %}
-        {% if err == "delete_has_assignments" %}Нельзя удалить узел: есть закрепленные иИсполнители.{% endif %}
+        {% if err == "delete_has_assignments" %}Нельзя удалить узел: есть закрепленные Исполнители.{% endif %}
         {% if err == "delete_has_templates" %}Нельзя удалить узел: он используется в шаблонах заявок.{% endif %}
         {% if err == "delete_has_tickets" %}Нельзя удалить узел: по нему есть заявки.{% endif %}
         {% if err == "delete_has_generation_keys" %}Нельзя удалить узел: по нему есть сгенерированные заявки в периодических шаблонах.{% endif %}
@@ -312,7 +312,7 @@
 
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
-        <h5 class="mb-3">Закрепление иИсполнителей по узлам</h5>
+        <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
         <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
           <div class="col-12 col-md-6">
             <select class="form-select" name="unit_ids" multiple size="8" required>
