@@ -323,7 +323,9 @@
               type="text"
               placeholder="Поиск узла для закрепления..."
               data-select-filter-for="assign-unit-select"
+              data-select-filter-count="assign-unit-search-count"
             />
+            <div class="form-text pt-1" id="assign-unit-search-count"></div>
             <select class="form-select" id="assign-unit-select" name="unit_ids" multiple size="8" required>
               <option value="" selected disabled>Узел</option>
               {% for u in units %}
@@ -340,7 +342,9 @@
               type="text"
               placeholder="Поиск исполнителя..."
               data-select-filter-for="assign-executor-select"
+              data-select-filter-count="assign-executor-search-count"
             />
+            <div class="form-text pt-1" id="assign-executor-search-count"></div>
             <select class="form-select" id="assign-executor-select" name="executor_id" required>
               <option value="" selected disabled>Исполнитель</option>
               {% for e in executors %}
@@ -374,7 +378,9 @@
               type="text"
               placeholder="Поиск узла в фильтре..."
               data-select-filter-for="assignment-unit-filter-select"
+              data-select-filter-count="assignment-unit-filter-count"
             />
+            <div class="form-text pt-1" id="assignment-unit-filter-count"></div>
             <select class="form-select" id="assignment-unit-filter-select" name="assignment_unit_id">
               <option value="" {% if not assignment_unit_id_filter %}selected{% endif %}>Все узлы</option>
               {% for u in units %}
@@ -389,7 +395,9 @@
               type="text"
               placeholder="Поиск исполнителя в фильтре..."
               data-select-filter-for="assignment-executor-filter-select"
+              data-select-filter-count="assignment-executor-filter-count"
             />
+            <div class="form-text pt-1" id="assignment-executor-filter-count"></div>
             <select class="form-select" id="assignment-executor-filter-select" name="assignment_executor_id">
               <option value="" {% if not assignment_executor_id_filter %}selected{% endif %}>Все исполнители</option>
               {% for e in executors %}
@@ -566,7 +574,9 @@
 
       document.querySelectorAll("[data-select-filter-for]").forEach(function (input) {
         const selectId = input.getAttribute("data-select-filter-for");
+        const countId = input.getAttribute("data-select-filter-count");
         const select = selectId ? document.getElementById(selectId) : null;
+        const countEl = countId ? document.getElementById(countId) : null;
         if (!select) return;
         const originalOptions = Array.from(select.options).map(function (option) {
           return {
@@ -599,6 +609,18 @@
             option.selected = selectedValues.has(item.value) || (!selectedValues.size && item.selected);
             select.appendChild(option);
           });
+
+          if (countEl) {
+            const visibleItems = originalOptions.filter(function (item) {
+              return !item.value || !query || selectedValues.has(item.value) || normalizeText(item.text).includes(query);
+            });
+            const actionableCount = visibleItems.filter(function (item) {
+              return item.value;
+            }).length;
+            countEl.textContent = query
+              ? ("Найдено: " + actionableCount)
+              : ("Всего вариантов: " + actionableCount);
+          }
         };
 
         input.addEventListener("input", applyFilter);
