@@ -48,7 +48,6 @@
     details.panel-toggle > summary::-webkit-details-marker { display: none; }
     .panel-chevron {
       color: #4f7b7f;
-      transition: transform .2s ease;
       font-size: .9rem;
     }
     details.panel-toggle[open] .panel-chevron { transform: rotate(180deg); }
@@ -147,7 +146,6 @@
     .watchers-dropdown > summary::-webkit-details-marker { display: none; }
     .watchers-dropdown .watchers-chevron {
       color: #4f7b7f;
-      transition: transform .2s ease;
       font-size: .9rem;
       margin-left: 8px;
     }
@@ -219,14 +217,12 @@
       z-index: 10;
 
       opacity: 0;
-      transform: translateY(-6px);
       pointer-events: none;
-      transition: opacity 0.18s ease, transform 0.18s ease;
+      transition: opacity 0.18s ease;
     }
 
     .status-menu.show {
       opacity: 1;
-      transform: translateY(0);
       pointer-events: auto;
     }
     .dash-card { cursor: pointer; transition: box-shadow .12s ease; }

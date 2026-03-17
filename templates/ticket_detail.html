@@ -56,11 +56,10 @@
       min-width: 170px;
       z-index: 10;
       opacity: 0;
-      transform: translateY(-6px);
       pointer-events: none;
-      transition: opacity 0.18s ease, transform 0.18s ease;
+      transition: opacity 0.18s ease;
     }
-    .status-menu.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .status-menu.show { opacity: 1; pointer-events: auto; }
     .status-toggle { cursor: pointer; }
 
     .comments-list { display: flex; flex-direction: column; gap: 8px; }
@@ -773,7 +772,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
-
 
 
 
