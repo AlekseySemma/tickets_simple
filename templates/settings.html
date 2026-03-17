@@ -330,6 +330,35 @@
       <div class="card-body">
         <h5 class="mb-2">Безопасность</h5>
         <div class="settings-note mt-0">Завершает все активные сессии аккаунта на других устройствах и в текущем браузере. После этого потребуется войти снова.</div>
+        {% if password_change_error == "invalid_current_password" %}
+          <div class="alert alert-danger py-2 mt-3">Текущий пароль указан неверно.</div>
+        {% elif password_change_error == "password_too_short" %}
+          <div class="alert alert-danger py-2 mt-3">Новый пароль должен быть не короче 8 символов.</div>
+        {% elif password_change_error == "password_mismatch" %}
+          <div class="alert alert-danger py-2 mt-3">Новые пароли не совпадают.</div>
+        {% elif password_change_error == "save_failed" %}
+          <div class="alert alert-danger py-2 mt-3">Не удалось изменить пароль. Попробуйте ещё раз.</div>
+        {% endif %}
+        {% if session_revoke_error == "save_failed" %}
+          <div class="alert alert-danger py-2 mt-3">Не удалось завершить сессии на всех устройствах. Попробуйте ещё раз.</div>
+        {% endif %}
+        <form method="post" action="/web/settings/change-password" class="row g-2 mt-2">
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1">Текущий пароль</label>
+            <input class="form-control" type="password" name="current_password" required />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1">Новый пароль</label>
+            <input class="form-control" type="password" name="new_password" required />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1">Повторите пароль</label>
+            <input class="form-control" type="password" name="new_password_confirm" required />
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-primary">Сменить пароль</button>
+          </div>
+        </form>
         <form method="post" action="/web/settings/logout-all" class="mt-2" onsubmit="return confirm('Завершить сессии на всех устройствах?');">
           <button class="btn btn-outline-danger">Выйти на всех устройствах</button>
         </form>
@@ -366,7 +395,6 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
 
 
 

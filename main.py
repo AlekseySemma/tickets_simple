@@ -4870,6 +4870,8 @@ def web_login_page(request: Request):
     info_message = None
     if info == "logged_out_all":
         info_message = "Сессии на всех устройствах завершены. Войдите снова."
+    elif info == "password_changed":
+        info_message = "Пароль изменён. Войдите с новым паролем."
     return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info_message})
 
 @app.post("/web/login")
@@ -5802,6 +5804,9 @@ def web_settings(
     session_revoke_error = (request.query_params.get("session_revoke_error") or "").strip().lower()
     if session_revoke_error not in {"save_failed"}:
         session_revoke_error = ""
+    password_change_error = (request.query_params.get("password_change_error") or "").strip().lower()
+    if password_change_error not in {"invalid_current_password", "password_mismatch", "password_too_short", "save_failed"}:
+        password_change_error = ""
     cards = (
         db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
         .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
@@ -5833,6 +5838,7 @@ def web_settings(
             "card_deleted": card_deleted,
             "card_delete_error": card_delete_error,
             "session_revoke_error": session_revoke_error,
+            "password_change_error": password_change_error,
             "cards": cards,
             "preferred_payment_card_id": user.preferred_payment_card_id,
             "can_manage_deadline_warning": can_manage_deadline_warning,
@@ -5860,6 +5866,36 @@ async def web_settings_logout_all(
         return RedirectResponse(url="/web/settings?session_revoke_error=save_failed", status_code=HTTP_303_SEE_OTHER)
     audit_security_event("logout_all_devices", request, success=True, email=user.email, user_id=user.id)
     resp = RedirectResponse(url="/web/login?info=logged_out_all", status_code=HTTP_303_SEE_OTHER)
+    delete_auth_cookie(resp, request)
+    return resp
+
+
+@app.post("/web/settings/change-password")
+async def web_settings_change_password(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    form = await request.form()
+    current_password = (form.get("current_password") or "").strip()
+    new_password = (form.get("new_password") or "").strip()
+    new_password_confirm = (form.get("new_password_confirm") or "").strip()
+    if not verify_password(current_password, user.password_hash):
+        return RedirectResponse(url="/web/settings?password_change_error=invalid_current_password", status_code=HTTP_303_SEE_OTHER)
+    if len(new_password) < 8:
+        return RedirectResponse(url="/web/settings?password_change_error=password_too_short", status_code=HTTP_303_SEE_OTHER)
+    if new_password != new_password_confirm:
+        return RedirectResponse(url="/web/settings?password_change_error=password_mismatch", status_code=HTTP_303_SEE_OTHER)
+    try:
+        user.password_hash = hash_password(new_password)
+        bump_user_auth_token_version(user)
+        clear_password_reset_state(user)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(url="/web/settings?password_change_error=save_failed", status_code=HTTP_303_SEE_OTHER)
+    audit_security_event("password_change", request, success=True, email=user.email, user_id=user.id)
+    resp = RedirectResponse(url="/web/login?info=password_changed", status_code=HTTP_303_SEE_OTHER)
     delete_auth_cookie(resp, request)
     return resp
 

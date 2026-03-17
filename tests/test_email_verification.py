@@ -298,6 +298,58 @@ class EmailVerificationTests(unittest.TestCase):
         self.assertEqual(settings_after.status_code, 303)
         self.assertEqual(settings_after.headers["location"], "/web/login")
 
+    def test_settings_change_password_revokes_sessions_and_updates_password(self):
+        self.seed_verified_user(email="changepw@example.com", password="oldpassword")
+
+        api_login = self.client.post(
+            "/auth/login",
+            data={"username": "changepw@example.com", "password": "oldpassword"},
+        )
+        self.assertEqual(api_login.status_code, 200)
+        old_token = api_login.json()["access_token"]
+
+        web_login = self.client.post(
+            "/web/login",
+            data={"email": "changepw@example.com", "password": "oldpassword"},
+            follow_redirects=False,
+        )
+        self.assertEqual(web_login.status_code, 303)
+
+        change_password = self.client.post(
+            "/web/settings/change-password",
+            data={
+                "current_password": "oldpassword",
+                "new_password": "newpassword",
+                "new_password_confirm": "newpassword",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+        self.assertEqual(change_password.status_code, 303)
+        self.assertIn("/web/login?info=password_changed", change_password.headers["location"])
+
+        old_token_me = self.client.get(
+            "/users/me",
+            headers={"Authorization": f"Bearer {old_token}"},
+        )
+        self.assertEqual(old_token_me.status_code, 401)
+
+        old_password_login = self.client.post(
+            "/auth/login",
+            data={"username": "changepw@example.com", "password": "oldpassword"},
+        )
+        self.assertEqual(old_password_login.status_code, 401)
+
+        new_password_login = self.client.post(
+            "/auth/login",
+            data={"username": "changepw@example.com", "password": "newpassword"},
+        )
+        self.assertEqual(new_password_login.status_code, 200)
+
+        settings_after = self.client.get("/web/settings", follow_redirects=False)
+        self.assertEqual(settings_after.status_code, 303)
+        self.assertEqual(settings_after.headers["location"], "/web/login")
+
 
 if __name__ == "__main__":
     unittest.main()
