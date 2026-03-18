@@ -153,6 +153,8 @@ class CommentMediaTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertIn("<audio", detail.text)
         self.assertIn("/comment-media/", detail.text)
+        self.assertIn('class="comment-delete-form"', detail.text)
+        self.assertIn('class="comment-composer" data-preserve-scroll', detail.text)
 
     def test_comment_media_moves_with_archive_and_restore(self):
         ids = self.seed_ticket_context()
@@ -213,6 +215,47 @@ class CommentMediaTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Permissions-Policy", response.headers)
         self.assertIn("microphone=(self)", response.headers["Permissions-Policy"])
+
+    def test_author_can_delete_own_comment_with_media(self):
+        ids = self.seed_ticket_context()
+        create_response = self.client.post(
+            f"/tickets/{ids['ticket_id']}/comments",
+            headers={"Authorization": f"Bearer {ids['token']}"},
+            data={"text": "Удаляемый комментарий"},
+            files=[("attachments", ("report.pdf", b"%PDF-delete", "application/pdf"))],
+        )
+        self.assertEqual(create_response.status_code, 200)
+        payload = create_response.json()
+        comment_id = payload["id"]
+        media_id = payload["media"][0]["id"]
+
+        with main.SessionLocal() as db:
+            media_item = db.get(main.CommentMedia, media_id)
+            self.assertIsNotNone(media_item)
+            stored_path = main.resolve_attachment_disk_path(media_item.file_path)
+            self.assertIsNotNone(stored_path)
+            self.assertTrue(stored_path.exists())
+
+        login_response = self.client.post(
+            "/web/login",
+            data={"email": "admin@acme.local", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(login_response.status_code, 303)
+
+        delete_response = self.client.post(
+            f"/web/comments/{comment_id}/delete",
+            data={"next": f"/web/tickets/{ids['ticket_id']}?tab=overview"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+        self.assertEqual(delete_response.status_code, 303)
+
+        with main.SessionLocal() as db:
+            self.assertIsNone(db.get(main.Comment, comment_id))
+            self.assertIsNone(db.get(main.CommentMedia, media_id))
+
+        self.assertFalse(stored_path.exists())
 
 
 if __name__ == "__main__":

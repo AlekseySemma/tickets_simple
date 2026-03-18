@@ -1177,6 +1177,12 @@ def can_edit_ticket(user: User, ticket: Ticket) -> bool:
     return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
 
 
+def can_delete_comment(user: User, comment: Comment) -> bool:
+    if is_manager(user):
+        return True
+    return bool(comment.author_id == user.id)
+
+
 def department_match_filter(column, department_id: int | None):
     if department_id is None:
         return column.is_(None)
@@ -8490,6 +8496,36 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     except SQLAlchemyError:
         db.rollback()
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/comments/{comment_id}/delete")
+async def web_delete_comment(
+    comment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    comment = db.get(Comment, comment_id)
+    if not comment:
+        raise HTTPException(404, "Comment not found")
+    ticket = get_company_ticket_or_404(db, user, comment.ticket_id)
+    if not can_access_ticket(user, ticket):
+        raise HTTPException(403, "Forbidden")
+    if ticket.status == TicketStatus.archived:
+        raise HTTPException(400, "Archived ticket is read-only")
+    if not can_delete_comment(user, comment):
+        raise HTTPException(403, "Forbidden")
+
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket.id}?tab=overview")
+    media_items = db.query(CommentMedia).filter(CommentMedia.comment_id == comment.id).all()
+    for item in media_items:
+        delete_stored_file(item.file_path)
+    db.query(CommentMedia).filter(CommentMedia.comment_id == comment.id).delete(synchronize_session=False)
+    db.delete(comment)
+    db.commit()
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
 
 @app.post("/web/tickets/{ticket_id}/attachments")
 async def web_add_attachment(ticket_id: int, request: Request, files: list[UploadFile] = File(...),

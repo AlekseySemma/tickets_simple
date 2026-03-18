@@ -78,10 +78,37 @@
       border: 1px solid #e1ece7;
       background: #fff;
       box-shadow: 0 10px 20px rgba(20, 68, 70, 0.05);
+      position: relative;
     }
     .comment-row.mine .comment-bubble {
       background: linear-gradient(180deg, #effaf5, #e4f4ed);
       border-color: #b9e3d5;
+      padding-right: 2.4rem;
+    }
+    .comment-delete-form {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      margin: 0;
+    }
+    .comment-delete-btn {
+      width: 24px;
+      height: 24px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(23, 62, 58, 0.08);
+      color: #406763;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .comment-delete-btn:hover {
+      background: rgba(217, 75, 91, 0.12);
+      color: #b03f4d;
     }
     .comment-text {
       margin-top: .35rem;
@@ -143,35 +170,6 @@
     .comment-composer > .small.text-muted,
     .comment-composer > input[name="text"],
     .comment-composer > button {
-      display: none;
-    }
-    .comment-composer-tools {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .comment-upload-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-    }
-    .comment-upload-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: .55rem .8rem;
-      border-radius: 999px;
-      border: 1px dashed #b9d7ca;
-      background: #f5fbf8;
-      color: #245f5a;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .comment-upload-chip input {
       display: none;
     }
     .comment-hidden-input {
@@ -397,11 +395,6 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .page-actions form[action*="/archive"] .comment-composer-tools,
-    .page-actions form[action*="/archive"] .small.text-muted {
-      display: none !important;
-    }
-
     .ticket-head {
       background: linear-gradient(135deg, #f8fcfa 0%, #edf7f3 55%, #e3f2ec 100%);
       border: 1px solid #d3e6de;
@@ -440,6 +433,10 @@
       background: #ffdce2;
       border-color: #e58b98;
       color: #7a0f1e;
+    }
+    .page-actions form[action*="/archive"] .comment-composer-tools,
+    .page-actions form[action*="/archive"] .small.text-muted {
+      display: none !important;
     }
     .section-card {
       background: #fbfefc;
@@ -1159,6 +1156,12 @@
                       <div class="small muted">
                         <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
                       </div>
+                      {% if is_mine and t.status.value != "ARCHIVED" %}
+                        <form method="post" action="/web/comments/{{ c.id }}/delete" class="comment-delete-form" data-preserve-scroll onsubmit="return confirm('Удалить сообщение?');">
+                          <input type="hidden" name="next" value="{{ overview_url }}">
+                          <button type="submit" class="comment-delete-btn" aria-label="Удалить сообщение" title="Удалить сообщение">×</button>
+                        </form>
+                      {% endif %}
                       {% if c.text %}
                         <div class="comment-text">{{ c.text }}</div>
                       {% endif %}
@@ -1214,7 +1217,7 @@
               {% if t.status.value == "ARCHIVED" %}
                 <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
               {% else %}
-                <form method="post" action="/web/tickets/{{ t.id }}/comments" enctype="multipart/form-data" class="comment-composer">
+                <form method="post" action="/web/tickets/{{ t.id }}/comments" enctype="multipart/form-data" class="comment-composer" data-preserve-scroll>
                   <input type="hidden" name="next" value="{{ overview_url }}">
                   <div class="comment-messenger" data-comment-ui>
                     <input
@@ -1658,6 +1661,35 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  const ticketScrollKey = `ticket-scroll:${window.location.pathname}${window.location.search}`;
+  function saveTicketScrollPosition() {
+    try {
+      window.sessionStorage.setItem(ticketScrollKey, String(window.scrollY || window.pageYOffset || 0));
+    } catch (error) {
+      // Ignore storage failures and keep default browser behavior.
+    }
+  }
+  function restoreTicketScrollPosition() {
+    try {
+      const rawValue = window.sessionStorage.getItem(ticketScrollKey);
+      if (!rawValue) return;
+      window.sessionStorage.removeItem(ticketScrollKey);
+      const top = Number(rawValue);
+      if (!Number.isFinite(top)) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, top);
+        });
+      });
+    } catch (error) {
+      // Ignore storage failures and keep default browser behavior.
+    }
+  }
+  restoreTicketScrollPosition();
+  document.querySelectorAll("[data-preserve-scroll]").forEach((form) => {
+    form.addEventListener("submit", saveTicketScrollPosition);
+  });
+
   const commentForm = document.querySelector('form.comment-composer[action$="/comments"]');
   if (commentForm) {
     const legacyTextInput = commentForm.querySelector('input[name="text"]');
@@ -1863,6 +1895,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function sendRecordedVoice(file, mimeType) {
+      saveTicketScrollPosition();
       const formData = new FormData();
       const nextValue = commentForm.querySelector('input[name="next"]')?.value || "";
       formData.append("next", nextValue);
