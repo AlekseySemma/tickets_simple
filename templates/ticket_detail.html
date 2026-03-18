@@ -83,6 +83,95 @@
       background: linear-gradient(180deg, #effaf5, #e4f4ed);
       border-color: #b9e3d5;
     }
+    .comment-text {
+      margin-top: .35rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .comment-media-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .comment-photo-link {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      text-decoration: none;
+    }
+    .comment-photo {
+      display: block;
+      width: min(320px, 100%);
+      max-width: 100%;
+      border-radius: 14px;
+      border: 1px solid #d9e8df;
+      background: #eef5f0;
+      object-fit: cover;
+    }
+    .comment-audio-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid #d9e8df;
+      background: rgba(248, 252, 250, 0.92);
+    }
+    .comment-audio {
+      width: min(100%, 320px);
+      height: 40px;
+    }
+    .comment-media-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      font-size: 12px;
+      color: #5c6f72;
+    }
+    .comment-media-meta a {
+      color: #1f6f66;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .comment-composer {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .comment-composer-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .comment-upload-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .comment-upload-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: .55rem .8rem;
+      border-radius: 999px;
+      border: 1px dashed #b9d7ca;
+      background: #f5fbf8;
+      color: #245f5a;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .comment-upload-chip input {
+      display: none;
+    }
+    .page-actions form[action*="/archive"] .comment-composer-tools,
+    .page-actions form[action*="/archive"] .small.text-muted {
+      display: none !important;
+    }
 
     .ticket-head {
       background: linear-gradient(135deg, #f8fcfa 0%, #edf7f3 55%, #e3f2ec 100%);
@@ -648,6 +737,19 @@
                       onsubmit="return confirm('Отправить заявку в архив?');">
                   <input type="hidden" name="next" value="{{ next_url }}">
                   <button class="btn btn-sm btn-outline-secondary">В архив</button>
+                  <div class="comment-composer-tools">
+                    <div class="comment-upload-group">
+                      <label class="comment-upload-chip">
+                        <span>Фото</span>
+                        <input type="file" name="photos" accept="image/*" capture="environment" multiple>
+                      </label>
+                      <label class="comment-upload-chip">
+                        <span>Голос</span>
+                        <input type="file" name="voice_messages" accept="audio/*,.mp3,.ogg,.oga,.wav,.m4a,.aac,.webm,.opus" capture multiple>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="small text-muted">Можно отправить текст, фото, голосовое сообщение или всё вместе.</div>
                 </form>
               {% endif %}
               {% if can_restore %}
@@ -798,15 +900,53 @@
                 <span class="tab-count">{{ comments|length }}</span>
               </div>
 
+              {% set comment_error = request.query_params.get("comment_error", "") %}
+              {% if comment_error == "invalid" %}
+                <div class="alert alert-warning py-2 px-3 mb-3">Добавьте текст, фото или голосовое сообщение. В комментариях поддерживаются только изображения и аудио.</div>
+              {% elif comment_error == "too_large" %}
+                <div class="alert alert-warning py-2 px-3 mb-3">Один из файлов слишком большой. Проверьте размер и попробуйте снова.</div>
+              {% elif comment_error == "save_failed" %}
+                <div class="alert alert-danger py-2 px-3 mb-3">Не удалось сохранить комментарий. Попробуйте ещё раз.</div>
+              {% endif %}
+
               <div class="comments-list mb-3">
                 {% for c in comments %}
                   {% set is_mine = c.author_id == user.id %}
+                  {% set media_items = comment_media_by_comment.get(c.id, []) %}
                   <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
                     <div class="comment-bubble">
                       <div class="small muted">
                         <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
                       </div>
-                      <div>{{ c.text }}</div>
+                      {% if c.text %}
+                        <div class="comment-text">{{ c.text }}</div>
+                      {% endif %}
+                      {% if media_items %}
+                        <div class="comment-media-stack">
+                          {% for m in media_items %}
+                            {% set media_url = "/comment-media/" ~ m.id %}
+                            {% set media_download_url = media_url ~ "?download=1" %}
+                            {% if m.media_kind == "photo" %}
+                              <a href="{{ media_url }}" target="_blank" rel="noreferrer" class="comment-photo-link">
+                                <img src="{{ media_url }}" alt="{{ m.original_name or 'Фото' }}" class="comment-photo" />
+                              </a>
+                            {% elif m.media_kind == "voice" %}
+                              <div class="comment-audio-card">
+                                <audio controls preload="metadata" class="comment-audio">
+                                  <source src="{{ media_url }}">
+                                </audio>
+                                <div class="comment-media-meta">
+                                  <span>{{ m.original_name or "Голосовое сообщение" }}</span>
+                                  {% if m.file_size_bytes %}
+                                    <span>{{ "%.2f"|format(m.file_size_bytes / 1048576) }} МБ</span>
+                                  {% endif %}
+                                  <a href="{{ media_download_url }}">Скачать</a>
+                                </div>
+                              </div>
+                            {% endif %}
+                          {% endfor %}
+                        </div>
+                      {% endif %}
                     </div>
                   </div>
                 {% endfor %}
@@ -818,8 +958,21 @@
               {% if t.status.value == "ARCHIVED" %}
                 <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
               {% else %}
-                <form method="post" action="/web/tickets/{{ t.id }}/comments" class="d-flex gap-2 flex-column flex-sm-row">
+                <form method="post" action="/web/tickets/{{ t.id }}/comments" enctype="multipart/form-data" class="comment-composer">
                   <input type="hidden" name="next" value="{{ overview_url }}">
+                  <div class="comment-composer-tools">
+                    <div class="comment-upload-group">
+                      <label class="comment-upload-chip">
+                        <span>Фото</span>
+                        <input type="file" name="photos" accept="image/*" capture="environment" multiple>
+                      </label>
+                      <label class="comment-upload-chip">
+                        <span>Голос</span>
+                        <input type="file" name="voice_messages" accept="audio/*,.mp3,.ogg,.oga,.wav,.m4a,.aac,.webm,.opus" capture multiple>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="small text-muted">Можно отправить текст, фото, голосовое сообщение или всё вместе.</div>
                   <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
                   <button class="btn btn-outline-secondary">Отправить</button>
                 </form>
@@ -1214,6 +1367,18 @@ document.addEventListener("DOMContentLoaded", function () {
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !previewModal.classList.contains("d-none")) {
         closePreview();
+      }
+    });
+  }
+
+  const commentForm = document.querySelector('form.comment-composer[action$="/comments"]');
+  if (commentForm) {
+    const commentTextInput = commentForm.querySelector('input[name="text"]');
+    const mediaInputs = Array.from(commentForm.querySelectorAll('input[type="file"]'));
+    commentForm.addEventListener("submit", () => {
+      const hasMedia = mediaInputs.some((input) => (input.files || []).length > 0);
+      if (commentTextInput && !commentTextInput.value.trim() && hasMedia) {
+        commentTextInput.value = " ";
       }
     });
   }

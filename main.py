@@ -25,7 +25,7 @@ from fastapi.responses import RedirectResponse, FileResponse, Response, Streamin
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import create_engine, String, Text, DateTime, Date, ForeignKey, Enum as SAEnum, Integer, Boolean, Numeric, UniqueConstraint, func, or_, cast, text, inspect as sa_inspect
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
@@ -94,16 +94,20 @@ S3_REGION = (os.getenv("S3_REGION") or "").strip()
 S3_PRESIGNED_TTL_SECONDS = max(60, int(os.getenv("S3_PRESIGNED_TTL_SECONDS", "3600")))
 S3_ADDRESSING_STYLE = (os.getenv("S3_ADDRESSING_STYLE", "path") or "path").strip().lower()
 ATTACHMENTS_STORAGE_PREFIX = "attachments"
+COMMENT_MEDIA_STORAGE_PREFIX = "comment-media"
 RECEIPTS_STORAGE_PREFIX = "receipts"
 MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))
 ALLOWED_UPLOAD_EXTENSIONS = {
     ext.strip().lower()
     for ext in os.getenv(
         "ALLOWED_UPLOAD_EXTENSIONS",
-        ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx,.zip,.rar",
+        ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx,.zip,.rar,.mp3,.ogg,.oga,.wav,.m4a,.aac,.webm,.opus",
     ).split(",")
     if ext.strip()
 }
+COMMENT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+COMMENT_AUDIO_EXTENSIONS = {".mp3", ".ogg", ".oga", ".wav", ".m4a", ".aac", ".webm", ".opus"}
+COMMENT_MEDIA_EXTENSIONS = COMMENT_IMAGE_EXTENSIONS | COMMENT_AUDIO_EXTENSIONS
 PWA_STATIC_DIR = Path(os.getenv("PWA_STATIC_DIR", "./static"))
 PUSH_REMINDER_MINUTES = int(os.getenv("PUSH_REMINDER_MINUTES", "60"))
 PUSH_REMINDER_POLL_SECONDS = int(os.getenv("PUSH_REMINDER_POLL_SECONDS", "30"))
@@ -587,6 +591,20 @@ class Comment(Base):
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
+class CommentMedia(Base):
+    __tablename__ = "comment_media"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    comment_id: Mapped[int] = mapped_column(ForeignKey("comments.id"), index=True)
+    file_path: Mapped[str] = mapped_column(String(500))
+    original_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    media_kind: Mapped[str] = mapped_column(String(16))
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    file_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Attachment(Base):
     __tablename__ = "attachments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -966,12 +984,26 @@ class TicketOut(BaseModel):
 class CommentCreate(BaseModel):
     text: str
 
+class CommentMediaOut(BaseModel):
+    id: int
+    comment_id: int
+    file_path: str
+    original_name: Optional[str]
+    media_kind: str
+    file_size_bytes: Optional[int]
+    file_sha256: Optional[str]
+    archived_at: Optional[datetime]
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
 class CommentOut(BaseModel):
     id: int
     ticket_id: int
     author_id: int
     text: str
     created_at: datetime
+    media: list[CommentMediaOut] = Field(default_factory=list)
     class Config:
         from_attributes = True
 
@@ -1297,6 +1329,12 @@ def build_attachment_object_key(stored_name: str, archived_ticket_id: int | None
     return build_storage_key(ATTACHMENTS_STORAGE_PREFIX, ARCHIVE_UPLOAD_SUBDIR, str(archived_ticket_id), stored_name)
 
 
+def build_comment_media_object_key(stored_name: str, archived_ticket_id: int | None = None) -> str:
+    if archived_ticket_id is None:
+        return build_storage_key(COMMENT_MEDIA_STORAGE_PREFIX, stored_name)
+    return build_storage_key(COMMENT_MEDIA_STORAGE_PREFIX, ARCHIVE_UPLOAD_SUBDIR, str(archived_ticket_id), stored_name)
+
+
 def build_receipt_object_key(stored_name: str) -> str:
     return build_storage_key(RECEIPTS_STORAGE_PREFIX, stored_name)
 
@@ -1314,6 +1352,19 @@ def get_storage_basename(raw_path: str | None) -> str:
 def build_download_content_disposition(filename: str, disposition: str) -> str:
     safe_name = (filename or "file").replace("\\", "_").replace('"', "")
     return f"{disposition}; filename*=UTF-8''{quote(safe_name)}"
+
+
+def get_upload_extension(filename: str | None) -> str:
+    return Path(filename or "").suffix.lower()[:10]
+
+
+def detect_comment_media_kind(filename: str | None) -> str:
+    ext = get_upload_extension(filename)
+    if ext in COMMENT_IMAGE_EXTENSIONS:
+        return "photo"
+    if ext in COMMENT_AUDIO_EXTENSIONS:
+        return "voice"
+    raise HTTPException(400, "Unsupported comment media type")
 
 
 def resolve_attachment_disk_path(raw_path: str | None) -> Path | None:
@@ -1362,6 +1413,14 @@ def archive_ticket(db: Session, ticket: Ticket, actor_id: int, company: Company 
     attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
     for attachment in attachments:
         move_attachment_to_archive(attachment, ticket.id, archived_at)
+    comment_media_items = (
+        db.query(CommentMedia)
+        .join(Comment, Comment.id == CommentMedia.comment_id)
+        .filter(Comment.ticket_id == ticket.id)
+        .all()
+    )
+    for item in comment_media_items:
+        move_comment_media_to_archive(item, ticket.id, archived_at)
     add_ticket_log(
         db,
         ticket_id=ticket.id,
@@ -1382,6 +1441,14 @@ def restore_ticket_from_archive(db: Session, ticket: Ticket, actor_id: int) -> N
     attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
     for attachment in attachments:
         move_attachment_to_active_storage(attachment, ticket.id)
+    comment_media_items = (
+        db.query(CommentMedia)
+        .join(Comment, Comment.id == CommentMedia.comment_id)
+        .filter(Comment.ticket_id == ticket.id)
+        .all()
+    )
+    for item in comment_media_items:
+        move_comment_media_to_active_storage(item, ticket.id)
     add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="восстановление из архива")
 
 
@@ -1391,9 +1458,19 @@ def delete_ticket_with_related_data(
     remove_files: bool = True,
 ) -> None:
     attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
+    comment_media_items = (
+        db.query(CommentMedia)
+        .join(Comment, Comment.id == CommentMedia.comment_id)
+        .filter(Comment.ticket_id == ticket.id)
+        .all()
+    )
     if remove_files:
         for attachment in attachments:
             delete_stored_file(attachment.file_path)
+        for item in comment_media_items:
+            delete_stored_file(item.file_path)
+    comment_ids_subquery = db.query(Comment.id).filter(Comment.ticket_id == ticket.id)
+    db.query(CommentMedia).filter(CommentMedia.comment_id.in_(comment_ids_subquery)).delete(synchronize_session=False)
     db.query(Comment).filter(Comment.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(Attachment).filter(Attachment.ticket_id == ticket.id).delete(synchronize_session=False)
     db.query(TicketLog).filter(TicketLog.ticket_id == ticket.id).delete(synchronize_session=False)
@@ -2040,9 +2117,14 @@ def resolve_company_actor_id(db: Session, company_id: int) -> int | None:
     return int(any_row[0]) if any_row else None
 
 
-def make_safe_upload_name(filename: str | None, ticket_id: int | None = None) -> str:
-    ext = Path(filename or "").suffix.lower()[:10]
-    if not ext or ext not in ALLOWED_UPLOAD_EXTENSIONS:
+def make_safe_upload_name(
+    filename: str | None,
+    ticket_id: int | None = None,
+    allowed_extensions: set[str] | None = None,
+) -> str:
+    ext = get_upload_extension(filename)
+    allowed = allowed_extensions or ALLOWED_UPLOAD_EXTENSIONS
+    if not ext or ext not in allowed:
         raise HTTPException(400, "Unsupported file type")
     prefix = f"{ticket_id}_" if ticket_id is not None else ""
     return f"{prefix}{uuid.uuid4().hex}{ext}"
@@ -2244,6 +2326,16 @@ def build_presigned_storage_download_url(raw_path: str | None, display_name: str
     return str(get_s3_client().generate_presigned_url("get_object", Params=params, ExpiresIn=S3_PRESIGNED_TTL_SECONDS))
 
 
+def serve_stored_file_response(raw_path: str | None, display_name: str, disposition: str, not_found_detail: str):
+    presigned_url = build_presigned_storage_download_url(raw_path, display_name, disposition)
+    if presigned_url:
+        return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    disk_path = resolve_attachment_disk_path(raw_path)
+    if not disk_path or not disk_path.exists() or not disk_path.is_file():
+        raise HTTPException(404, not_found_detail)
+    return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
+
+
 def move_stored_file_to_key(raw_path: str | None, target_key: str) -> str | None:
     normalized_key = build_storage_key(target_key)
     s3_ref = parse_s3_storage_path(raw_path)
@@ -2341,6 +2433,28 @@ def create_ticket_attachment_record(
     return attachment
 
 
+def create_comment_media_record(
+    *,
+    db: Session,
+    comment_id: int,
+    upload: UploadFile,
+    stored_path: str,
+    file_hash: str,
+    file_size: int,
+    media_kind: str,
+) -> CommentMedia:
+    item = CommentMedia(
+        comment_id=comment_id,
+        file_path=stored_path,
+        original_name=upload.filename,
+        media_kind=media_kind,
+    )
+    item.file_sha256 = file_hash
+    item.file_size_bytes = file_size
+    db.add(item)
+    return item
+
+
 def normalize_uploaded_files(files: list[UploadFile]) -> list[UploadFile]:
     valid_files: list[UploadFile] = []
     for upload in files:
@@ -2349,6 +2463,122 @@ def normalize_uploaded_files(files: list[UploadFile]) -> list[UploadFile]:
     if not valid_files:
         raise HTTPException(400, "No files uploaded")
     return valid_files
+
+
+def normalize_optional_uploaded_files(files: list[UploadFile] | None) -> list[UploadFile]:
+    valid_files: list[UploadFile] = []
+    for upload in files or []:
+        if upload and (upload.filename or "").strip():
+            valid_files.append(upload)
+    return valid_files
+
+
+def serialize_comment_out(comment: Comment, media_items: list[CommentMedia] | None = None) -> CommentOut:
+    return CommentOut(
+        id=comment.id,
+        ticket_id=comment.ticket_id,
+        author_id=comment.author_id,
+        text=comment.text,
+        created_at=comment.created_at,
+        media=[
+            CommentMediaOut(
+                id=item.id,
+                comment_id=item.comment_id,
+                file_path=item.file_path,
+                original_name=item.original_name,
+                media_kind=item.media_kind,
+                file_size_bytes=item.file_size_bytes,
+                file_sha256=item.file_sha256,
+                archived_at=item.archived_at,
+                created_at=item.created_at,
+            )
+            for item in (media_items or [])
+        ],
+    )
+
+
+def summarize_comment_media(photo_count: int, voice_count: int, author_name: str) -> str:
+    if photo_count and voice_count:
+        return f"{author_name} добавил фото и голосовое сообщение"
+    if photo_count:
+        return f"{author_name} добавил фото"
+    if voice_count:
+        return f"{author_name} добавил голосовое сообщение"
+    return f"{author_name} оставил комментарий"
+
+
+async def create_comment_with_media_async(
+    *,
+    db: Session,
+    ticket_id: int,
+    author_id: int,
+    text: str,
+    photos: list[UploadFile] | None = None,
+    voice_messages: list[UploadFile] | None = None,
+) -> tuple[Comment, list[CommentMedia], list[str]]:
+    clean_text = (text or "").strip()
+    photo_uploads = normalize_optional_uploaded_files(photos)
+    voice_uploads = normalize_optional_uploaded_files(voice_messages)
+    if not clean_text and not photo_uploads and not voice_uploads:
+        raise HTTPException(400, "Comment text, photo or voice message is required")
+
+    upload_plan: list[tuple[UploadFile, str, str]] = []
+    for upload in photo_uploads:
+        if detect_comment_media_kind(upload.filename) != "photo":
+            raise HTTPException(400, "Photos field accepts images only")
+        upload_plan.append(
+            (
+                upload,
+                "photo",
+                make_safe_upload_name(
+                    upload.filename,
+                    ticket_id=ticket_id,
+                    allowed_extensions=COMMENT_MEDIA_EXTENSIONS,
+                ),
+            )
+        )
+    for upload in voice_uploads:
+        if detect_comment_media_kind(upload.filename) != "voice":
+            raise HTTPException(400, "Voice messages field accepts audio only")
+        upload_plan.append(
+            (
+                upload,
+                "voice",
+                make_safe_upload_name(
+                    upload.filename,
+                    ticket_id=ticket_id,
+                    allowed_extensions=COMMENT_MEDIA_EXTENSIONS,
+                ),
+            )
+        )
+
+    comment = Comment(ticket_id=ticket_id, author_id=author_id, text=clean_text)
+    db.add(comment)
+    db.flush()
+
+    stored_paths: list[str] = []
+    media_items: list[CommentMedia] = []
+    try:
+        for upload, media_kind, safe_name in upload_plan:
+            object_key = build_comment_media_object_key(safe_name)
+            stored_path, file_hash, file_size = await store_upload_file_to_storage_async(upload, object_key)
+            stored_paths.append(stored_path)
+            media_items.append(
+                create_comment_media_record(
+                    db=db,
+                    comment_id=comment.id,
+                    upload=upload,
+                    stored_path=stored_path,
+                    file_hash=file_hash,
+                    file_size=file_size,
+                    media_kind=media_kind,
+                )
+            )
+    except Exception:
+        for stored_path in stored_paths:
+            delete_stored_file(stored_path)
+        raise
+    return comment, media_items, stored_paths
 
 def choose_attachment_storage_name(attachment: Attachment, ticket_id: int) -> str:
     preferred_name = (attachment.original_name or "").strip()
@@ -2362,6 +2592,31 @@ def choose_attachment_storage_name(attachment: Attachment, ticket_id: int) -> st
         return make_safe_upload_name(fallback_name, ticket_id=ticket_id)
     except HTTPException:
         ext = Path(fallback_name).suffix.lower()[:10]
+        if not ext:
+            ext = ".bin"
+        return f"{ticket_id}_{uuid.uuid4().hex}{ext}"
+
+
+def choose_comment_media_storage_name(item: CommentMedia, ticket_id: int) -> str:
+    preferred_name = (item.original_name or "").strip()
+    if preferred_name:
+        try:
+            return make_safe_upload_name(
+                preferred_name,
+                ticket_id=ticket_id,
+                allowed_extensions=COMMENT_MEDIA_EXTENSIONS,
+            )
+        except HTTPException:
+            pass
+    fallback_name = Path(item.file_path or "").name
+    try:
+        return make_safe_upload_name(
+            fallback_name,
+            ticket_id=ticket_id,
+            allowed_extensions=COMMENT_MEDIA_EXTENSIONS,
+        )
+    except HTTPException:
+        ext = get_upload_extension(fallback_name)
         if not ext:
             ext = ".bin"
         return f"{ticket_id}_{uuid.uuid4().hex}{ext}"
@@ -2387,6 +2642,28 @@ def move_attachment_to_active_storage(attachment: Attachment, ticket_id: int) ->
         return
     attachment.file_path = target_path
     attachment.archived_at = None
+
+
+def move_comment_media_to_archive(item: CommentMedia, ticket_id: int, archived_at: datetime) -> None:
+    archive_name = choose_comment_media_storage_name(item, ticket_id)
+    target_key = build_comment_media_object_key(archive_name, archived_ticket_id=ticket_id)
+    target_path = move_stored_file_to_key(item.file_path, target_key)
+    if not target_path:
+        item.archived_at = archived_at
+        return
+    item.file_path = target_path
+    item.archived_at = archived_at
+
+
+def move_comment_media_to_active_storage(item: CommentMedia, ticket_id: int) -> None:
+    active_name = choose_comment_media_storage_name(item, ticket_id)
+    target_key = build_comment_media_object_key(active_name)
+    target_path = move_stored_file_to_key(item.file_path, target_key)
+    if not target_path:
+        item.archived_at = None
+        return
+    item.file_path = target_path
+    item.archived_at = None
 
 
 def to_local_dt(dt: datetime | None) -> datetime | None:
@@ -2853,7 +3130,14 @@ def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old
         )
 
 
-def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text: str) -> None:
+def notify_comment_added(
+    db: Session,
+    ticket: Ticket,
+    author: User,
+    comment_text: str,
+    photo_count: int = 0,
+    voice_count: int = 0,
+) -> None:
     short_text = (comment_text or "").strip()
     if len(short_text) > 80:
         short_text = short_text[:77] + "..."
@@ -2885,7 +3169,7 @@ def notify_comment_added(db: Session, ticket: Ticket, author: User, comment_text
             db=db,
             user_id=recipient_id,
             title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
-            body=short_text or f"{author.name} \u043e\u0441\u0442\u0430\u0432\u0438\u043b \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439",
+            body=short_text or summarize_comment_media(photo_count, voice_count, author.name),
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -4791,7 +5075,7 @@ def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get
     return t
 
 @app.post("/tickets/{ticket_id}/comments", response_model=CommentOut)
-def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_api_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
         raise HTTPException(403, "Forbidden")
@@ -4800,11 +5084,55 @@ def add_comment(ticket_id: int, payload: CommentCreate, db: Session = Depends(ge
     if t.status == TicketStatus.archived:
         raise HTTPException(400, "Archived ticket is read-only")
 
-    c = Comment(ticket_id=ticket_id, author_id=user.id, text=payload.text)
-    db.add(c); db.commit(); db.refresh(c)
-    notify_comment_added(db, ticket=t, author=user, comment_text=payload.text)
-    db.commit()
-    return c
+    content_type = (request.headers.get("content-type") or "").lower()
+    text_value = ""
+    photo_uploads: list[UploadFile] = []
+    voice_uploads: list[UploadFile] = []
+    if "application/json" in content_type:
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON payload") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(400, "Invalid JSON payload")
+        text_value = (payload.get("text") or "").strip()
+    else:
+        form = await request.form()
+        text_value = (form.get("text") or "").strip()
+        photo_uploads = normalize_optional_uploaded_files(list(form.getlist("photos")))
+        voice_uploads = normalize_optional_uploaded_files(list(form.getlist("voice_messages")))
+
+    comment, media_items, stored_paths = await create_comment_with_media_async(
+        db=db,
+        ticket_id=ticket_id,
+        author_id=user.id,
+        text=text_value,
+        photos=photo_uploads,
+        voice_messages=voice_uploads,
+    )
+    try:
+        db.commit()
+        db.refresh(comment)
+        for item in media_items:
+            db.refresh(item)
+    except Exception:
+        db.rollback()
+        for stored_path in stored_paths:
+            delete_stored_file(stored_path)
+        raise
+    try:
+        notify_comment_added(
+            db,
+            ticket=t,
+            author=user,
+            comment_text=text_value,
+            photo_count=sum(1 for item in media_items if item.media_kind == "photo"),
+            voice_count=sum(1 for item in media_items if item.media_kind == "voice"),
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+    return serialize_comment_out(comment, media_items)
 
 @app.post("/tickets/{ticket_id}/attachments", response_model=list[AttachmentOut])
 def upload_attachment(ticket_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -4852,14 +5180,26 @@ def download_attachment(
     t = get_api_ticket_or_404(db, user, a.ticket_id)
     display_name = ((a.original_name or "").strip() or get_storage_basename(a.file_path) or "file")[:255]
     disposition = "attachment" if str(download or "").strip() == "1" else "inline"
-    presigned_url = build_presigned_storage_download_url(a.file_path, display_name, disposition)
-    if presigned_url:
-        return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    return serve_stored_file_response(a.file_path, display_name, disposition, "Attachment file not found")
 
-    disk_path = resolve_attachment_disk_path(a.file_path)
-    if not disk_path or not disk_path.exists() or not disk_path.is_file():
-        raise HTTPException(404, "Attachment file not found")
-    return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
+
+@app.get("/comment-media/{media_id}")
+def download_comment_media(
+    media_id: int,
+    download: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    item = db.get(CommentMedia, media_id)
+    if not item:
+        raise HTTPException(404, "Comment media not found")
+    comment = db.get(Comment, item.comment_id)
+    if not comment:
+        raise HTTPException(404, "Comment not found")
+    _ = get_api_ticket_or_404(db, user, comment.ticket_id)
+    display_name = ((item.original_name or "").strip() or get_storage_basename(item.file_path) or "file")[:255]
+    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
+    return serve_stored_file_response(item.file_path, display_name, disposition, "Comment media file not found")
 
 # =========================
 # WEB UI
@@ -8061,8 +8401,10 @@ async def web_add_self_watcher(
 @app.post("/web/tickets/{ticket_id}/comments")
 async def web_add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     form = await request.form()
-    
     text = (form.get("text") or "").strip()
+    photo_uploads = normalize_optional_uploaded_files(list(form.getlist("photos")))
+    voice_uploads = normalize_optional_uploaded_files(list(form.getlist("voice_messages")))
+    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}?tab=overview")
 
     t = get_company_ticket_or_404(db, user, ticket_id)
     if not can_access_ticket(user, t):
@@ -8070,12 +8412,50 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     if t.status == TicketStatus.archived:
         raise HTTPException(400, "Archived ticket is read-only")
 
-    c = Comment(ticket_id=ticket_id, author_id=user.id, text=text)
-    db.add(c); db.commit()
-    notify_comment_added(db, ticket=t, author=user, comment_text=text)
-    db.commit()
+    stored_paths: list[str] = []
+    try:
+        comment, media_items, stored_paths = await create_comment_with_media_async(
+            db=db,
+            ticket_id=ticket_id,
+            author_id=user.id,
+            text=text,
+            photos=photo_uploads,
+            voice_messages=voice_uploads,
+        )
+        db.commit()
+        db.refresh(comment)
+        for item in media_items:
+            db.refresh(item)
+    except HTTPException as exc:
+        db.rollback()
+        for stored_path in stored_paths:
+            delete_stored_file(stored_path)
+        error_code = "too_large" if exc.status_code == 413 else "invalid"
+        return RedirectResponse(
+            url=f"/web/tickets/{ticket_id}?tab=overview&comment_error={error_code}",
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        for stored_path in stored_paths:
+            delete_stored_file(stored_path)
+        return RedirectResponse(
+            url=f"/web/tickets/{ticket_id}?tab=overview&comment_error=save_failed",
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
+    try:
+        notify_comment_added(
+            db,
+            ticket=t,
+            author=user,
+            comment_text=text,
+            photo_count=sum(1 for item in media_items if item.media_kind == "photo"),
+            voice_count=sum(1 for item in media_items if item.media_kind == "voice"),
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 @app.post("/web/tickets/{ticket_id}/attachments")
@@ -8958,13 +9338,7 @@ def web_receipt_file_download(
         raise HTTPException(403, "Forbidden")
     display_name = ((file_row.original_name or "").strip() or get_storage_basename(file_row.file_path) or "file")[:255]
     disposition = "attachment" if str(download or "").strip() == "1" else "inline"
-    presigned_url = build_presigned_storage_download_url(file_row.file_path, display_name, disposition)
-    if presigned_url:
-        return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-    disk_path = resolve_attachment_disk_path(file_row.file_path)
-    if not disk_path or not disk_path.exists() or not disk_path.is_file():
-        raise HTTPException(404, "File not found")
-    return FileResponse(disk_path, filename=display_name, content_disposition_type=disposition)
+    return serve_stored_file_response(file_row.file_path, display_name, disposition, "File not found")
 
 
 @app.get("/web/receipts/export.xlsx")
@@ -9962,6 +10336,17 @@ def web_ticket_detail(
 
     # РїСЂР°РІР°
     comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
+    comment_media_by_comment: dict[int, list[CommentMedia]] = {}
+    if comments:
+        comment_ids = [comment.id for comment in comments]
+        comment_media_items = (
+            db.query(CommentMedia)
+            .filter(CommentMedia.comment_id.in_(comment_ids))
+            .order_by(CommentMedia.id.asc())
+            .all()
+        )
+        for item in comment_media_items:
+            comment_media_by_comment.setdefault(item.comment_id, []).append(item)
     attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
     ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.desc()).all()
 
@@ -10037,6 +10422,7 @@ def web_ticket_detail(
             "departments_by_id": departments_by_id,
             "users_by_id": users_by_id,
             "comments": comments,
+            "comment_media_by_comment": comment_media_by_comment,
             "attachments": attachments,
             "ticket_logs": ticket_logs,
             "now": now,
