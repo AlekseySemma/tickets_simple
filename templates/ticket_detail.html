@@ -119,6 +119,31 @@
       height: 18px;
       fill: currentColor;
     }
+    .comments-jump-badge {
+      position: absolute;
+      top: -4px;
+      right: -2px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #d94b5b;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: 0 6px 14px rgba(217, 75, 91, 0.28);
+      opacity: 0;
+      transform: scale(0.85);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    .comments-jump-badge.has-items {
+      opacity: 1;
+      transform: scale(1);
+    }
     .comment-row { display: flex; }
     .comment-row.theirs { justify-content: flex-start; }
     .comment-row.mine { justify-content: flex-end; }
@@ -1334,6 +1359,7 @@
               </div>
               <button type="button" class="comments-jump-btn" data-comments-jump aria-label="Прокрутить к последним сообщениям" title="К последним сообщениям">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18.1 5.7 11.8l1.06-1.06 4.49 4.48V4h1.5v11.22l4.49-4.48 1.06 1.06L12 18.1Z"/></svg>
+                <span class="comments-jump-badge" data-comments-jump-badge>0</span>
               </button>
 
               {% if t.status.value == "ARCHIVED" %}
@@ -1822,10 +1848,32 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const commentsList = document.querySelector("[data-comments-list].is-scrollable");
   const commentsJumpButton = document.querySelector("[data-comments-jump]");
+  const commentsJumpBadge = document.querySelector("[data-comments-jump-badge]");
   if (commentsList) {
+    let pendingNewComments = 0;
+    let commentsObserverReady = false;
+    const resetPendingNewComments = () => {
+      pendingNewComments = 0;
+      if (!commentsJumpBadge) return;
+      commentsJumpBadge.textContent = "0";
+      commentsJumpBadge.classList.remove("has-items");
+    };
+    const updatePendingNewComments = () => {
+      if (!commentsJumpBadge) return;
+      if (pendingNewComments > 0) {
+        commentsJumpBadge.textContent = pendingNewComments > 9 ? "9+" : String(pendingNewComments);
+        commentsJumpBadge.classList.add("has-items");
+      } else {
+        commentsJumpBadge.textContent = "0";
+        commentsJumpBadge.classList.remove("has-items");
+      }
+    };
     const updateCommentsJumpButton = () => {
       if (!commentsJumpButton) return;
       const remaining = commentsList.scrollHeight - commentsList.clientHeight - commentsList.scrollTop;
+      if (remaining <= 24) {
+        resetPendingNewComments();
+      }
       commentsJumpButton.classList.toggle("is-visible", remaining > 80);
     };
     const scrollCommentsToBottom = (behavior = "smooth") => {
@@ -1835,18 +1883,25 @@ document.addEventListener("DOMContentLoaded", function () {
     requestAnimationFrame(() => {
       scrollCommentsToBottom("auto");
       updateCommentsJumpButton();
+      commentsObserverReady = true;
     });
 
     commentsList.addEventListener("scroll", updateCommentsJumpButton, { passive: true });
     commentsJumpButton?.addEventListener("click", () => {
+      resetPendingNewComments();
       scrollCommentsToBottom();
     });
 
     if (typeof MutationObserver !== "undefined") {
-      const commentsObserver = new MutationObserver(() => {
+      const commentsObserver = new MutationObserver((mutations) => {
+        const addedNodesCount = mutations.reduce((total, mutation) => total + mutation.addedNodes.length, 0);
         const remaining = commentsList.scrollHeight - commentsList.clientHeight - commentsList.scrollTop;
         if (remaining <= 80) {
+          resetPendingNewComments();
           scrollCommentsToBottom("auto");
+        } else if (commentsObserverReady && addedNodesCount > 0) {
+          pendingNewComments += addedNodesCount;
+          updatePendingNewComments();
         }
         updateCommentsJumpButton();
       });
