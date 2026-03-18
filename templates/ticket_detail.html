@@ -156,6 +156,10 @@
       box-shadow: 0 10px 20px rgba(20, 68, 70, 0.05);
       position: relative;
     }
+    .comment-bubble.has-voice-media {
+      width: min(480px, calc(100vw - 72px));
+      max-width: 96%;
+    }
     .comment-row.mine .comment-bubble {
       background: linear-gradient(180deg, #effaf5, #e4f4ed);
       border-color: #b9e3d5;
@@ -1301,8 +1305,9 @@
                 {% for c in comments %}
                   {% set is_mine = c.author_id == user.id %}
                   {% set media_items = comment_media_by_comment.get(c.id, []) %}
+                  {% set has_voice_media = media_items | selectattr("media_kind", "equalto", "voice") | list | length > 0 %}
                   <div class="comment-row {% if is_mine %}mine{% else %}theirs{% endif %}">
-                    <div class="comment-bubble">
+                    <div class="comment-bubble{% if has_voice_media %} has-voice-media{% endif %}">
                       <div class="small muted">
                         <b>{{ users_by_id.get(c.author_id, "—") }}</b> · {{ format_dt(c.created_at) }}
                       </div>
