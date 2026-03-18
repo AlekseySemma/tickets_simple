@@ -187,6 +187,22 @@ class CommentMediaTests(unittest.TestCase):
         self.assertIn('data-comments-jump', detail.text)
         self.assertIn('data-comments-jump-badge', detail.text)
 
+    def test_web_ticket_create_form_does_not_prefill_deadline(self):
+        ids = self.seed_ticket_context()
+        login_response = self.client.post(
+            "/web/login",
+            data={"email": "admin@acme.local", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(login_response.status_code, 303)
+
+        page = self.client.get("/web?open_create=1")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('id="deadline_date"', page.text)
+        self.assertIn('id="deadline_time4"', page.text)
+        self.assertNotIn("Дата по умолчанию (сегодня)", page.text)
+        self.assertNotIn("Время по умолчанию (текущий час:минута", page.text)
+
     def test_comment_media_moves_with_archive_and_restore(self):
         ids = self.seed_ticket_context()
 

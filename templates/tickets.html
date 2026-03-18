@@ -1249,17 +1249,6 @@
     if (!dateEl || !timeEl || !prettyEl) return;
 
     const pad2 = (n) => String(n).padStart(2, "0");
-    const now = new Date();
-
-    // Дата по умолчанию (сегодня)
-    if (!dateEl.value) {
-      dateEl.value = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-    }
-
-    // Время по умолчанию (текущий час:минута → HHMM)
-    if (!timeEl.value) {
-      timeEl.value = `${pad2(now.getHours())}${pad2(now.getMinutes())}`;
-    }
 
     function parseTime(value) {
       const digits = (value || "").replace(/\D/g, "").slice(0, 4);
