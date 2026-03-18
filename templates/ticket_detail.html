@@ -68,6 +68,19 @@
       gap: 10px;
       min-height: 90px;
     }
+    .comments-list.is-scrollable {
+      max-height: 720px;
+      overflow-y: auto;
+      padding-right: 6px;
+      overscroll-behavior: contain;
+    }
+    .comments-list.is-scrollable::-webkit-scrollbar {
+      width: 8px;
+    }
+    .comments-list.is-scrollable::-webkit-scrollbar-thumb {
+      background: rgba(31, 111, 102, 0.24);
+      border-radius: 999px;
+    }
     .comment-row { display: flex; }
     .comment-row.theirs { justify-content: flex-start; }
     .comment-row.mine { justify-content: flex-end; }
@@ -1212,7 +1225,7 @@
                 <div class="alert alert-danger py-2 px-3 mb-3">Не удалось сохранить комментарий. Попробуйте ещё раз.</div>
               {% endif %}
 
-              <div class="comments-list mb-3">
+              <div class="comments-list mb-3{% if comments|length > 10 %} is-scrollable{% endif %}" data-comments-list>
                 {% for c in comments %}
                   {% set is_mine = c.author_id == user.id %}
                   {% set media_items = comment_media_by_comment.get(c.id, []) %}
@@ -1762,6 +1775,13 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll("[data-preserve-scroll]").forEach((form) => {
     form.addEventListener("submit", saveTicketScrollPosition);
   });
+
+  const commentsList = document.querySelector("[data-comments-list].is-scrollable");
+  if (commentsList) {
+    requestAnimationFrame(() => {
+      commentsList.scrollTop = commentsList.scrollHeight;
+    });
+  }
 
   const commentForm = document.querySelector('form.comment-composer[action$="/comments"]');
   if (commentForm) {

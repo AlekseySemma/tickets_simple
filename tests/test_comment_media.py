@@ -159,6 +159,32 @@ class CommentMediaTests(unittest.TestCase):
         self.assertIn('data-comment-recording-cancel', detail.text)
         self.assertIn('title="Записать голосовое сообщение"', detail.text)
 
+    def test_web_ticket_detail_enables_internal_scroll_after_ten_comments(self):
+        ids = self.seed_ticket_context()
+        with main.SessionLocal() as db:
+            for index in range(11):
+                asyncio.run(
+                    main.create_comment_with_media_async(
+                        db=db,
+                        ticket_id=int(ids["ticket_id"]),
+                        author_id=int(ids["user_id"]),
+                        text=f"Комментарий {index + 1}",
+                    )
+                )
+
+        login_response = self.client.post(
+            "/web/login",
+            data={"email": "admin@acme.local", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(login_response.status_code, 303)
+
+        detail = self.client.get(f"/web/tickets/{ids['ticket_id']}?tab=overview")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn('class="comments-list', detail.text)
+        self.assertIn('is-scrollable', detail.text)
+        self.assertIn('data-comments-list', detail.text)
+
     def test_comment_media_moves_with_archive_and_restore(self):
         ids = self.seed_ticket_context()
 
