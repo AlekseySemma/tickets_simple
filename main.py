@@ -3893,7 +3893,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault(
         "Permissions-Policy",
-        "camera=(), microphone=(), geolocation=()",
+        "camera=(), microphone=(self), geolocation=()",
     )
     return response
 

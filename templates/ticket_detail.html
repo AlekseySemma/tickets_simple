@@ -182,6 +182,11 @@
       flex-direction: column;
       gap: 10px;
     }
+    .comment-messenger.is-recording .comment-messenger-row {
+      border-color: #efb2ba;
+      background: linear-gradient(180deg, #fff7f8, #fff0f3);
+      box-shadow: 0 14px 28px rgba(217, 75, 91, 0.12);
+    }
     .comment-messenger-row {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
@@ -252,6 +257,63 @@
       min-height: 20px;
       margin-left: 4px;
     }
+    .comment-recording-panel {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fff5f7, #fff2f5);
+      border: 1px solid #f2c6cf;
+      color: #7a3040;
+    }
+    .comment-messenger.is-recording .comment-recording-panel {
+      display: flex;
+    }
+    .comment-recording-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #d94b5b;
+      box-shadow: 0 0 0 0 rgba(217, 75, 91, 0.35);
+      animation: comment-recording-dot-pulse 1s ease infinite;
+      flex: 0 0 auto;
+    }
+    @keyframes comment-recording-dot-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(217, 75, 91, 0.35); }
+      70% { box-shadow: 0 0 0 10px rgba(217, 75, 91, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(217, 75, 91, 0); }
+    }
+    .comment-recording-timer {
+      min-width: 42px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .comment-recording-wave {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 18px;
+      flex: 0 0 auto;
+    }
+    .comment-recording-wave span {
+      width: 3px;
+      border-radius: 999px;
+      background: rgba(217, 75, 91, 0.7);
+      animation: comment-recording-wave 0.9s ease-in-out infinite;
+    }
+    .comment-recording-wave span:nth-child(1) { height: 7px; animation-delay: 0s; }
+    .comment-recording-wave span:nth-child(2) { height: 15px; animation-delay: 0.12s; }
+    .comment-recording-wave span:nth-child(3) { height: 10px; animation-delay: 0.24s; }
+    .comment-recording-wave span:nth-child(4) { height: 17px; animation-delay: 0.36s; }
+    @keyframes comment-recording-wave {
+      0%, 100% { transform: scaleY(0.65); opacity: 0.75; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+    .comment-recording-hint {
+      font-size: 12px;
+      color: #8d4b58;
+    }
     .comment-attachment-list {
       display: flex;
       flex-wrap: wrap;
@@ -277,6 +339,20 @@
       font-size: 11px;
       letter-spacing: 0.04em;
       color: #5f7d79;
+    }
+    .comment-attachment-remove {
+      width: 20px;
+      height: 20px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(40, 88, 82, 0.08);
+      color: #285852;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0;
     }
     .comment-file-card {
       display: flex;
@@ -756,6 +832,9 @@
         width: 40px;
         height: 40px;
       }
+      .comment-recording-panel {
+        flex-wrap: wrap;
+      }
       .page-actions .btn {
         flex: 1 1 auto;
         min-width: 120px;
@@ -1147,6 +1226,12 @@
                       multiple
                     >
                     <div class="comment-attachment-list" data-comment-attachment-list></div>
+                    <div class="comment-recording-panel" data-comment-recording-panel aria-live="polite">
+                      <span class="comment-recording-dot"></span>
+                      <span class="comment-recording-timer" data-comment-recording-timer>0:00</span>
+                      <span class="comment-recording-wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+                      <span class="comment-recording-hint" data-comment-recording-hint>Сдвиньте влево, чтобы отменить</span>
+                    </div>
                     <div class="small text-muted comment-composer-status" data-comment-status>
                       Скрепка прикладывает фото или файл. Удерживайте микрофон, чтобы записать голосовое.
                     </div>
@@ -1582,7 +1667,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const actionIcon = commentForm.querySelector('[data-comment-action-icon]');
     const attachmentsInput = commentForm.querySelector('[data-comment-attachments]');
     const attachmentList = commentForm.querySelector('[data-comment-attachment-list]');
+    const messengerRoot = commentForm.querySelector('[data-comment-ui]');
     const statusLine = commentForm.querySelector('[data-comment-status]');
+    const recordingPanel = commentForm.querySelector('[data-comment-recording-panel]');
+    const recordingTimer = commentForm.querySelector('[data-comment-recording-timer]');
+    const recordingHint = commentForm.querySelector('[data-comment-recording-hint]');
     const micIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V7a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Zm0 1.5A5 5 0 0 1 7 12V7a5 5 0 0 1 10 0v5a5 5 0 0 1-5 5Zm-.75 2.08V22h1.5v-2.92A8 8 0 0 0 20 11.5h-1.5a6.5 6.5 0 0 1-13 0H4a8 8 0 0 0 7.25 7.58Z"/></svg>';
     const sendIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.6 21 12 3.4 3.4l.1 6.7 12.4 1.9-12.4 1.9-.1 6.7Z"/></svg>';
     let mediaRecorder = null;
@@ -1590,14 +1679,29 @@ document.addEventListener("DOMContentLoaded", function () {
     let recorderChunks = [];
     let isRecording = false;
     let isSubmittingVoice = false;
+    let isRecordingCanceled = false;
     let activePointerId = null;
+    let recordingStartedAt = 0;
+    let recordingTimerHandle = null;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
 
     function setStatus(text) {
       if (statusLine) statusLine.textContent = text;
     }
 
+    function formatRecordingTime(totalSeconds) {
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function getAttachmentFiles() {
+      return Array.from(attachmentsInput?.files || []);
+    }
+
     function hasAttachments() {
-      return !!attachmentsInput && !!attachmentsInput.files && attachmentsInput.files.length > 0;
+      return getAttachmentFiles().length > 0;
     }
 
     function syncTextInput() {
@@ -1606,29 +1710,63 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
+    function setAttachmentFiles(files) {
+      if (!attachmentsInput) return;
+      const transfer = new DataTransfer();
+      files.forEach((file) => transfer.items.add(file));
+      attachmentsInput.files = transfer.files;
+    }
+
     function renderAttachments() {
-      if (!attachmentList || !attachmentsInput) return;
+      if (!attachmentList) return;
       attachmentList.innerHTML = "";
-      Array.from(attachmentsInput.files || []).forEach((file) => {
+      getAttachmentFiles().forEach((file, index) => {
         const chip = document.createElement("span");
         chip.className = "comment-attachment-chip";
         const ext = ((file.name || "").split(".").pop() || "FILE").slice(0, 5).toUpperCase();
-        chip.innerHTML = `<strong>${ext}</strong><span>${file.name}</span>`;
+        chip.innerHTML = `<strong>${ext}</strong><span>${file.name}</span><button type="button" class="comment-attachment-remove" data-comment-remove-index="${index}" aria-label="Убрать вложение" title="Убрать вложение">×</button>`;
         attachmentList.appendChild(chip);
       });
     }
 
+    function updateRecordingTimer() {
+      if (!recordingTimer) return;
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000));
+      recordingTimer.textContent = formatRecordingTime(elapsedSeconds);
+    }
+
+    function startRecordingTimer() {
+      recordingStartedAt = Date.now();
+      updateRecordingTimer();
+      clearInterval(recordingTimerHandle);
+      recordingTimerHandle = window.setInterval(updateRecordingTimer, 200);
+    }
+
+    function stopRecordingTimer() {
+      if (recordingTimerHandle) {
+        clearInterval(recordingTimerHandle);
+        recordingTimerHandle = null;
+      }
+      if (recordingTimer) {
+        recordingTimer.textContent = "0:00";
+      }
+    }
+
     function updateStatus() {
       if (isRecording) {
-        setStatus("Идет запись. Отпустите кнопку, чтобы сразу отправить голосовое.");
+        setStatus(isRecordingCanceled ? "Запись будет отменена." : "Отпустите кнопку, чтобы отправить голосовое сообщение.");
         return;
       }
       if (isSubmittingVoice) {
         setStatus("Отправляем голосовое сообщение...");
         return;
       }
+      if (!window.isSecureContext) {
+        setStatus("Запись голоса доступна только по HTTPS или на localhost.");
+        return;
+      }
       if (hasAttachments()) {
-        setStatus(`Вложений выбрано: ${attachmentsInput.files.length}. Кнопка справа отправит сообщение.`);
+        setStatus(`Вложений выбрано: ${getAttachmentFiles().length}. Кнопка справа отправит сообщение.`);
         return;
       }
       if (proxyInput && proxyInput.value.trim()) {
@@ -1641,6 +1779,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function updateActionButton() {
       if (!actionButton || !actionIcon) return;
       const shouldSend = !!(proxyInput && proxyInput.value.trim()) || hasAttachments();
+      messengerRoot?.classList.toggle("is-recording", isRecording);
       actionButton.classList.toggle("is-send", shouldSend && !isRecording);
       actionButton.classList.toggle("is-recording", isRecording);
       actionIcon.innerHTML = shouldSend ? sendIcon : micIcon;
@@ -1667,6 +1806,39 @@ document.addEventListener("DOMContentLoaded", function () {
       syncTextInput();
       if (!legacyTextInput || !commentForm) return;
       commentForm.requestSubmit();
+    }
+
+    async function getMicrophonePermissionState() {
+      if (!navigator.permissions?.query) return "";
+      try {
+        const result = await navigator.permissions.query({ name: "microphone" });
+        return result.state || "";
+      } catch (error) {
+        return "";
+      }
+    }
+
+    async function describeMicrophoneError(error) {
+      if (!window.isSecureContext) {
+        return "Браузер не даст доступ к микрофону по обычному HTTP. Откройте сайт по HTTPS или на localhost.";
+      }
+      if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") {
+        return "Микрофон не найден. Проверьте, подключен ли он и видит ли его система.";
+      }
+      if (error?.name === "NotReadableError" || error?.name === "TrackStartError") {
+        return "Микрофон сейчас занят другим приложением. Закройте его и попробуйте снова.";
+      }
+      if (error?.name === "SecurityError") {
+        return "Браузер или политика страницы блокирует доступ к микрофону.";
+      }
+      if (error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError") {
+        const permissionState = await getMicrophonePermissionState();
+        if (permissionState === "denied") {
+          return "Доступ к микрофону заблокирован в настройках браузера или сайта. Разрешите микрофон для этой страницы.";
+        }
+        return "Браузер не дал доступ к микрофону. Проверьте системное разрешение и настройки сайта.";
+      }
+      return "Не удалось получить доступ к микрофону.";
     }
 
     function getRecordingPreset() {
@@ -1725,6 +1897,11 @@ document.addEventListener("DOMContentLoaded", function () {
       if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) {
         return;
       }
+      if (!window.isSecureContext) {
+        updateComposerState();
+        setStatus("Запись недоступна: нужен HTTPS или localhost. На обычном HTTP браузер не запросит микрофон.");
+        return;
+      }
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         setStatus("Ваш браузер не поддерживает запись голосовых сообщений.");
         return;
@@ -1737,7 +1914,14 @@ document.addEventListener("DOMContentLoaded", function () {
           : new MediaRecorder(recorderStream);
         recorderChunks = [];
         isRecording = true;
+        isRecordingCanceled = false;
         activePointerId = pointerId;
+        pointerStartX = 0;
+        pointerStartY = 0;
+        if (recordingHint) {
+          recordingHint.textContent = "Сдвиньте влево, чтобы отменить";
+        }
+        startRecordingTimer();
         updateComposerState();
 
         mediaRecorder.addEventListener("dataavailable", (event) => {
@@ -1753,9 +1937,15 @@ document.addEventListener("DOMContentLoaded", function () {
           recorderChunks = [];
           mediaRecorder = null;
           stopRecorderStream();
+          stopRecordingTimer();
           isRecording = false;
           updateComposerState();
 
+          if (isRecordingCanceled) {
+            isRecordingCanceled = false;
+            setStatus("Запись отменена.");
+            return;
+          }
           if (!payload.length) {
             setStatus("Запись отменена или получилась пустой.");
             return;
@@ -1778,9 +1968,27 @@ document.addEventListener("DOMContentLoaded", function () {
       } catch (error) {
         mediaRecorder = null;
         stopRecorderStream();
+        stopRecordingTimer();
         isRecording = false;
         updateComposerState();
-        setStatus("Не удалось получить доступ к микрофону.");
+        setStatus(await describeMicrophoneError(error));
+      }
+    }
+
+    function updateRecordingGesture(pointerEvent) {
+      if (!isRecording || activePointerId === null) return;
+      if (pointerEvent.pointerId !== undefined && pointerEvent.pointerId !== activePointerId) return;
+      const deltaX = pointerEvent.clientX - pointerStartX;
+      const deltaY = pointerEvent.clientY - pointerStartY;
+      const shouldCancel = deltaX <= -90 || deltaY <= -70;
+      if (shouldCancel !== isRecordingCanceled) {
+        isRecordingCanceled = shouldCancel;
+        if (recordingHint) {
+          recordingHint.textContent = shouldCancel
+            ? "Отпустите кнопку, чтобы отменить запись"
+            : "Сдвиньте влево, чтобы отменить";
+        }
+        updateComposerState();
       }
     }
 
@@ -1800,6 +2008,17 @@ document.addEventListener("DOMContentLoaded", function () {
     if (attachButton && attachmentsInput) {
       attachButton.addEventListener("click", () => attachmentsInput.click());
       attachmentsInput.addEventListener("change", updateComposerState);
+    }
+
+    if (attachmentList) {
+      attachmentList.addEventListener("click", (event) => {
+        const removeButton = event.target.closest("[data-comment-remove-index]");
+        if (!removeButton) return;
+        const removeIndex = Number(removeButton.getAttribute("data-comment-remove-index"));
+        const nextFiles = getAttachmentFiles().filter((_, index) => index !== removeIndex);
+        setAttachmentFiles(nextFiles);
+        updateComposerState();
+      });
     }
 
     if (proxyInput) {
@@ -1824,7 +2043,12 @@ document.addEventListener("DOMContentLoaded", function () {
       actionButton.addEventListener("pointerdown", (event) => {
         if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) return;
         event.preventDefault();
+        pointerStartX = event.clientX;
+        pointerStartY = event.clientY;
         startRecording(event.pointerId);
+      });
+      actionButton.addEventListener("pointermove", (event) => {
+        updateRecordingGesture(event);
       });
       actionButton.addEventListener("pointerup", (event) => {
         event.preventDefault();
@@ -1835,6 +2059,9 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
+    window.addEventListener("pointermove", (event) => {
+      updateRecordingGesture(event);
+    });
     window.addEventListener("pointerup", (event) => {
       stopRecording(event.pointerId);
     });

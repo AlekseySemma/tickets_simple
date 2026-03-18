@@ -208,6 +208,12 @@ class CommentMediaTests(unittest.TestCase):
             self.assertIsNotNone(restored_disk_path)
             self.assertTrue(restored_disk_path.exists())
 
+    def test_permissions_policy_allows_microphone_for_same_origin(self):
+        response = self.client.get("/web/login")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Permissions-Policy", response.headers)
+        self.assertIn("microphone=(self)", response.headers["Permissions-Policy"])
+
 
 if __name__ == "__main__":
     unittest.main()
