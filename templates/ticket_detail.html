@@ -81,6 +81,44 @@
       background: rgba(31, 111, 102, 0.24);
       border-radius: 999px;
     }
+    .comments-card {
+      position: relative;
+    }
+    .comments-jump-btn {
+      position: absolute;
+      right: 18px;
+      bottom: 118px;
+      width: 42px;
+      height: 42px;
+      border: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #1f9d8f;
+      color: #fff;
+      box-shadow: 0 14px 28px rgba(31, 157, 143, 0.26);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(8px);
+      transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+      z-index: 3;
+    }
+    .comments-jump-btn.is-visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    .comments-jump-btn:hover {
+      background: #19867a;
+    }
+    .comments-jump-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
     .comment-row { display: flex; }
     .comment-row.theirs { justify-content: flex-start; }
     .comment-row.mine { justify-content: flex-end; }
@@ -1294,6 +1332,9 @@
                   <div class="muted small">Пока нет комментариев.</div>
                 {% endif %}
               </div>
+              <button type="button" class="comments-jump-btn" data-comments-jump aria-label="Прокрутить к последним сообщениям" title="К последним сообщениям">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18.1 5.7 11.8l1.06-1.06 4.49 4.48V4h1.5v11.22l4.49-4.48 1.06 1.06L12 18.1Z"/></svg>
+              </button>
 
               {% if t.status.value == "ARCHIVED" %}
                 <div class="small text-muted">Архивная заявка доступна только для просмотра.</div>
@@ -1780,10 +1821,37 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   const commentsList = document.querySelector("[data-comments-list].is-scrollable");
+  const commentsJumpButton = document.querySelector("[data-comments-jump]");
   if (commentsList) {
+    const updateCommentsJumpButton = () => {
+      if (!commentsJumpButton) return;
+      const remaining = commentsList.scrollHeight - commentsList.clientHeight - commentsList.scrollTop;
+      commentsJumpButton.classList.toggle("is-visible", remaining > 80);
+    };
+    const scrollCommentsToBottom = (behavior = "smooth") => {
+      commentsList.scrollTo({ top: commentsList.scrollHeight, behavior });
+    };
+
     requestAnimationFrame(() => {
-      commentsList.scrollTop = commentsList.scrollHeight;
+      scrollCommentsToBottom("auto");
+      updateCommentsJumpButton();
     });
+
+    commentsList.addEventListener("scroll", updateCommentsJumpButton, { passive: true });
+    commentsJumpButton?.addEventListener("click", () => {
+      scrollCommentsToBottom();
+    });
+
+    if (typeof MutationObserver !== "undefined") {
+      const commentsObserver = new MutationObserver(() => {
+        const remaining = commentsList.scrollHeight - commentsList.clientHeight - commentsList.scrollTop;
+        if (remaining <= 80) {
+          scrollCommentsToBottom("auto");
+        }
+        updateCommentsJumpButton();
+      });
+      commentsObserver.observe(commentsList, { childList: true, subtree: true });
+    }
   }
 
   const commentForm = document.querySelector('form.comment-composer[action$="/comments"]');

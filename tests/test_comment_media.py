@@ -184,6 +184,7 @@ class CommentMediaTests(unittest.TestCase):
         self.assertIn('class="comments-list', detail.text)
         self.assertIn('is-scrollable', detail.text)
         self.assertIn('data-comments-list', detail.text)
+        self.assertIn('data-comments-jump', detail.text)
 
     def test_comment_media_moves_with_archive_and_restore(self):
         ids = self.seed_ticket_context()
