@@ -215,6 +215,14 @@
       background: #dff3eb;
       color: #15544f;
     }
+    .comment-icon-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      background: #edf4f1;
+      color: #6d8481;
+      box-shadow: inset 0 0 0 1px rgba(109, 132, 129, 0.12);
+    }
     .comment-icon-btn svg {
       width: 20px;
       height: 20px;
@@ -251,22 +259,51 @@
     .comment-proxy-input::placeholder {
       color: #7a908f;
     }
+    .comment-proxy-input:disabled {
+      color: #6f8381;
+      cursor: default;
+    }
     .comment-composer-status {
       min-height: 20px;
       margin-left: 4px;
     }
     .comment-recording-panel {
-      display: none;
+      display: flex;
       align-items: center;
-      gap: 10px;
+      min-height: 58px;
       padding: 10px 12px;
       border-radius: 14px;
       background: linear-gradient(180deg, #fff5f7, #fff2f5);
       border: 1px solid #f2c6cf;
       color: #7a3040;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-4px);
+      transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
     }
-    .comment-messenger.is-recording .comment-recording-panel {
+    .comment-messenger.is-recording .comment-recording-panel,
+    .comment-messenger.has-voice-preview .comment-recording-panel {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    .comment-recording-live,
+    .comment-voice-preview {
+      display: none;
+      width: 100%;
+      align-items: center;
+      gap: 10px;
+    }
+    .comment-messenger.is-recording .comment-recording-live {
       display: flex;
+    }
+    .comment-messenger.has-voice-preview .comment-voice-preview {
+      display: flex;
+    }
+    .comment-messenger.has-voice-preview .comment-recording-live {
+      display: none;
     }
     .comment-recording-dot {
       width: 10px;
@@ -309,6 +346,34 @@
       50% { transform: scaleY(1); opacity: 1; }
     }
     .comment-recording-hint {
+      font-size: 12px;
+      color: #8d4b58;
+      flex: 1 1 auto;
+    }
+    .comment-panel-btn {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(122, 48, 64, 0.1);
+      color: #8d3f4d;
+      padding: 0;
+      flex: 0 0 auto;
+      cursor: pointer;
+    }
+    .comment-panel-btn:hover {
+      background: rgba(217, 75, 91, 0.14);
+      color: #b03f4d;
+    }
+    .comment-preview-audio {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 38px;
+    }
+    .comment-preview-meta {
       font-size: 12px;
       color: #8d4b58;
     }
@@ -1230,10 +1295,18 @@
                     >
                     <div class="comment-attachment-list" data-comment-attachment-list></div>
                     <div class="comment-recording-panel" data-comment-recording-panel aria-live="polite">
-                      <span class="comment-recording-dot"></span>
-                      <span class="comment-recording-timer" data-comment-recording-timer>0:00</span>
-                      <span class="comment-recording-wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-                      <span class="comment-recording-hint" data-comment-recording-hint>Сдвиньте влево, чтобы отменить</span>
+                      <div class="comment-recording-live" data-comment-recording-live>
+                        <span class="comment-recording-dot"></span>
+                        <span class="comment-recording-timer" data-comment-recording-timer>0:00</span>
+                        <span class="comment-recording-wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+                        <span class="comment-recording-hint" data-comment-recording-hint>Нажмите ещё раз, чтобы остановить запись</span>
+                        <button type="button" class="comment-panel-btn" data-comment-recording-cancel aria-label="Отменить запись" title="Отменить запись">×</button>
+                      </div>
+                      <div class="comment-voice-preview" data-comment-voice-preview>
+                        <audio controls preload="metadata" class="comment-preview-audio" data-comment-preview-audio></audio>
+                        <span class="comment-preview-meta" data-comment-preview-meta>Прослушайте перед отправкой</span>
+                        <button type="button" class="comment-panel-btn" data-comment-preview-clear aria-label="Удалить голосовое" title="Удалить голосовое">×</button>
+                      </div>
                     </div>
                     <div class="small text-muted comment-composer-status" data-comment-status>
                       Скрепка прикладывает фото или файл. Удерживайте микрофон, чтобы записать голосовое.
@@ -1704,7 +1777,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const recordingPanel = commentForm.querySelector('[data-comment-recording-panel]');
     const recordingTimer = commentForm.querySelector('[data-comment-recording-timer]');
     const recordingHint = commentForm.querySelector('[data-comment-recording-hint]');
+    const recordingCancelButton = commentForm.querySelector('[data-comment-recording-cancel]');
+    const previewAudio = commentForm.querySelector('[data-comment-preview-audio]');
+    const previewMeta = commentForm.querySelector('[data-comment-preview-meta]');
+    const previewClearButton = commentForm.querySelector('[data-comment-preview-clear]');
     const micIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V7a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Zm0 1.5A5 5 0 0 1 7 12V7a5 5 0 0 1 10 0v5a5 5 0 0 1-5 5Zm-.75 2.08V22h1.5v-2.92A8 8 0 0 0 20 11.5h-1.5a6.5 6.5 0 0 1-13 0H4a8 8 0 0 0 7.25 7.58Z"/></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.75A.75.75 0 0 1 7.75 7h8.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-8.5A.75.75 0 0 1 7 16.25v-8.5Z"/></svg>';
     const sendIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.6 21 12 3.4 3.4l.1 6.7 12.4 1.9-12.4 1.9-.1 6.7Z"/></svg>';
     let mediaRecorder = null;
     let recorderStream = null;
@@ -1712,11 +1790,10 @@ document.addEventListener("DOMContentLoaded", function () {
     let isRecording = false;
     let isSubmittingVoice = false;
     let isRecordingCanceled = false;
-    let activePointerId = null;
     let recordingStartedAt = 0;
     let recordingTimerHandle = null;
-    let pointerStartX = 0;
-    let pointerStartY = 0;
+    let preparedVoiceFile = null;
+    let preparedVoiceUrl = "";
 
     function setStatus(text) {
       if (statusLine) statusLine.textContent = text;
@@ -1747,6 +1824,50 @@ document.addEventListener("DOMContentLoaded", function () {
       const transfer = new DataTransfer();
       files.forEach((file) => transfer.items.add(file));
       attachmentsInput.files = transfer.files;
+    }
+
+    function formatFileSize(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return "";
+      if (bytes >= 1048576) {
+        return `${(bytes / 1048576).toFixed(1)} МБ`;
+      }
+      return `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+    }
+
+    function revokePreparedVoiceUrl() {
+      if (!preparedVoiceUrl) return;
+      URL.revokeObjectURL(preparedVoiceUrl);
+      preparedVoiceUrl = "";
+    }
+
+    function clearPreparedVoice({ keepStatus = false } = {}) {
+      preparedVoiceFile = null;
+      if (previewAudio) {
+        previewAudio.pause();
+        previewAudio.removeAttribute("src");
+        previewAudio.load();
+      }
+      if (previewMeta) {
+        previewMeta.textContent = "Прослушайте перед отправкой";
+      }
+      revokePreparedVoiceUrl();
+      if (!keepStatus) {
+        updateComposerState();
+      }
+    }
+
+    function setPreparedVoice(file) {
+      clearPreparedVoice({ keepStatus: true });
+      preparedVoiceFile = file;
+      if (previewAudio) {
+        preparedVoiceUrl = URL.createObjectURL(file);
+        previewAudio.src = preparedVoiceUrl;
+      }
+      if (previewMeta) {
+        const sizeLabel = formatFileSize(file.size);
+        previewMeta.textContent = sizeLabel ? `Голосовое готово, ${sizeLabel}` : "Голосовое готово";
+      }
+      updateComposerState();
     }
 
     function renderAttachments() {
@@ -1784,7 +1905,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    function updateStatus() {
+    function legacyUpdateStatus() {
       if (isRecording) {
         setStatus(isRecordingCanceled ? "Запись будет отменена." : "Отпустите кнопку, чтобы отправить голосовое сообщение.");
         return;
@@ -1808,7 +1929,35 @@ document.addEventListener("DOMContentLoaded", function () {
       setStatus("Скрепка прикладывает фото или файл. Удерживайте микрофон, чтобы записать голосовое.");
     }
 
-    function updateActionButton() {
+    function updateStatus() {
+      if (isRecording) {
+        setStatus("Идёт запись. Нажмите кнопку ещё раз, чтобы остановить, или × чтобы отменить.");
+        return;
+      }
+      if (isSubmittingVoice) {
+        setStatus("Отправляем голосовое сообщение...");
+        return;
+      }
+      if (preparedVoiceFile) {
+        setStatus("Прослушайте запись и нажмите стрелку справа, чтобы отправить.");
+        return;
+      }
+      if (!window.isSecureContext) {
+        setStatus("Запись голоса доступна только по HTTPS или на localhost.");
+        return;
+      }
+      if (hasAttachments()) {
+        setStatus(`Вложений выбрано: ${getAttachmentFiles().length}. Кнопка справа отправит сообщение.`);
+        return;
+      }
+      if (proxyInput && proxyInput.value.trim()) {
+        setStatus("Нажмите кнопку справа, чтобы отправить сообщение.");
+        return;
+      }
+      setStatus("Скрепка прикладывает фото или файл. Микрофон запускает запись голосового.");
+    }
+
+    function legacyUpdateActionButton() {
       if (!actionButton || !actionIcon) return;
       const shouldSend = !!(proxyInput && proxyInput.value.trim()) || hasAttachments();
       messengerRoot?.classList.toggle("is-recording", isRecording);
@@ -1827,15 +1976,74 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    function updateComposerState() {
+    function updateActionButton() {
+      if (!actionButton || !actionIcon) return;
+      const hasPreparedVoice = !!preparedVoiceFile;
+      const shouldSend = !!(proxyInput && proxyInput.value.trim()) || hasAttachments() || hasPreparedVoice;
+      messengerRoot?.classList.toggle("is-recording", isRecording);
+      messengerRoot?.classList.toggle("has-voice-preview", hasPreparedVoice);
+      actionButton.classList.toggle("is-send", shouldSend && !isRecording);
+      actionButton.classList.toggle("is-recording", isRecording);
+      actionIcon.innerHTML = isRecording ? stopIcon : (shouldSend ? sendIcon : micIcon);
+      if (isRecording) {
+        actionButton.setAttribute("aria-label", "Остановить запись голосового сообщения");
+        actionButton.title = "Остановить запись";
+      } else if (shouldSend) {
+        actionButton.setAttribute("aria-label", "Отправить сообщение");
+        actionButton.title = "Отправить сообщение";
+      } else {
+        actionButton.setAttribute("aria-label", "Записать голосовое сообщение");
+        actionButton.title = "Записать голосовое сообщение";
+      }
+    }
+
+    function legacyUpdateComposerState() {
       syncTextInput();
       renderAttachments();
       updateActionButton();
       updateStatus();
     }
 
+    function updateComposerState() {
+      syncTextInput();
+      renderAttachments();
+      if (attachButton) {
+        attachButton.disabled = isRecording || isSubmittingVoice;
+      }
+      if (proxyInput) {
+        proxyInput.disabled = isRecording;
+      }
+      updateActionButton();
+      updateStatus();
+    }
+
+    async function sendPreparedVoice() {
+      if (!preparedVoiceFile || isSubmittingVoice) return;
+      isSubmittingVoice = true;
+      updateComposerState();
+      try {
+        await sendRecordedVoice(preparedVoiceFile, preparedVoiceFile.type);
+      } catch (error) {
+        setStatus("Не удалось отправить голосовое сообщение. Попробуйте ещё раз.");
+      } finally {
+        isSubmittingVoice = false;
+        updateComposerState();
+      }
+    }
+
+    function legacySubmitCommentForm() {
+      syncTextInput();
+      if (!legacyTextInput || !commentForm) return;
+      commentForm.requestSubmit();
+    }
+
     function submitCommentForm() {
       syncTextInput();
+      if (isRecording || isSubmittingVoice) return;
+      if (preparedVoiceFile) {
+        void sendPreparedVoice();
+        return;
+      }
       if (!legacyTextInput || !commentForm) return;
       commentForm.requestSubmit();
     }
@@ -1925,7 +2133,7 @@ document.addEventListener("DOMContentLoaded", function () {
       throw new Error(`Voice upload failed: ${response.status} (${mimeType || "unknown"})`);
     }
 
-    async function startRecording(pointerId) {
+    async function legacyStartRecording(pointerId) {
       if (!actionButton || isRecording || isSubmittingVoice) return;
       if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) {
         return;
@@ -2008,7 +2216,79 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    function updateRecordingGesture(pointerEvent) {
+    async function startRecording() {
+      if (!actionButton || isRecording || isSubmittingVoice || preparedVoiceFile) return;
+      if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) {
+        return;
+      }
+      if (!window.isSecureContext) {
+        updateComposerState();
+        setStatus("Запись недоступна: нужен HTTPS или localhost. На обычном HTTP браузер не запросит микрофон.");
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        setStatus("Ваш браузер не поддерживает запись голосовых сообщений.");
+        return;
+      }
+      try {
+        const preset = getRecordingPreset();
+        recorderStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = preset.mimeType
+          ? new MediaRecorder(recorderStream, { mimeType: preset.mimeType })
+          : new MediaRecorder(recorderStream);
+        recorderChunks = [];
+        isRecording = true;
+        isRecordingCanceled = false;
+        if (recordingHint) {
+          recordingHint.textContent = "Нажмите ещё раз, чтобы остановить запись";
+        }
+        startRecordingTimer();
+        updateComposerState();
+
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+          if (event.data && event.data.size > 0) {
+            recorderChunks.push(event.data);
+          }
+        });
+
+        mediaRecorder.addEventListener("stop", () => {
+          const finalType = mediaRecorder?.mimeType || preset.mimeType || "audio/webm";
+          const finalExtension = finalType.includes("ogg") ? ".ogg" : preset.extension;
+          const payload = recorderChunks.slice();
+          recorderChunks = [];
+          mediaRecorder = null;
+          stopRecorderStream();
+          stopRecordingTimer();
+          isRecording = false;
+
+          if (isRecordingCanceled) {
+            isRecordingCanceled = false;
+            updateComposerState();
+            setStatus("Запись отменена.");
+            return;
+          }
+          if (!payload.length) {
+            updateComposerState();
+            setStatus("Запись получилась пустой. Попробуйте ещё раз.");
+            return;
+          }
+
+          const voiceFile = new File(payload, `voice-message-${Date.now()}${finalExtension}`, { type: finalType });
+          setPreparedVoice(voiceFile);
+        });
+
+        mediaRecorder.start();
+      } catch (error) {
+        mediaRecorder = null;
+        stopRecorderStream();
+        stopRecordingTimer();
+        isRecording = false;
+        updateComposerState();
+        setStatus(await describeMicrophoneError(error));
+      }
+    }
+
+    function legacyUpdateRecordingGesture(pointerEvent) {
       if (!isRecording || activePointerId === null) return;
       if (pointerEvent.pointerId !== undefined && pointerEvent.pointerId !== activePointerId) return;
       const deltaX = pointerEvent.clientX - pointerStartX;
@@ -2025,10 +2305,26 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    function stopRecording(pointerId) {
+    function legacyStopRecording(pointerId) {
       if (!isRecording || !mediaRecorder) return;
       if (activePointerId !== null && pointerId !== undefined && pointerId !== activePointerId) return;
       activePointerId = null;
+      if (mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
+
+    function stopRecording() {
+      if (!isRecording || !mediaRecorder) return;
+      isRecordingCanceled = false;
+      if (mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
+
+    function cancelRecording() {
+      if (!isRecording || !mediaRecorder) return;
+      isRecordingCanceled = true;
       if (mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
       }
@@ -2059,48 +2355,66 @@ document.addEventListener("DOMContentLoaded", function () {
       proxyInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
-          if (proxyInput.value.trim() || hasAttachments()) {
+          if (proxyInput.value.trim() || hasAttachments() || preparedVoiceFile) {
             submitCommentForm();
           }
         }
       });
     }
 
-    if (actionButton) {
-      actionButton.addEventListener("click", (event) => {
-        if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) {
-          event.preventDefault();
-          submitCommentForm();
-        }
-      });
-      actionButton.addEventListener("pointerdown", (event) => {
-        if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) return;
-        event.preventDefault();
-        pointerStartX = event.clientX;
-        pointerStartY = event.clientY;
-        startRecording(event.pointerId);
-      });
-      actionButton.addEventListener("pointermove", (event) => {
-        updateRecordingGesture(event);
-      });
-      actionButton.addEventListener("pointerup", (event) => {
-        event.preventDefault();
-        stopRecording(event.pointerId);
-      });
-      actionButton.addEventListener("pointercancel", (event) => {
-        stopRecording(event.pointerId);
+    if (recordingCancelButton) {
+      recordingCancelButton.addEventListener("click", () => {
+        cancelRecording();
       });
     }
 
-    window.addEventListener("pointermove", (event) => {
-      updateRecordingGesture(event);
-    });
-    window.addEventListener("pointerup", (event) => {
-      stopRecording(event.pointerId);
+    if (previewClearButton) {
+      previewClearButton.addEventListener("click", () => {
+        clearPreparedVoice();
+      });
+    }
+
+    if (previewAudio && previewMeta) {
+      previewAudio.addEventListener("loadedmetadata", () => {
+        if (!preparedVoiceFile) return;
+        const duration = Number.isFinite(previewAudio.duration) ? Math.max(1, Math.round(previewAudio.duration)) : 0;
+        const durationLabel = duration ? formatRecordingTime(duration) : "";
+        const sizeLabel = formatFileSize(preparedVoiceFile.size);
+        const parts = [durationLabel, sizeLabel].filter(Boolean);
+        previewMeta.textContent = parts.length ? `Голосовое: ${parts.join(" · ")}` : "Голосовое готово";
+      });
+    }
+
+    if (actionButton) {
+      actionButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (isRecording) {
+          stopRecording();
+          return;
+        }
+        if ((proxyInput && proxyInput.value.trim()) || hasAttachments() || preparedVoiceFile) {
+          submitCommentForm();
+          return;
+        }
+        void startRecording();
+      });
+    }
+
+    commentForm.addEventListener("submit", (event) => {
+      syncTextInput();
+      if (isRecording) {
+        event.preventDefault();
+        setStatus("Сначала остановите запись голосового сообщения.");
+        return;
+      }
+      if (preparedVoiceFile) {
+        event.preventDefault();
+        void sendPreparedVoice();
+      }
     });
 
-    commentForm.addEventListener("submit", () => {
-      syncTextInput();
+    window.addEventListener("beforeunload", () => {
+      revokePreparedVoiceUrl();
     });
 
     updateComposerState();
