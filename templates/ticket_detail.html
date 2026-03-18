@@ -69,7 +69,7 @@
       min-height: 90px;
     }
     .comments-list.is-scrollable {
-      max-height: 720px;
+      max-height: min(62vh, 720px);
       overflow-y: auto;
       padding-right: 6px;
       overscroll-behavior: contain;
@@ -894,6 +894,9 @@
     @media (max-width: 575.98px) {
       .meta-chip {
         white-space: normal;
+      }
+      .comments-list.is-scrollable {
+        max-height: min(48vh, 520px);
       }
       .comment-bubble {
         max-width: 100%;
