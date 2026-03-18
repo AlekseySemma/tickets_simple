@@ -155,6 +155,9 @@ class CommentMediaTests(unittest.TestCase):
         self.assertIn("/comment-media/", detail.text)
         self.assertIn('class="comment-delete-form"', detail.text)
         self.assertIn('class="comment-composer" data-preserve-scroll', detail.text)
+        self.assertIn('data-comment-preview-audio', detail.text)
+        self.assertIn('data-comment-recording-cancel', detail.text)
+        self.assertIn('title="Записать голосовое сообщение"', detail.text)
 
     def test_comment_media_moves_with_archive_and_restore(self):
         ids = self.seed_ticket_context()
