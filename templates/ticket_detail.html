@@ -225,6 +225,9 @@
       width: min(100%, 320px);
       height: 40px;
     }
+    .comment-audio-card .comment-media-meta {
+      display: none;
+    }
     .comment-media-meta {
       display: flex;
       flex-wrap: wrap;
@@ -1972,14 +1975,6 @@ document.addEventListener("DOMContentLoaded", function () {
       attachmentsInput.files = transfer.files;
     }
 
-    function formatFileSize(bytes) {
-      if (!Number.isFinite(bytes) || bytes <= 0) return "";
-      if (bytes >= 1048576) {
-        return `${(bytes / 1048576).toFixed(1)} МБ`;
-      }
-      return `${Math.max(1, Math.round(bytes / 1024))} КБ`;
-    }
-
     function revokePreparedVoiceUrl() {
       if (!preparedVoiceUrl) return;
       URL.revokeObjectURL(preparedVoiceUrl);
@@ -2010,8 +2005,7 @@ document.addEventListener("DOMContentLoaded", function () {
         previewAudio.src = preparedVoiceUrl;
       }
       if (previewMeta) {
-        const sizeLabel = formatFileSize(file.size);
-        previewMeta.textContent = sizeLabel ? `Голосовое готово, ${sizeLabel}` : "Голосовое готово";
+        previewMeta.textContent = "Прослушайте перед отправкой";
       }
       updateComposerState();
     }
@@ -2525,9 +2519,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!preparedVoiceFile) return;
         const duration = Number.isFinite(previewAudio.duration) ? Math.max(1, Math.round(previewAudio.duration)) : 0;
         const durationLabel = duration ? formatRecordingTime(duration) : "";
-        const sizeLabel = formatFileSize(preparedVoiceFile.size);
-        const parts = [durationLabel, sizeLabel].filter(Boolean);
-        previewMeta.textContent = parts.length ? `Голосовое: ${parts.join(" · ")}` : "Голосовое готово";
+        previewMeta.textContent = durationLabel ? `Голосовое: ${durationLabel}` : "Прослушайте перед отправкой";
       });
     }
 
