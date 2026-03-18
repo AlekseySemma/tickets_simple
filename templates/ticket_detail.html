@@ -139,6 +139,12 @@
       flex-direction: column;
       gap: 10px;
     }
+    .comment-composer > .comment-composer-tools,
+    .comment-composer > .small.text-muted,
+    .comment-composer > input[name="text"],
+    .comment-composer > button {
+      display: none;
+    }
     .comment-composer-tools {
       display: flex;
       flex-wrap: wrap;
@@ -167,6 +173,153 @@
     }
     .comment-upload-chip input {
       display: none;
+    }
+    .comment-hidden-input {
+      display: none;
+    }
+    .comment-messenger {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .comment-messenger-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid #d8e8df;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff, #f7fcf9);
+      box-shadow: 0 12px 24px rgba(20, 68, 70, 0.06);
+    }
+    .comment-icon-btn {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #e9f7f2;
+      color: #1f6f66;
+      transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+      box-shadow: inset 0 0 0 1px rgba(31, 111, 102, 0.1);
+      touch-action: none;
+    }
+    .comment-icon-btn:hover {
+      transform: translateY(-1px);
+      background: #dff3eb;
+      color: #15544f;
+    }
+    .comment-icon-btn svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+    }
+    .comment-action-btn.is-send {
+      background: #1f9d8f;
+      color: #fff;
+      box-shadow: 0 10px 20px rgba(31, 157, 143, 0.22);
+    }
+    .comment-action-btn.is-send:hover {
+      background: #19867a;
+      color: #fff;
+    }
+    .comment-action-btn.is-recording {
+      background: #d94b5b;
+      color: #fff;
+      box-shadow: 0 12px 24px rgba(217, 75, 91, 0.28);
+      animation: comment-recording-pulse 1.15s ease infinite;
+    }
+    @keyframes comment-recording-pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
+    .comment-proxy-input {
+      border: 0;
+      background: transparent;
+      outline: none;
+      min-width: 0;
+      color: #163f3c;
+      font-size: 15px;
+    }
+    .comment-proxy-input::placeholder {
+      color: #7a908f;
+    }
+    .comment-composer-status {
+      min-height: 20px;
+      margin-left: 4px;
+    }
+    .comment-attachment-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .comment-attachment-list:empty {
+      display: none;
+    }
+    .comment-attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 100%;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eef7f3;
+      border: 1px solid #d5e7de;
+      color: #285852;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .comment-attachment-chip strong {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: #5f7d79;
+    }
+    .comment-file-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: min(100%, 360px);
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #d9e8df;
+      background: rgba(248, 252, 250, 0.92);
+      color: #1d4844;
+      text-decoration: none;
+    }
+    .comment-file-card:hover {
+      border-color: #b8d8ca;
+      background: #f2faf6;
+    }
+    .comment-file-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #e5f2ec;
+      color: #245f5a;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .comment-file-body {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .comment-file-name {
+      font-weight: 600;
+      color: #173e3a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .page-actions form[action*="/archive"] .comment-composer-tools,
     .page-actions form[action*="/archive"] .small.text-muted {
@@ -594,6 +747,15 @@
       .comment-bubble {
         max-width: 100%;
       }
+      .comment-messenger-row {
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        gap: 8px;
+        padding: 8px;
+      }
+      .comment-icon-btn {
+        width: 40px;
+        height: 40px;
+      }
       .page-actions .btn {
         flex: 1 1 auto;
         min-width: 120px;
@@ -902,7 +1064,7 @@
 
               {% set comment_error = request.query_params.get("comment_error", "") %}
               {% if comment_error == "invalid" %}
-                <div class="alert alert-warning py-2 px-3 mb-3">Добавьте текст, фото или голосовое сообщение. В комментариях поддерживаются только изображения и аудио.</div>
+                <div class="alert alert-warning py-2 px-3 mb-3">Добавьте текст, голосовое сообщение или вложение. В комментариях поддерживаются фото, аудио и файлы.</div>
               {% elif comment_error == "too_large" %}
                 <div class="alert alert-warning py-2 px-3 mb-3">Один из файлов слишком большой. Проверьте размер и попробуйте снова.</div>
               {% elif comment_error == "save_failed" %}
@@ -943,6 +1105,21 @@
                                   <a href="{{ media_download_url }}">Скачать</a>
                                 </div>
                               </div>
+                            {% elif m.media_kind == "file" %}
+                              {% set file_label = m.original_name or "Файл" %}
+                              {% set file_ext = (file_label.rsplit(".", 1)[1] if "." in file_label else "FILE")|upper %}
+                              <a href="{{ media_download_url }}" class="comment-file-card">
+                                <span class="comment-file-icon">{{ file_ext[:5] }}</span>
+                                <span class="comment-file-body">
+                                  <span class="comment-file-name">{{ file_label }}</span>
+                                  <span class="comment-media-meta">
+                                    {% if m.file_size_bytes %}
+                                      <span>{{ "%.2f"|format(m.file_size_bytes / 1048576) }} МБ</span>
+                                    {% endif %}
+                                    <span>Скачать</span>
+                                  </span>
+                                </span>
+                              </a>
                             {% endif %}
                           {% endfor %}
                         </div>
@@ -960,6 +1137,31 @@
               {% else %}
                 <form method="post" action="/web/tickets/{{ t.id }}/comments" enctype="multipart/form-data" class="comment-composer">
                   <input type="hidden" name="next" value="{{ overview_url }}">
+                  <div class="comment-messenger" data-comment-ui>
+                    <input
+                      type="file"
+                      name="attachments"
+                      class="comment-hidden-input"
+                      data-comment-attachments
+                      accept="image/*,.pdf,.txt,.doc,.docx,.xls,.xlsx,.zip,.rar"
+                      multiple
+                    >
+                    <div class="comment-attachment-list" data-comment-attachment-list></div>
+                    <div class="small text-muted comment-composer-status" data-comment-status>
+                      Скрепка прикладывает фото или файл. Удерживайте микрофон, чтобы записать голосовое.
+                    </div>
+                    <div class="comment-messenger-row">
+                      <button type="button" class="comment-icon-btn" data-comment-attach aria-label="Прикрепить фото или файл" title="Прикрепить фото или файл">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6.5v8.75a4.25 4.25 0 0 1-8.5 0V5.75a2.75 2.75 0 0 1 5.5 0v8.5a1.25 1.25 0 0 1-2.5 0V7h1.5v7.25a.25.25 0 0 0 .5 0v-8.5a1.25 1.25 0 0 0-2.5 0v9.5a2.75 2.75 0 0 0 5.5 0V6.5h1.5Z"/></svg>
+                      </button>
+                      <input type="text" class="comment-proxy-input" data-comment-proxy placeholder="Сообщение..." autocomplete="off">
+                      <button type="button" class="comment-icon-btn comment-action-btn" data-comment-action aria-label="Записать голосовое сообщение" title="Удерживайте для записи">
+                        <span data-comment-action-icon>
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V7a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Zm0 1.5A5 5 0 0 1 7 12V7a5 5 0 0 1 10 0v5a5 5 0 0 1-5 5Zm-.75 2.08V22h1.5v-2.92A8 8 0 0 0 20 11.5h-1.5a6.5 6.5 0 0 1-13 0H4a8 8 0 0 0 7.25 7.58Z"/></svg>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                   <div class="comment-composer-tools">
                     <div class="comment-upload-group">
                       <label class="comment-upload-chip">
@@ -1373,14 +1575,275 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const commentForm = document.querySelector('form.comment-composer[action$="/comments"]');
   if (commentForm) {
-    const commentTextInput = commentForm.querySelector('input[name="text"]');
-    const mediaInputs = Array.from(commentForm.querySelectorAll('input[type="file"]'));
-    commentForm.addEventListener("submit", () => {
-      const hasMedia = mediaInputs.some((input) => (input.files || []).length > 0);
-      if (commentTextInput && !commentTextInput.value.trim() && hasMedia) {
-        commentTextInput.value = " ";
+    const legacyTextInput = commentForm.querySelector('input[name="text"]');
+    const proxyInput = commentForm.querySelector('[data-comment-proxy]');
+    const attachButton = commentForm.querySelector('[data-comment-attach]');
+    const actionButton = commentForm.querySelector('[data-comment-action]');
+    const actionIcon = commentForm.querySelector('[data-comment-action-icon]');
+    const attachmentsInput = commentForm.querySelector('[data-comment-attachments]');
+    const attachmentList = commentForm.querySelector('[data-comment-attachment-list]');
+    const statusLine = commentForm.querySelector('[data-comment-status]');
+    const micIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V7a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Zm0 1.5A5 5 0 0 1 7 12V7a5 5 0 0 1 10 0v5a5 5 0 0 1-5 5Zm-.75 2.08V22h1.5v-2.92A8 8 0 0 0 20 11.5h-1.5a6.5 6.5 0 0 1-13 0H4a8 8 0 0 0 7.25 7.58Z"/></svg>';
+    const sendIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.6 21 12 3.4 3.4l.1 6.7 12.4 1.9-12.4 1.9-.1 6.7Z"/></svg>';
+    let mediaRecorder = null;
+    let recorderStream = null;
+    let recorderChunks = [];
+    let isRecording = false;
+    let isSubmittingVoice = false;
+    let activePointerId = null;
+
+    function setStatus(text) {
+      if (statusLine) statusLine.textContent = text;
+    }
+
+    function hasAttachments() {
+      return !!attachmentsInput && !!attachmentsInput.files && attachmentsInput.files.length > 0;
+    }
+
+    function syncTextInput() {
+      if (legacyTextInput && proxyInput) {
+        legacyTextInput.value = proxyInput.value.trim();
       }
+    }
+
+    function renderAttachments() {
+      if (!attachmentList || !attachmentsInput) return;
+      attachmentList.innerHTML = "";
+      Array.from(attachmentsInput.files || []).forEach((file) => {
+        const chip = document.createElement("span");
+        chip.className = "comment-attachment-chip";
+        const ext = ((file.name || "").split(".").pop() || "FILE").slice(0, 5).toUpperCase();
+        chip.innerHTML = `<strong>${ext}</strong><span>${file.name}</span>`;
+        attachmentList.appendChild(chip);
+      });
+    }
+
+    function updateStatus() {
+      if (isRecording) {
+        setStatus("Идет запись. Отпустите кнопку, чтобы сразу отправить голосовое.");
+        return;
+      }
+      if (isSubmittingVoice) {
+        setStatus("Отправляем голосовое сообщение...");
+        return;
+      }
+      if (hasAttachments()) {
+        setStatus(`Вложений выбрано: ${attachmentsInput.files.length}. Кнопка справа отправит сообщение.`);
+        return;
+      }
+      if (proxyInput && proxyInput.value.trim()) {
+        setStatus("Нажмите кнопку справа, чтобы отправить сообщение.");
+        return;
+      }
+      setStatus("Скрепка прикладывает фото или файл. Удерживайте микрофон, чтобы записать голосовое.");
+    }
+
+    function updateActionButton() {
+      if (!actionButton || !actionIcon) return;
+      const shouldSend = !!(proxyInput && proxyInput.value.trim()) || hasAttachments();
+      actionButton.classList.toggle("is-send", shouldSend && !isRecording);
+      actionButton.classList.toggle("is-recording", isRecording);
+      actionIcon.innerHTML = shouldSend ? sendIcon : micIcon;
+      if (isRecording) {
+        actionButton.setAttribute("aria-label", "Идет запись голосового сообщения");
+        actionButton.title = "Отпустите, чтобы отправить";
+      } else if (shouldSend) {
+        actionButton.setAttribute("aria-label", "Отправить сообщение");
+        actionButton.title = "Отправить сообщение";
+      } else {
+        actionButton.setAttribute("aria-label", "Удерживайте для записи голосового сообщения");
+        actionButton.title = "Удерживайте для записи";
+      }
+    }
+
+    function updateComposerState() {
+      syncTextInput();
+      renderAttachments();
+      updateActionButton();
+      updateStatus();
+    }
+
+    function submitCommentForm() {
+      syncTextInput();
+      if (!legacyTextInput || !commentForm) return;
+      commentForm.requestSubmit();
+    }
+
+    function getRecordingPreset() {
+      const presets = [
+        { mimeType: "audio/webm;codecs=opus", extension: ".webm" },
+        { mimeType: "audio/ogg;codecs=opus", extension: ".ogg" },
+        { mimeType: "audio/webm", extension: ".webm" },
+        { mimeType: "audio/ogg", extension: ".ogg" },
+      ];
+      for (const preset of presets) {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(preset.mimeType)) {
+          return preset;
+        }
+      }
+      return { mimeType: "", extension: ".webm" };
+    }
+
+    function stopRecorderStream() {
+      if (!recorderStream) return;
+      recorderStream.getTracks().forEach((track) => track.stop());
+      recorderStream = null;
+    }
+
+    async function sendRecordedVoice(file, mimeType) {
+      const formData = new FormData();
+      const nextValue = commentForm.querySelector('input[name="next"]')?.value || "";
+      formData.append("next", nextValue);
+      formData.append("text", proxyInput?.value.trim() || "");
+      Array.from(attachmentsInput?.files || []).forEach((attachment) => {
+        formData.append("attachments", attachment);
+      });
+      formData.append("voice_messages", file, file.name);
+
+      const response = await fetch(commentForm.action, {
+        method: "POST",
+        body: formData,
+        credentials: "same-origin",
+        headers: {
+          "Accept": "text/html",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (response.ok) {
+        window.location.reload();
+        return;
+      }
+      throw new Error(`Voice upload failed: ${response.status} (${mimeType || "unknown"})`);
+    }
+
+    async function startRecording(pointerId) {
+      if (!actionButton || isRecording || isSubmittingVoice) return;
+      if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) {
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        setStatus("Ваш браузер не поддерживает запись голосовых сообщений.");
+        return;
+      }
+      try {
+        const preset = getRecordingPreset();
+        recorderStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = preset.mimeType
+          ? new MediaRecorder(recorderStream, { mimeType: preset.mimeType })
+          : new MediaRecorder(recorderStream);
+        recorderChunks = [];
+        isRecording = true;
+        activePointerId = pointerId;
+        updateComposerState();
+
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+          if (event.data && event.data.size > 0) {
+            recorderChunks.push(event.data);
+          }
+        });
+
+        mediaRecorder.addEventListener("stop", async () => {
+          const finalType = mediaRecorder?.mimeType || preset.mimeType || "audio/webm";
+          const finalExtension = finalType.includes("ogg") ? ".ogg" : preset.extension;
+          const payload = recorderChunks.slice();
+          recorderChunks = [];
+          mediaRecorder = null;
+          stopRecorderStream();
+          isRecording = false;
+          updateComposerState();
+
+          if (!payload.length) {
+            setStatus("Запись отменена или получилась пустой.");
+            return;
+          }
+
+          isSubmittingVoice = true;
+          updateComposerState();
+          try {
+            const voiceFile = new File(payload, `voice-message-${Date.now()}${finalExtension}`, { type: finalType });
+            await sendRecordedVoice(voiceFile, finalType);
+          } catch (error) {
+            setStatus("Не удалось отправить голосовое сообщение. Попробуйте ещё раз.");
+          } finally {
+            isSubmittingVoice = false;
+            updateComposerState();
+          }
+        });
+
+        mediaRecorder.start();
+      } catch (error) {
+        mediaRecorder = null;
+        stopRecorderStream();
+        isRecording = false;
+        updateComposerState();
+        setStatus("Не удалось получить доступ к микрофону.");
+      }
+    }
+
+    function stopRecording(pointerId) {
+      if (!isRecording || !mediaRecorder) return;
+      if (activePointerId !== null && pointerId !== undefined && pointerId !== activePointerId) return;
+      activePointerId = null;
+      if (mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
+
+    if (legacyTextInput) {
+      legacyTextInput.required = false;
+    }
+
+    if (attachButton && attachmentsInput) {
+      attachButton.addEventListener("click", () => attachmentsInput.click());
+      attachmentsInput.addEventListener("change", updateComposerState);
+    }
+
+    if (proxyInput) {
+      proxyInput.addEventListener("input", updateComposerState);
+      proxyInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          if (proxyInput.value.trim() || hasAttachments()) {
+            submitCommentForm();
+          }
+        }
+      });
+    }
+
+    if (actionButton) {
+      actionButton.addEventListener("click", (event) => {
+        if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) {
+          event.preventDefault();
+          submitCommentForm();
+        }
+      });
+      actionButton.addEventListener("pointerdown", (event) => {
+        if ((proxyInput && proxyInput.value.trim()) || hasAttachments()) return;
+        event.preventDefault();
+        startRecording(event.pointerId);
+      });
+      actionButton.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        stopRecording(event.pointerId);
+      });
+      actionButton.addEventListener("pointercancel", (event) => {
+        stopRecording(event.pointerId);
+      });
+    }
+
+    window.addEventListener("pointerup", (event) => {
+      stopRecording(event.pointerId);
     });
+
+    commentForm.addEventListener("submit", () => {
+      syncTextInput();
+    });
+
+    updateComposerState();
   }
 });
 </script>

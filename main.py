@@ -107,7 +107,7 @@ ALLOWED_UPLOAD_EXTENSIONS = {
 }
 COMMENT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 COMMENT_AUDIO_EXTENSIONS = {".mp3", ".ogg", ".oga", ".wav", ".m4a", ".aac", ".webm", ".opus"}
-COMMENT_MEDIA_EXTENSIONS = COMMENT_IMAGE_EXTENSIONS | COMMENT_AUDIO_EXTENSIONS
+COMMENT_MEDIA_EXTENSIONS = set(ALLOWED_UPLOAD_EXTENSIONS)
 PWA_STATIC_DIR = Path(os.getenv("PWA_STATIC_DIR", "./static"))
 PUSH_REMINDER_MINUTES = int(os.getenv("PUSH_REMINDER_MINUTES", "60"))
 PUSH_REMINDER_POLL_SECONDS = int(os.getenv("PUSH_REMINDER_POLL_SECONDS", "30"))
@@ -1364,6 +1364,8 @@ def detect_comment_media_kind(filename: str | None) -> str:
         return "photo"
     if ext in COMMENT_AUDIO_EXTENSIONS:
         return "voice"
+    if ext in ALLOWED_UPLOAD_EXTENSIONS:
+        return "file"
     raise HTTPException(400, "Unsupported comment media type")
 
 
@@ -2497,13 +2499,21 @@ def serialize_comment_out(comment: Comment, media_items: list[CommentMedia] | No
     )
 
 
-def summarize_comment_media(photo_count: int, voice_count: int, author_name: str) -> str:
+def summarize_comment_media(photo_count: int, voice_count: int, file_count: int, author_name: str) -> str:
+    if photo_count and voice_count and file_count:
+        return f"{author_name} добавил фото, голосовое сообщение и файл"
     if photo_count and voice_count:
         return f"{author_name} добавил фото и голосовое сообщение"
+    if photo_count and file_count:
+        return f"{author_name} добавил фото и файл"
+    if voice_count and file_count:
+        return f"{author_name} добавил голосовое сообщение и файл"
     if photo_count:
         return f"{author_name} добавил фото"
     if voice_count:
         return f"{author_name} добавил голосовое сообщение"
+    if file_count:
+        return f"{author_name} добавил файл"
     return f"{author_name} оставил комментарий"
 
 
@@ -2515,11 +2525,13 @@ async def create_comment_with_media_async(
     text: str,
     photos: list[UploadFile] | None = None,
     voice_messages: list[UploadFile] | None = None,
+    attachments: list[UploadFile] | None = None,
 ) -> tuple[Comment, list[CommentMedia], list[str]]:
     clean_text = (text or "").strip()
     photo_uploads = normalize_optional_uploaded_files(photos)
     voice_uploads = normalize_optional_uploaded_files(voice_messages)
-    if not clean_text and not photo_uploads and not voice_uploads:
+    attachment_uploads = normalize_optional_uploaded_files(attachments)
+    if not clean_text and not photo_uploads and not voice_uploads and not attachment_uploads:
         raise HTTPException(400, "Comment text, photo or voice message is required")
 
     upload_plan: list[tuple[UploadFile, str, str]] = []
@@ -2544,6 +2556,19 @@ async def create_comment_with_media_async(
             (
                 upload,
                 "voice",
+                make_safe_upload_name(
+                    upload.filename,
+                    ticket_id=ticket_id,
+                    allowed_extensions=COMMENT_MEDIA_EXTENSIONS,
+                ),
+            )
+        )
+    for upload in attachment_uploads:
+        media_kind = detect_comment_media_kind(upload.filename)
+        upload_plan.append(
+            (
+                upload,
+                media_kind,
                 make_safe_upload_name(
                     upload.filename,
                     ticket_id=ticket_id,
@@ -3137,6 +3162,7 @@ def notify_comment_added(
     comment_text: str,
     photo_count: int = 0,
     voice_count: int = 0,
+    file_count: int = 0,
 ) -> None:
     short_text = (comment_text or "").strip()
     if len(short_text) > 80:
@@ -3169,7 +3195,7 @@ def notify_comment_added(
             db=db,
             user_id=recipient_id,
             title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
-            body=short_text or summarize_comment_media(photo_count, voice_count, author.name),
+            body=short_text or summarize_comment_media(photo_count, voice_count, file_count, author.name),
             url=f"/web/tickets/{ticket.id}",
         )
 
@@ -5088,6 +5114,7 @@ async def add_comment(ticket_id: int, request: Request, db: Session = Depends(ge
     text_value = ""
     photo_uploads: list[UploadFile] = []
     voice_uploads: list[UploadFile] = []
+    attachment_uploads: list[UploadFile] = []
     if "application/json" in content_type:
         try:
             payload = await request.json()
@@ -5101,6 +5128,7 @@ async def add_comment(ticket_id: int, request: Request, db: Session = Depends(ge
         text_value = (form.get("text") or "").strip()
         photo_uploads = normalize_optional_uploaded_files(list(form.getlist("photos")))
         voice_uploads = normalize_optional_uploaded_files(list(form.getlist("voice_messages")))
+        attachment_uploads = normalize_optional_uploaded_files(list(form.getlist("attachments")))
 
     comment, media_items, stored_paths = await create_comment_with_media_async(
         db=db,
@@ -5109,6 +5137,7 @@ async def add_comment(ticket_id: int, request: Request, db: Session = Depends(ge
         text=text_value,
         photos=photo_uploads,
         voice_messages=voice_uploads,
+        attachments=attachment_uploads,
     )
     try:
         db.commit()
@@ -5128,6 +5157,7 @@ async def add_comment(ticket_id: int, request: Request, db: Session = Depends(ge
             comment_text=text_value,
             photo_count=sum(1 for item in media_items if item.media_kind == "photo"),
             voice_count=sum(1 for item in media_items if item.media_kind == "voice"),
+            file_count=sum(1 for item in media_items if item.media_kind == "file"),
         )
         db.commit()
     except SQLAlchemyError:
@@ -8404,6 +8434,7 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
     text = (form.get("text") or "").strip()
     photo_uploads = normalize_optional_uploaded_files(list(form.getlist("photos")))
     voice_uploads = normalize_optional_uploaded_files(list(form.getlist("voice_messages")))
+    attachment_uploads = normalize_optional_uploaded_files(list(form.getlist("attachments")))
     next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}?tab=overview")
 
     t = get_company_ticket_or_404(db, user, ticket_id)
@@ -8421,6 +8452,7 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
             text=text,
             photos=photo_uploads,
             voice_messages=voice_uploads,
+            attachments=attachment_uploads,
         )
         db.commit()
         db.refresh(comment)
@@ -8452,6 +8484,7 @@ async def web_add_comment(ticket_id: int, request: Request, db: Session = Depend
             comment_text=text,
             photo_count=sum(1 for item in media_items if item.media_kind == "photo"),
             voice_count=sum(1 for item in media_items if item.media_kind == "voice"),
+            file_count=sum(1 for item in media_items if item.media_kind == "file"),
         )
         db.commit()
     except SQLAlchemyError:

@@ -104,18 +104,19 @@ class CommentMediaTests(unittest.TestCase):
             files=[
                 ("photos", ("photo.png", b"\x89PNG\r\nphoto", "image/png")),
                 ("voice_messages", ("voice.ogg", b"OggSvoice", "audio/ogg")),
+                ("attachments", ("report.pdf", b"%PDF-1.4 test", "application/pdf")),
             ],
         )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["text"], "Комментарий с медиа")
-        self.assertEqual(len(payload["media"]), 2)
-        self.assertEqual({item["media_kind"] for item in payload["media"]}, {"photo", "voice"})
+        self.assertEqual(len(payload["media"]), 3)
+        self.assertEqual({item["media_kind"] for item in payload["media"]}, {"photo", "voice", "file"})
 
         with main.SessionLocal() as db:
             comment = db.query(main.Comment).filter(main.Comment.ticket_id == ids["ticket_id"]).one()
             media_items = db.query(main.CommentMedia).filter(main.CommentMedia.comment_id == comment.id).all()
-            self.assertEqual(len(media_items), 2)
+            self.assertEqual(len(media_items), 3)
             for item in media_items:
                 stored_path = main.resolve_attachment_disk_path(item.file_path)
                 self.assertIsNotNone(stored_path)
