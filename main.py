@@ -115,6 +115,7 @@ VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
 MAX_TICKET_TITLE_LEN = 255
+NOTIFICATION_TICKET_TITLE_PREVIEW_LEN = 30
 MIN_ARCHIVE_RETENTION_DAYS = 1
 MAX_ARCHIVE_RETENTION_DAYS = 3650
 DEFAULT_ARCHIVE_RETENTION_DAYS = max(
@@ -2093,7 +2094,7 @@ def create_tickets_from_template(
                     send_push_to_user(
                         db=db,
                         user_id=ticket.executor_id,
-                        title=f"Новая заявка #{ticket.id}",
+                        title=ticket_notification_title("Новая заявка", ticket.title, ticket_id=ticket.id),
                         body=ticket.title or "Вам назначена новая заявка",
                         url=f"/web/tickets/{ticket.id}",
                     )
@@ -2923,6 +2924,26 @@ def fix_mojibake_text(value: str | None) -> str:
     return best
 
 
+def ticket_title_notification_preview(
+    ticket_title: str | None,
+    *,
+    ticket_id: int | None = None,
+    max_len: int = NOTIFICATION_TICKET_TITLE_PREVIEW_LEN,
+) -> str:
+    preview = fix_mojibake_text((ticket_title or "").strip())
+    if preview:
+        if max_len > 3 and len(preview) > max_len:
+            preview = preview[: max_len - 3].rstrip() + "..."
+        return preview
+    if ticket_id is not None:
+        return f"заявка #{ticket_id}"
+    return "заявка"
+
+
+def ticket_notification_title(prefix: str, ticket_title: str | None, *, ticket_id: int | None = None) -> str:
+    return f"{prefix}: {ticket_title_notification_preview(ticket_title, ticket_id=ticket_id)}"
+
+
 def repair_mojibake_data(db: Session) -> int:
     fixed = 0
 
@@ -3123,7 +3144,7 @@ def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"\u041d\u043e\u0432\u0430\u044f \u0437\u0430\u044f\u0432\u043a\u0430 #{ticket.id}",
+        title=ticket_notification_title("Новая заявка", ticket.title, ticket_id=ticket.id),
         body=ticket.title or "\u0412\u0430\u043c \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u043e\u0432\u0430\u044f \u0437\u0430\u044f\u0432\u043a\u0430",
         url=f"/web/tickets/{ticket.id}",
     )
@@ -3137,7 +3158,7 @@ def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Opt
     send_push_to_user(
         db=db,
         user_id=ticket.executor_id,
-        title=f"\u0412\u0430\u043c \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u0437\u0430\u044f\u0432\u043a\u0430 #{ticket.id}",
+        title=ticket_notification_title("Вам назначена заявка", ticket.title, ticket_id=ticket.id),
         body=ticket.title or "\u0417\u0430\u044f\u0432\u043a\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441",
         url=f"/web/tickets/{ticket.id}",
     )
@@ -3155,7 +3176,7 @@ def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u044f\u0432\u043a\u0438 #{ticket.id}",
+            title=ticket_notification_title("Изменен статус заявки", ticket.title, ticket_id=ticket.id),
             body=f"{actor.name}: {status_label_ru(old_status)} -> {status_label_ru(ticket.status)}",
             url=f"/web/tickets/{ticket.id}",
         )
@@ -3200,7 +3221,7 @@ def notify_comment_added(
         send_push_to_user(
             db=db,
             user_id=recipient_id,
-            title=f"\u041d\u043e\u0432\u044b\u0439 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439 \u0432 \u0437\u0430\u044f\u0432\u043a\u0435 #{ticket.id}",
+            title=ticket_notification_title("Новый комментарий", ticket.title, ticket_id=ticket.id),
             body=short_text or summarize_comment_media(photo_count, voice_count, file_count, author.name),
             url=f"/web/tickets/{ticket.id}",
         )
@@ -3221,7 +3242,7 @@ def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, or
         send_push_to_user(
             db=db,
             user_id=curator_id,
-            title=f"\u0418\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u0438\u043a\u0440\u0435\u043f\u0438\u043b \u0430\u043a\u0442 #{ticket.id}",
+            title=ticket_notification_title("Исполнитель прикрепил акт", ticket.title, ticket_id=ticket.id),
             body=original_name or "\u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d \u0444\u0430\u0439\u043b \u0430\u043a\u0442\u0430",
             url=f"/web/tickets/{ticket.id}",
         )
@@ -3282,7 +3303,7 @@ def run_deadline_reminders_forever() -> None:
                 deadline_from = now + timedelta(minutes=PUSH_REMINDER_MINUTES)
                 deadline_to = horizon + timedelta(minutes=PUSH_REMINDER_MINUTES)
                 candidates = (
-                    db.query(Ticket.id, Ticket.executor_id, Ticket.deadline)
+                    db.query(Ticket.id, Ticket.title, Ticket.executor_id, Ticket.deadline)
                     .filter(
                         Ticket.executor_id.is_not(None),
                         Ticket.deadline.is_not(None),
@@ -3321,7 +3342,7 @@ def run_deadline_reminders_forever() -> None:
                     send_push_to_user(
                         db=db,
                         user_id=t.executor_id,
-                        title=f"\u0421\u0440\u043e\u043a \u0437\u0430\u044f\u0432\u043a\u0438 #{t.id} \u0441\u043a\u043e\u0440\u043e \u0438\u0441\u0442\u0435\u0447\u0435\u0442",
+                        title=ticket_notification_title("Срок заявки скоро истечет", t.title, ticket_id=t.id),
                         body=f"\u0414\u043e \u0434\u0435\u0434\u043b\u0430\u0439\u043d\u0430 \u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c {PUSH_REMINDER_MINUTES} \u043c\u0438\u043d\u0443\u0442",
                         url=f"/web/tickets/{t.id}",
                     )

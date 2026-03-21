@@ -47,6 +47,14 @@ class TemplateHelpersTest(unittest.TestCase):
         self.assertEqual(dom_26, datetime(2026, 2, 26, 23, 59))
         self.assertEqual(dom_31, datetime(2026, 2, 28, 23, 59))
 
+    def test_ticket_title_notification_preview_truncates_to_30_chars(self):
+        preview = main.ticket_title_notification_preview("12345678901234567890123456789012345", ticket_id=42)
+        self.assertEqual(preview, "123456789012345678901234567...")
+        self.assertEqual(len(preview), 30)
+
+    def test_ticket_title_notification_preview_falls_back_to_ticket_id(self):
+        self.assertEqual(main.ticket_title_notification_preview("", ticket_id=42), "заявка #42")
+
 
 if __name__ == "__main__":
     unittest.main()
