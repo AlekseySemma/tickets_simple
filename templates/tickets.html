@@ -165,37 +165,24 @@
     .watchers-item input {
       margin-right: 8px;
     }
+    .ticket,
+    .tickets-table tbody tr {
+      --ticket-accent: #5c6f72;
+      --ticket-deadline-bg: #f1f4f4;
+      --ticket-deadline-border: #d3dde0;
+      --ticket-deadline-color: #4f6468;
+    }
     .ticket {
       border: 1px solid #d9e8df;
+      border-left: 5px solid var(--ticket-accent);
       border-radius: 14px;
       padding: 16px;
       margin-bottom: 14px;
       background: #fff;
       box-shadow: 0 .35rem .9rem rgba(33, 37, 41, .05);
     }
-    .ticket.overdue,
-    .ticket.soon {
-      border-width: 2px;
-    }
     .ticket h5 { margin: 0 0 8px 0; }
     .badge-status { font-size: 12px; }
-    .ticket.overdue {
-      border-color: #c92a3a !important;
-      background-color: #ffdce2 !important;
-    }
-    .ticket.overdue .st-OVERDUE { background: #dc3545 !important; }
-    .ticket.soon {
-      border-color: #ffc107 !important;
-      background-color: #fff8e6 !important;
-    }
-    .ticket.overdue .ticket-head {
-      background: linear-gradient(135deg, #fff1f4 0%, #ffd4dd 55%, #ffc3cf 100%);
-      border-color: #e58b98;
-    }
-    .ticket.soon .ticket-head {
-      background: linear-gradient(135deg, #fffdf6 0%, #fff6dc 55%, #ffefbf 100%);
-      border-color: #ffe08a;
-    }
     .badge-status { font-weight: 600; }
     .badge-status {
       cursor: pointer;
@@ -209,6 +196,54 @@
     .st-CANCELED { background: #212529 !important; }     /* тёмный */
     .st-ARCHIVED { background: #6c757d !important; }     /* архив */
     .st-OVERDUE { background: #dc3545 !important; }      /* красный */
+    .ticket-status-NEW,
+    .tickets-table tbody tr.ticket-status-NEW {
+      --ticket-accent: #5c6f72;
+      --ticket-deadline-bg: #eef2f3;
+      --ticket-deadline-border: #d7dfe2;
+      --ticket-deadline-color: #55696d;
+    }
+    .ticket-status-IN_PROGRESS,
+    .tickets-table tbody tr.ticket-status-IN_PROGRESS {
+      --ticket-accent: #1f9d8f;
+      --ticket-deadline-bg: #e8f7f1;
+      --ticket-deadline-border: #b9e3d5;
+      --ticket-deadline-color: #1b5f58;
+    }
+    .ticket-status-DONE,
+    .tickets-table tbody tr.ticket-status-DONE {
+      --ticket-accent: #2f9a76;
+      --ticket-deadline-bg: #eaf7f0;
+      --ticket-deadline-border: #bfe0d0;
+      --ticket-deadline-color: #21684f;
+    }
+    .ticket-status-CANCELED,
+    .tickets-table tbody tr.ticket-status-CANCELED {
+      --ticket-accent: #212529;
+      --ticket-deadline-bg: #eef0f2;
+      --ticket-deadline-border: #d5dae0;
+      --ticket-deadline-color: #343a40;
+    }
+    .ticket-status-ARCHIVED,
+    .tickets-table tbody tr.ticket-status-ARCHIVED {
+      --ticket-accent: #6c757d;
+      --ticket-deadline-bg: #f1f3f5;
+      --ticket-deadline-border: #d6dce1;
+      --ticket-deadline-color: #5c6670;
+    }
+    .ticket.overdue,
+    .tickets-table tbody tr.overdue {
+      --ticket-accent: #dc3545;
+      --ticket-deadline-bg: #fff1f4;
+      --ticket-deadline-border: #efb4bf;
+      --ticket-deadline-color: #9e2435;
+    }
+    .ticket.soon,
+    .tickets-table tbody tr.soon {
+      --ticket-deadline-bg: #fff8e6;
+      --ticket-deadline-border: #ffe08a;
+      --ticket-deadline-color: #7a5300;
+    }
     .status-menu {
       position: absolute;
       top: 110%;
@@ -260,8 +295,8 @@
 }
 
     .ticket-head {
-      background: linear-gradient(135deg, #f8fcfa 0%, #edf7f3 55%, #e3f2ec 100%);
-      border: 1px solid #d3e6de;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbfa 100%);
+      border: 1px solid #dce9e3;
       border-radius: 14px;
       padding: 14px;
       margin-bottom: 8px;
@@ -285,19 +320,9 @@
     }
     .meta-chip.deadline-chip {
       font-weight: 700;
-      background: #e8f7f1;
-      border-color: #b9e3d5;
-      color: #1b5f58;
-    }
-    .meta-chip.deadline-chip.soon {
-      background: #fff8e6;
-      border-color: #ffe08a;
-      color: #7a5300;
-    }
-    .meta-chip.deadline-chip.overdue {
-      background: #ffdce2;
-      border-color: #e58b98;
-      color: #7a0f1e;
+      background: var(--ticket-deadline-bg);
+      border-color: var(--ticket-deadline-border);
+      color: var(--ticket-deadline-color);
     }
     .sub-card {
       background: #fbfefc;
@@ -331,31 +356,11 @@
       padding: 0.3rem 0.5rem;
       line-height: 1.15;
     }
-    .tickets-table tbody tr.overdue td {
-      --bs-table-bg: #ffdce2;
-      --bs-table-accent-bg: #ffdce2;
-      background-color: #ffdce2 !important;
-      border-top-color: #e58b98;
-      border-bottom-color: #e58b98;
+    .tickets-table tbody tr td {
+      background-color: #fff !important;
     }
-    .tickets-table tbody tr.overdue td:first-child {
-      border-left: 2px solid #e58b98;
-    }
-    .tickets-table tbody tr.overdue td:last-child {
-      border-right: 2px solid #e58b98;
-    }
-    .tickets-table tbody tr.soon td {
-      --bs-table-bg: #fff8e6;
-      --bs-table-accent-bg: #fff8e6;
-      background-color: #fff8e6 !important;
-      border-top-color: #ffe08a;
-      border-bottom-color: #ffe08a;
-    }
-    .tickets-table tbody tr.soon td:first-child {
-      border-left: 2px solid #ffe08a;
-    }
-    .tickets-table tbody tr.soon td:last-child {
-      border-right: 2px solid #ffe08a;
+    .tickets-table tbody tr td:first-child {
+      border-left: 4px solid var(--ticket-accent);
     }
     .tickets-table .col-title a {
       color: #1f5c5f;
@@ -383,6 +388,18 @@
       font-size: 11px;
       padding: 0.28rem 0.45rem;
       line-height: 1.05;
+    }
+    .deadline-pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--ticket-deadline-border);
+      border-radius: 999px;
+      background: var(--ticket-deadline-bg);
+      color: var(--ticket-deadline-color);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.1;
+      padding: 0.22rem 0.5rem;
     }
     .tickets-table .btn.btn-sm {
       --bs-btn-padding-y: 0.2rem;
@@ -937,10 +954,16 @@
               {% set can_close_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_close_tickets and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id)) %}
               {% set can_edit_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
               {% set can_delete_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
-              <tr id="ticket-{{ t.id }}" class="{% if is_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
+              <tr id="ticket-{{ t.id }}" class="ticket-status-{{ t.status.value }}{% if is_overdue %} overdue{% elif is_deadline_soon %} soon{% endif %}">
                 <td class="text-nowrap">#{{ t.id }}</td>
                 <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
-                <td class="text-nowrap">{{ format_deadline(t.deadline) }}</td>
+                <td class="text-nowrap">
+                  {% if t.deadline %}
+                  <span class="deadline-pill">{{ format_deadline(t.deadline) }}</span>
+                  {% else %}
+                  —
+                  {% endif %}
+                </td>
                 {% if is_archive_page %}
                 <td class="text-nowrap">{{ format_dt(t.delete_at) if t.delete_at else "—" }}</td>
                 {% endif %}
@@ -1034,7 +1057,7 @@
       {% set can_close_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_close_tickets and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id)) %}
       {% set can_edit_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
       {% set can_delete_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
-      <div id="ticket-{{ t.id }}" class="ticket shadow-sm {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">
+      <div id="ticket-{{ t.id }}" class="ticket ticket-status-{{ t.status.value }} shadow-sm{% if deadline_overdue %} overdue{% elif is_deadline_soon %} soon{% endif %}">
         <div class="ticket-row">
           <div class="ticket-main">
             <div class="ticket-head">
@@ -1052,7 +1075,7 @@
                 <span class="meta-chip">Отдел: <b>{{ departments_by_id.get(t.department_id, "—") }}</b></span>
                 <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
                 <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
-                <span class="meta-chip deadline-chip {% if deadline_overdue %}overdue{% elif is_deadline_soon %}soon{% endif %}">Крайний срок: <b>{{ format_deadline(t.deadline) }}</b></span>
+                <span class="meta-chip {% if t.deadline %}deadline-chip{% endif %}">Крайний срок: <b>{{ format_deadline(t.deadline) }}</b></span>
               </div>
             </div>
           </div>
@@ -1626,6 +1649,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (overdueBadge) overdueBadge.style.display = data.is_overdue ? "" : "none";
     if (ticketEl) {
+      ticketEl.className = ticketEl.className.replace(/\bticket-status-[A-Z_]+\b/g, "").trim();
+      ticketEl.classList.add("ticket-status-" + data.status);
+
       if (data.is_overdue) ticketEl.classList.add("overdue");
       else ticketEl.classList.remove("overdue");
 
