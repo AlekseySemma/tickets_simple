@@ -42,6 +42,12 @@
       font-weight: 700;
       font-size: 1.03rem;
     }
+    .settings-subtitle {
+      margin: 8px 0 0;
+      color: #4f7075;
+      max-width: 720px;
+      font-size: 14px;
+    }
     .settings-chips {
       display: flex;
       flex-wrap: wrap;
@@ -60,6 +66,98 @@
     .settings-card {
       border-radius: 16px;
     }
+    .settings-note {
+      color: #4f7075;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .settings-sections {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .settings-section-link {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid #d7e6e1;
+      border-radius: 18px;
+      padding: 18px;
+      background:
+        linear-gradient(180deg, #ffffff, #f7fbf9);
+      box-shadow: 0 8px 18px rgba(22, 64, 67, 0.06);
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .settings-section-link:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 26px rgba(22, 64, 67, 0.1);
+      border-color: #9fcfc2;
+    }
+    .settings-section-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .settings-section-title {
+      margin: 0;
+      color: #184a4c;
+      font-size: 1.04rem;
+      font-weight: 700;
+    }
+    .settings-section-open {
+      color: #1f7f74;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .settings-section-text {
+      margin: 0;
+      color: #56777c;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .settings-back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #246e67;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .settings-back-link:hover {
+      color: #1b5953;
+    }
+    .settings-section-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .settings-section-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 7px 12px;
+      border: 1px solid #cfe2da;
+      background: #fff;
+      color: #3b666a;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .settings-section-pill:hover {
+      color: #1b5d57;
+      border-color: #8ac1b3;
+    }
+    .settings-section-pill-active {
+      border-color: #1f9d8f;
+      background: rgba(31, 157, 143, 0.1);
+      color: #155e56;
+    }
     .settings-links {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -68,12 +166,8 @@
     .settings-links .btn {
       justify-content: flex-start;
     }
-    .settings-note {
-      color: #4f7075;
-      font-size: 13px;
-      margin-top: 10px;
-    }
     @media (max-width: 991.98px) {
+      .settings-sections,
       .settings-links {
         grid-template-columns: 1fr;
       }
@@ -95,10 +189,18 @@
       </div>
       {% include "_top_nav.html" %}
     </div>
+
     <div class="settings-hero mb-3">
       <div>
-        <span class="settings-kicker">Центр управления</span>
-        <p class="settings-title">Настройка уведомлений и доступ к административным разделам в едином рабочем контуре.</p>
+        {% if selected_settings_section_meta %}
+          <span class="settings-kicker">Раздел настроек</span>
+          <p class="settings-title">{{ selected_settings_section_meta.title }}</p>
+          <p class="settings-subtitle">{{ selected_settings_section_meta.description }}</p>
+        {% else %}
+          <span class="settings-kicker">Центр управления</span>
+          <p class="settings-title">Настройки разделены на блоки, чтобы быстрее находить нужную форму.</p>
+          <p class="settings-subtitle">Сначала выберите раздел, а затем откройте только те параметры, которые действительно нужны в текущий момент.</p>
+        {% endif %}
       </div>
       <div class="settings-chips">
         <span class="settings-chip">Роль: {{ user.role }}</span>
@@ -106,288 +208,348 @@
         <span class="settings-chip">Оргструктура: {% if org_v2_enabled %}включена{% else %}выключена{% endif %}</span>
       </div>
     </div>
-    {% if deadline_warning_saved %}
-      <div class="alert alert-success py-2">Порог желтой подсветки дедлайна сохранен.</div>
-    {% elif deadline_warning_error == "bad_value" %}
-      <div class="alert alert-danger py-2">Укажите число от {{ min_deadline_soon_warning_minutes }} до {{ max_deadline_soon_warning_minutes }} минут.</div>
-    {% elif deadline_warning_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить настройку. Попробуйте еще раз.</div>
-    {% endif %}
-    {% if archive_retention_saved %}
-      <div class="alert alert-success py-2">Срок хранения архивных заявок сохранен.</div>
-    {% elif archive_retention_error == "bad_value" %}
-      <div class="alert alert-danger py-2">Укажите срок хранения от {{ min_archive_retention_days }} до {{ max_archive_retention_days }} дней.</div>
-    {% elif archive_retention_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить срок хранения. Попробуйте еще раз.</div>
-    {% endif %}
-    {% if watcher_comments_saved %}
-      <div class="alert alert-success py-2">Настройка уведомлений наблюдателя сохранена.</div>
-    {% elif watcher_comments_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений наблюдателя. Попробуйте еще раз.</div>
-    {% endif %}
-    {% if receipt_notifications_saved %}
-      <div class="alert alert-success py-2">Настройка уведомлений о чеках сохранена.</div>
-    {% elif receipt_notifications_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений о чеках. Попробуйте еще раз.</div>
-    {% endif %}
-    {% if preferred_card_saved %}
-      <div class="alert alert-success py-2">Карта по умолчанию сохранена.</div>
-    {% elif preferred_card_error == "bad_value" %}
-      <div class="alert alert-danger py-2">Выберите карту из справочника или оставьте поле пустым.</div>
-    {% elif preferred_card_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось сохранить карту по умолчанию. Попробуйте еще раз.</div>
-    {% endif %}
-    {% if card_created %}
-      <div class="alert alert-success py-2">Карта добавлена в справочник.</div>
-    {% elif card_create_error == "missing_required" %}
-      <div class="alert alert-danger py-2">Укажите название карты.</div>
-    {% elif card_create_error == "card_exists" %}
-      <div class="alert alert-danger py-2">Такая карта уже есть в справочнике.</div>
-    {% elif card_create_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось добавить карту в справочник. Попробуйте еще раз.</div>
-    {% endif %}
-    {% if card_deleted %}
-      <div class="alert alert-success py-2">Карта удалена из справочника.</div>
-    {% elif card_delete_error == "not_found" %}
-      <div class="alert alert-danger py-2">Карта не найдена.</div>
-    {% elif card_delete_error == "in_use" %}
-      <div class="alert alert-danger py-2">Карту нельзя удалить: она используется в чеках или в настройках пользователей.</div>
-    {% elif card_delete_error == "save_failed" %}
-      <div class="alert alert-danger py-2">Не удалось удалить карту. Попробуйте еще раз.</div>
-    {% endif %}
 
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-2">Подсветка срока</h5>
-        <div class="settings-note mt-0">Желтым выделяются заявки, у которых до дедлайна осталось не больше указанного времени.</div>
-        {% if can_manage_deadline_warning %}
-          <form method="post" action="/web/settings/deadline-warning" class="row g-2 align-items-end mt-1">
-            <div class="col-12 col-sm-6 col-md-4">
-              <label class="form-label mb-1">Порог (минут)</label>
-              <input
-                type="number"
-                class="form-control"
-                name="deadline_soon_warning_minutes"
-                min="{{ min_deadline_soon_warning_minutes }}"
-                max="{{ max_deadline_soon_warning_minutes }}"
-                step="5"
-                value="{{ deadline_soon_warning_minutes }}"
-                required
-              />
-            </div>
-            <div class="col-12 col-sm-auto">
-              <button class="btn btn-outline-primary">Сохранить</button>
-            </div>
-          </form>
-        {% else %}
-          <div class="small text-muted mt-2">
-            Текущий порог: <b>{{ deadline_soon_warning_minutes }} мин.</b>
-            зменять могут администратор и куратор.
-          </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-2">Архив заявок</h5>
-        <div class="settings-note mt-0">Через этот срок архивная заявка и связанные данные удаляются фоновым процессом.</div>
-        {% if can_manage_archive_retention %}
-          <form method="post" action="/web/settings/archive-retention" class="row g-2 align-items-end mt-1">
-            <div class="col-12 col-sm-6 col-md-4">
-              <label class="form-label mb-1">Срок хранения (дней)</label>
-              <input
-                type="number"
-                class="form-control"
-                name="archive_retention_days_default"
-                min="{{ min_archive_retention_days }}"
-                max="{{ max_archive_retention_days }}"
-                step="1"
-                value="{{ archive_retention_days_default }}"
-                required
-              />
-            </div>
-            <div class="col-12 col-sm-auto">
-              <button class="btn btn-outline-primary">Сохранить</button>
-            </div>
-          </form>
-        {% else %}
-          <div class="small text-muted mt-2">
-            Текущий срок хранения: <b>{{ archive_retention_days_default }} дн.</b>
-            зменять могут администратор и куратор.
-          </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-2">Карта по умолчанию для чеков</h5>
-        <div class="settings-note mt-0">Выбранная карта подставляется автоматически в форме загрузки чека.</div>
-        <form method="post" action="/web/settings/preferred-card" class="row g-2 align-items-end mt-1">
-          <div class="col-12 col-sm-6 col-md-4">
-            <label class="form-label mb-1">Карта</label>
-            <select class="form-select" name="preferred_payment_card_id">
-              <option value="">Не выбрано</option>
-              {% for c in cards %}
-                {% if c.is_active %}
-                  <option value="{{ c.id }}" {% if preferred_payment_card_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-                {% endif %}
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-12 col-sm-auto">
-            <button class="btn btn-outline-primary">Сохранить</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    {% if can_manage_cards %}
-      <div class="card shadow-sm mb-3 settings-card">
+    {% if not selected_settings_section %}
+      <div class="card shadow-sm settings-card">
         <div class="card-body">
-          <h5 class="mb-2">Справочник карт</h5>
-          <div class="settings-note mt-0">Добавьте карты, которые используются при покупках материалов.</div>
-          <form method="post" action="/web/payment-cards/create" class="row g-2 align-items-end mt-1">
-            <div class="col-12 col-sm-8 col-md-6">
-              <label class="form-label mb-1">Новая карта</label>
-              <input name="name" class="form-control" placeholder="БК 1234 / Тинькофф 5678" required />
-            </div>
-            <div class="col-12 col-sm-auto">
-              <button class="btn btn-outline-primary">Добавить</button>
-            </div>
-          </form>
-          <div class="mt-3">
-            {% for c in cards %}
-              <form method="post" action="/web/payment-cards/{{ c.id }}/delete" class="d-inline-flex align-items-center me-1 mb-1" onsubmit="return confirm('Удалить карту {{ c.name }}?');">
-                <span class="badge text-bg-light border rounded-pill px-2 py-1">
-                  {{ c.name }}
-                  <button type="submit" class="btn btn-sm p-0 ms-2 border-0 bg-transparent text-danger fw-bold" title="Удалить карту" aria-label="Удалить карту">×</button>
-                </span>
-              </form>
+          <div class="settings-sections">
+            {% for section in settings_sections %}
+              <a class="settings-section-link" href="{{ section.href }}">
+                <div class="settings-section-top">
+                  <h5 class="settings-section-title">{{ section.title }}</h5>
+                  <span class="settings-section-open">Открыть</span>
+                </div>
+                <p class="settings-section-text">{{ section.description }}</p>
+              </a>
             {% endfor %}
-            {% if cards|length == 0 %}
-              <div class="text-muted small">Карты пока не добавлены.</div>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <a class="settings-back-link" href="/web/settings">← Ко всем разделам</a>
+
+      <div class="settings-section-nav">
+        {% for section in settings_sections %}
+          <a class="settings-section-pill {% if section.is_active %}settings-section-pill-active{% endif %}" href="{{ section.href }}">{{ section.title }}</a>
+        {% endfor %}
+      </div>
+
+      {% if selected_settings_section == "general" %}
+        {% if deadline_warning_saved %}
+          <div class="alert alert-success py-2">Порог желтой подсветки дедлайна сохранен.</div>
+        {% elif deadline_warning_error == "bad_value" %}
+          <div class="alert alert-danger py-2">Укажите число от {{ min_deadline_soon_warning_minutes }} до {{ max_deadline_soon_warning_minutes }} минут.</div>
+        {% elif deadline_warning_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось сохранить настройку. Попробуйте еще раз.</div>
+        {% endif %}
+
+        <div class="card shadow-sm settings-card">
+          <div class="card-body">
+            <h5 class="mb-2">Подсветка срока</h5>
+            {% if user.role == "PLATFORM_ADMIN" %}
+              <div class="text-muted">Настройка задается на уровне компании. Откройте нужную компанию в административном разделе.</div>
+            {% else %}
+              <div class="settings-note mt-0">Желтым выделяются заявки, у которых до дедлайна осталось не больше указанного времени.</div>
+              {% if can_manage_deadline_warning %}
+                <form method="post" action="/web/settings/deadline-warning" class="row g-2 align-items-end mt-1">
+                  <input type="hidden" name="section" value="general" />
+                  <div class="col-12 col-sm-6 col-md-4">
+                    <label class="form-label mb-1">Порог (минут)</label>
+                    <input
+                      type="number"
+                      class="form-control"
+                      name="deadline_soon_warning_minutes"
+                      min="{{ min_deadline_soon_warning_minutes }}"
+                      max="{{ max_deadline_soon_warning_minutes }}"
+                      step="5"
+                      value="{{ deadline_soon_warning_minutes }}"
+                      required
+                    />
+                  </div>
+                  <div class="col-12 col-sm-auto">
+                    <button class="btn btn-outline-primary">Сохранить</button>
+                  </div>
+                </form>
+              {% else %}
+                <div class="small text-muted mt-2">
+                  Текущий порог: <b>{{ deadline_soon_warning_minutes }} мин.</b>
+                  Изменять могут администратор и куратор.
+                </div>
+              {% endif %}
             {% endif %}
           </div>
         </div>
-      </div>
-    {% endif %}
+      {% elif selected_settings_section == "notifications" %}
+        {% if watcher_comments_saved %}
+          <div class="alert alert-success py-2">Настройка уведомлений наблюдателя сохранена.</div>
+        {% elif watcher_comments_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений наблюдателя. Попробуйте еще раз.</div>
+        {% endif %}
+        {% if receipt_notifications_saved %}
+          <div class="alert alert-success py-2">Настройка уведомлений о чеках сохранена.</div>
+        {% elif receipt_notifications_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось сохранить настройку уведомлений о чеках. Попробуйте еще раз.</div>
+        {% endif %}
 
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-2">Уведомления наблюдателя</h5>
-        <div class="settings-note mt-0">Если вы добавлены в наблюдатели заявки, будете получать уведомления о новых комментариях.</div>
-        <form method="post" action="/web/settings/watcher-comments" class="mt-2">
-          <label class="form-check">
-            <input
-              class="form-check-input"
-              type="checkbox"
-              name="notify_comments_as_watcher"
-              value="1"
-              {% if user.notify_comments_as_watcher %}checked{% endif %}
-            />
-            <span class="form-check-label">Получать комментарии по наблюдаемым заявкам</span>
-          </label>
-          <button class="btn btn-outline-primary mt-2">Сохранить</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-2">Уведомления о чеках</h5>
-        <div class="settings-note mt-0">Когда кто-то добавляет новый чек, уведомления получают пользователи с включенным бухгалтерским режимом.</div>
-        <form method="post" action="/web/settings/receipt-notifications" class="mt-2">
-          <label class="form-check">
-            <input
-              class="form-check-input"
-              type="checkbox"
-              name="notify_receipt_created"
-              value="1"
-              {% if user.notify_receipt_created %}checked{% endif %}
-            />
-            <span class="form-check-label">Получать уведомления о новых чеках</span>
-          </label>
-          <button class="btn btn-outline-primary mt-2">Сохранить</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-3">Push уведомления</h5>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button id="enable-push-btn" class="btn btn-outline-primary" type="button">Уведомления</button>
-          <button id="test-push-btn" class="btn btn-outline-success" type="button">Тест push</button>
-          <span id="test-push-result" class="small text-muted align-self-center"></span>
+        <div class="card shadow-sm mb-3 settings-card">
+          <div class="card-body">
+            <h5 class="mb-2">Уведомления наблюдателя</h5>
+            <div class="settings-note mt-0">Если вы добавлены в наблюдатели заявки, будете получать уведомления о новых комментариях.</div>
+            <form method="post" action="/web/settings/watcher-comments" class="mt-2">
+              <input type="hidden" name="section" value="notifications" />
+              <label class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="notify_comments_as_watcher"
+                  value="1"
+                  {% if user.notify_comments_as_watcher %}checked{% endif %}
+                />
+                <span class="form-check-label">Получать комментарии по наблюдаемым заявкам</span>
+              </label>
+              <button class="btn btn-outline-primary mt-2">Сохранить</button>
+            </form>
+          </div>
         </div>
-        <div class="settings-note">Включите push один раз в браузере, чтобы получать напоминания и события по заявкам.</div>
-      </div>
-    </div>
 
-    <div class="card shadow-sm mb-3 settings-card">
-      <div class="card-body">
-        <h5 class="mb-2">Безопасность</h5>
-        <div class="settings-note mt-0">Завершает все активные сессии аккаунта на других устройствах и в текущем браузере. После этого потребуется войти снова.</div>
+        <div class="card shadow-sm mb-3 settings-card">
+          <div class="card-body">
+            <h5 class="mb-2">Уведомления о чеках</h5>
+            <div class="settings-note mt-0">Когда кто-то добавляет новый чек, уведомления получают пользователи с включенным бухгалтерским режимом.</div>
+            <form method="post" action="/web/settings/receipt-notifications" class="mt-2">
+              <input type="hidden" name="section" value="notifications" />
+              <label class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="notify_receipt_created"
+                  value="1"
+                  {% if user.notify_receipt_created %}checked{% endif %}
+                />
+                <span class="form-check-label">Получать уведомления о новых чеках</span>
+              </label>
+              <button class="btn btn-outline-primary mt-2">Сохранить</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card shadow-sm settings-card">
+          <div class="card-body">
+            <h5 class="mb-3">Push уведомления</h5>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button id="enable-push-btn" class="btn btn-outline-primary" type="button">Уведомления</button>
+              <button id="test-push-btn" class="btn btn-outline-success" type="button">Тест push</button>
+              <span id="test-push-result" class="small text-muted align-self-center"></span>
+            </div>
+            <div class="settings-note">Включите push один раз в браузере, чтобы получать напоминания и события по заявкам.</div>
+          </div>
+        </div>
+      {% elif selected_settings_section == "receipts" %}
+        {% if preferred_card_saved %}
+          <div class="alert alert-success py-2">Карта по умолчанию сохранена.</div>
+        {% elif preferred_card_error == "bad_value" %}
+          <div class="alert alert-danger py-2">Выберите карту из справочника или оставьте поле пустым.</div>
+        {% elif preferred_card_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось сохранить карту по умолчанию. Попробуйте еще раз.</div>
+        {% endif %}
+
+        <div class="card shadow-sm settings-card">
+          <div class="card-body">
+            <h5 class="mb-2">Карта по умолчанию для чеков</h5>
+            {% if can_manage_receipt_settings %}
+              <div class="settings-note mt-0">Выбранная карта подставляется автоматически в форме загрузки чека.</div>
+              <form method="post" action="/web/settings/preferred-card" class="row g-2 align-items-end mt-1">
+                <input type="hidden" name="section" value="receipts" />
+                <div class="col-12 col-sm-6 col-md-4">
+                  <label class="form-label mb-1">Карта</label>
+                  <select class="form-select" name="preferred_payment_card_id">
+                    <option value="">Не выбрано</option>
+                    {% for c in cards %}
+                      {% if c.is_active %}
+                        <option value="{{ c.id }}" {% if preferred_payment_card_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-sm-auto">
+                  <button class="btn btn-outline-primary">Сохранить</button>
+                </div>
+              </form>
+            {% else %}
+              <div class="text-muted">Настройки чеков доступны пользователям компании.</div>
+            {% endif %}
+          </div>
+        </div>
+      {% elif selected_settings_section == "archive" %}
+        {% if archive_retention_saved %}
+          <div class="alert alert-success py-2">Срок хранения архивных заявок сохранен.</div>
+        {% elif archive_retention_error == "bad_value" %}
+          <div class="alert alert-danger py-2">Укажите срок хранения от {{ min_archive_retention_days }} до {{ max_archive_retention_days }} дней.</div>
+        {% elif archive_retention_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось сохранить срок хранения. Попробуйте еще раз.</div>
+        {% endif %}
+
+        <div class="card shadow-sm settings-card">
+          <div class="card-body">
+            <h5 class="mb-2">Архив заявок</h5>
+            {% if user.role == "PLATFORM_ADMIN" %}
+              <div class="text-muted">Настройка задается на уровне компании. Откройте нужную компанию в административном разделе.</div>
+            {% else %}
+              <div class="settings-note mt-0">Через этот срок архивная заявка и связанные данные удаляются фоновым процессом.</div>
+              {% if can_manage_archive_retention %}
+                <form method="post" action="/web/settings/archive-retention" class="row g-2 align-items-end mt-1">
+                  <input type="hidden" name="section" value="archive" />
+                  <div class="col-12 col-sm-6 col-md-4">
+                    <label class="form-label mb-1">Срок хранения (дней)</label>
+                    <input
+                      type="number"
+                      class="form-control"
+                      name="archive_retention_days_default"
+                      min="{{ min_archive_retention_days }}"
+                      max="{{ max_archive_retention_days }}"
+                      step="1"
+                      value="{{ archive_retention_days_default }}"
+                      required
+                    />
+                  </div>
+                  <div class="col-12 col-sm-auto">
+                    <button class="btn btn-outline-primary">Сохранить</button>
+                  </div>
+                </form>
+              {% else %}
+                <div class="small text-muted mt-2">
+                  Текущий срок хранения: <b>{{ archive_retention_days_default }} дн.</b>
+                  Изменять могут администратор и куратор.
+                </div>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      {% elif selected_settings_section == "system" %}
         {% if password_change_error == "invalid_current_password" %}
-          <div class="alert alert-danger py-2 mt-3">Текущий пароль указан неверно.</div>
+          <div class="alert alert-danger py-2">Текущий пароль указан неверно.</div>
         {% elif password_change_error == "password_too_short" %}
-          <div class="alert alert-danger py-2 mt-3">Новый пароль должен быть не короче 8 символов.</div>
+          <div class="alert alert-danger py-2">Новый пароль должен быть не короче 8 символов.</div>
         {% elif password_change_error == "password_mismatch" %}
-          <div class="alert alert-danger py-2 mt-3">Новые пароли не совпадают.</div>
+          <div class="alert alert-danger py-2">Новые пароли не совпадают.</div>
         {% elif password_change_error == "save_failed" %}
-          <div class="alert alert-danger py-2 mt-3">Не удалось изменить пароль. Попробуйте ещё раз.</div>
+          <div class="alert alert-danger py-2">Не удалось изменить пароль. Попробуйте еще раз.</div>
         {% endif %}
         {% if session_revoke_error == "save_failed" %}
-          <div class="alert alert-danger py-2 mt-3">Не удалось завершить сессии на всех устройствах. Попробуйте ещё раз.</div>
+          <div class="alert alert-danger py-2">Не удалось завершить сессии на всех устройствах. Попробуйте еще раз.</div>
         {% endif %}
-        <form method="post" action="/web/settings/change-password" class="row g-2 mt-2">
-          <div class="col-12 col-md-4">
-            <label class="form-label mb-1">Текущий пароль</label>
-            <input class="form-control" type="password" name="current_password" required />
-          </div>
-          <div class="col-12 col-md-4">
-            <label class="form-label mb-1">Новый пароль</label>
-            <input class="form-control" type="password" name="new_password" required />
-          </div>
-          <div class="col-12 col-md-4">
-            <label class="form-label mb-1">Повторите пароль</label>
-            <input class="form-control" type="password" name="new_password_confirm" required />
-          </div>
-          <div class="col-12">
-            <button class="btn btn-outline-primary">Сменить пароль</button>
-          </div>
-        </form>
-        <form method="post" action="/web/settings/logout-all" class="mt-2" onsubmit="return confirm('Завершить сессии на всех устройствах?');">
-          <button class="btn btn-outline-danger">Выйти на всех устройствах</button>
-        </form>
-      </div>
-    </div>
 
-    <div class="card shadow-sm settings-card">
-      <div class="card-body">
-        <h5 class="mb-3">Система</h5>
-        <div class="mb-3">
-          <a class="btn btn-outline-primary" href="/web/pwa-check">PWA diagnostic</a>
+        <div class="card shadow-sm mb-3 settings-card">
+          <div class="card-body">
+            <h5 class="mb-2">Безопасность</h5>
+            <div class="settings-note mt-0">Завершает все активные сессии аккаунта на других устройствах и в текущем браузере. После этого потребуется войти снова.</div>
+            <form method="post" action="/web/settings/change-password" class="row g-2 mt-2">
+              <input type="hidden" name="section" value="system" />
+              <div class="col-12 col-md-4">
+                <label class="form-label mb-1">Текущий пароль</label>
+                <input class="form-control" type="password" name="current_password" required />
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label mb-1">Новый пароль</label>
+                <input class="form-control" type="password" name="new_password" required />
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label mb-1">Повторите пароль</label>
+                <input class="form-control" type="password" name="new_password_confirm" required />
+              </div>
+              <div class="col-12">
+                <button class="btn btn-outline-primary">Сменить пароль</button>
+              </div>
+            </form>
+            <form method="post" action="/web/settings/logout-all" class="mt-2" onsubmit="return confirm('Завершить сессии на всех устройствах?');">
+              <input type="hidden" name="section" value="system" />
+              <button class="btn btn-outline-danger">Выйти на всех устройствах</button>
+            </form>
+          </div>
         </div>
 
-        {% if user.role == "PLATFORM_ADMIN" %}
-          <div class="settings-links">
-            <a class="btn btn-outline-secondary" href="/web/admin/companies">Компании</a>
+        <div class="card shadow-sm settings-card">
+          <div class="card-body">
+            <h5 class="mb-3">Система</h5>
+            <div class="mb-0">
+              <a class="btn btn-outline-primary" href="/web/pwa-check">PWA diagnostic</a>
+            </div>
           </div>
-        {% elif user.role in ["ADMIN", "CURATOR"] %}
-          <div class="settings-links">
-            <a class="btn btn-outline-secondary" href="/web/ticket-types">Типы заявок</a>
-            <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны заявок</a>
-            <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
-            <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
-          </div>
-        {% else %}
-          <div class="text-muted">Разделы управления доступны владельцу компании, куратору или администратору платформы.</div>
+        </div>
+      {% elif selected_settings_section == "directories" %}
+        {% if card_created %}
+          <div class="alert alert-success py-2">Карта добавлена в справочник.</div>
+        {% elif card_create_error == "missing_required" %}
+          <div class="alert alert-danger py-2">Укажите название карты.</div>
+        {% elif card_create_error == "card_exists" %}
+          <div class="alert alert-danger py-2">Такая карта уже есть в справочнике.</div>
+        {% elif card_create_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось добавить карту в справочник. Попробуйте еще раз.</div>
         {% endif %}
-      </div>
-    </div>
+        {% if card_deleted %}
+          <div class="alert alert-success py-2">Карта удалена из справочника.</div>
+        {% elif card_delete_error == "not_found" %}
+          <div class="alert alert-danger py-2">Карта не найдена.</div>
+        {% elif card_delete_error == "in_use" %}
+          <div class="alert alert-danger py-2">Карту нельзя удалить: она используется в чеках или в настройках пользователей.</div>
+        {% elif card_delete_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось удалить карту. Попробуйте еще раз.</div>
+        {% endif %}
+
+        {% if can_manage_cards %}
+          <div class="card shadow-sm mb-3 settings-card">
+            <div class="card-body">
+              <h5 class="mb-2">Справочник карт</h5>
+              <div class="settings-note mt-0">Добавьте карты, которые используются при покупках материалов.</div>
+              <form method="post" action="/web/payment-cards/create" class="row g-2 align-items-end mt-1">
+                <input type="hidden" name="section" value="directories" />
+                <div class="col-12 col-sm-8 col-md-6">
+                  <label class="form-label mb-1">Новая карта</label>
+                  <input name="name" class="form-control" placeholder="БК 1234 / Тинькофф 5678" required />
+                </div>
+                <div class="col-12 col-sm-auto">
+                  <button class="btn btn-outline-primary">Добавить</button>
+                </div>
+              </form>
+              <div class="mt-3">
+                {% for c in cards %}
+                  <form method="post" action="/web/payment-cards/{{ c.id }}/delete" class="d-inline-flex align-items-center me-1 mb-1" onsubmit="return confirm('Удалить карту {{ c.name }}?');">
+                    <input type="hidden" name="section" value="directories" />
+                    <span class="badge text-bg-light border rounded-pill px-2 py-1">
+                      {{ c.name }}
+                      <button type="submit" class="btn btn-sm p-0 ms-2 border-0 bg-transparent text-danger fw-bold" title="Удалить карту" aria-label="Удалить карту">×</button>
+                    </span>
+                  </form>
+                {% endfor %}
+                {% if cards|length == 0 %}
+                  <div class="text-muted small">Карты пока не добавлены.</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="card shadow-sm settings-card">
+          <div class="card-body">
+            <h5 class="mb-3">Разделы управления</h5>
+            {% if user.role == "PLATFORM_ADMIN" %}
+              <div class="settings-links">
+                <a class="btn btn-outline-secondary" href="/web/admin/companies">Компании</a>
+              </div>
+            {% elif user.role in ["ADMIN", "CURATOR"] %}
+              <div class="settings-links">
+                <a class="btn btn-outline-secondary" href="/web/ticket-types">Типы заявок</a>
+                <a class="btn btn-outline-secondary" href="/web/ticket-templates">Шаблоны заявок</a>
+                <a class="btn btn-outline-secondary" href="/web/users">Пользователи</a>
+                <a class="btn btn-outline-secondary" href="/web/org-structure">Оргструктура</a>
+              </div>
+            {% else %}
+              <div class="text-muted">Разделы управления доступны владельцу компании, куратору или администратору платформы.</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
   </div>
 
   <script src="/static/sw-register.js"></script>
@@ -395,6 +557,3 @@
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-

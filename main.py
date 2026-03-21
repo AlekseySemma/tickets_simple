@@ -19,7 +19,7 @@ import time
 import zipfile
 from typing import Optional
 import uuid
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
 from fastapi.responses import RedirectResponse, FileResponse, Response, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -135,6 +135,38 @@ DEFAULT_DEADLINE_SOON_WARNING_MINUTES = max(
         int(os.getenv("DEFAULT_DEADLINE_SOON_WARNING_MINUTES", "1440")),
     ),
 )
+SETTINGS_SECTIONS = {
+    "general": {
+        "id": "general",
+        "title": "Общие",
+        "description": "Базовые параметры работы заявок и подсветки сроков.",
+    },
+    "notifications": {
+        "id": "notifications",
+        "title": "Уведомления",
+        "description": "Комментарии, чеки и push-уведомления.",
+    },
+    "receipts": {
+        "id": "receipts",
+        "title": "Чеки",
+        "description": "Настройки, которые используются при загрузке чеков.",
+    },
+    "archive": {
+        "id": "archive",
+        "title": "Архив",
+        "description": "Срок хранения архивных заявок и связанных данных.",
+    },
+    "system": {
+        "id": "system",
+        "title": "Система",
+        "description": "Безопасность аккаунта и служебная диагностика.",
+    },
+    "directories": {
+        "id": "directories",
+        "title": "Справочники",
+        "description": "Карты и административные разделы компании.",
+    },
+}
 LOCAL_TIME_OFFSET_HOURS = int(os.getenv("LOCAL_TIME_OFFSET_HOURS", "3"))
 RL_LOGIN_LIMIT = int(os.getenv("RL_LOGIN_LIMIT", "10"))
 RL_LOGIN_WINDOW_SEC = int(os.getenv("RL_LOGIN_WINDOW_SEC", "300"))
@@ -2760,6 +2792,27 @@ def get_company_archive_retention_days(company: Company | None) -> int:
     if company.archive_retention_days_default is None:
         return DEFAULT_ARCHIVE_RETENTION_DAYS
     return clamp_archive_retention_days(company.archive_retention_days_default)
+
+
+def normalize_settings_section(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in SETTINGS_SECTIONS:
+        return value
+    return ""
+
+
+def build_settings_url(section: str | None = None, **params: object) -> str:
+    items: list[tuple[str, str]] = []
+    normalized_section = normalize_settings_section(section)
+    if normalized_section:
+        items.append(("section", normalized_section))
+    for key, value in params.items():
+        if value is None or value is False or value == "":
+            continue
+        items.append((key, "1" if value is True else str(value)))
+    if not items:
+        return "/web/settings"
+    return f"/web/settings?{urlencode(items)}"
 
 
 def normalize_ticket_type_archive_retention_days(value: int | None) -> int | None:
@@ -6163,6 +6216,7 @@ def web_settings(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    selected_settings_section = normalize_settings_section(request.query_params.get("section"))
     company: Company | None = None
     if not is_platform_admin(user):
         ensure_company_user(user)
@@ -6212,6 +6266,14 @@ def web_settings(
     ) if user.company_id is not None else []
     can_manage_deadline_warning = user.role in (Role.admin, Role.curator)
     can_manage_archive_retention = user.role in (Role.admin, Role.curator)
+    settings_sections = [
+        {
+            **meta,
+            "href": build_settings_url(meta["id"]),
+            "is_active": meta["id"] == selected_settings_section,
+        }
+        for meta in SETTINGS_SECTIONS.values()
+    ]
     return templates.TemplateResponse(
         "settings.html",
         {
@@ -6238,9 +6300,13 @@ def web_settings(
             "password_change_error": password_change_error,
             "cards": cards,
             "preferred_payment_card_id": user.preferred_payment_card_id,
+            "settings_sections": settings_sections,
+            "selected_settings_section": selected_settings_section,
+            "selected_settings_section_meta": SETTINGS_SECTIONS.get(selected_settings_section),
             "can_manage_deadline_warning": can_manage_deadline_warning,
             "can_manage_archive_retention": can_manage_archive_retention,
             "can_manage_cards": not is_platform_admin(user),
+            "can_manage_receipt_settings": user.company_id is not None and not is_platform_admin(user),
             "min_deadline_soon_warning_minutes": MIN_DEADLINE_SOON_WARNING_MINUTES,
             "max_deadline_soon_warning_minutes": MAX_DEADLINE_SOON_WARNING_MINUTES,
             "min_archive_retention_days": MIN_ARCHIVE_RETENTION_DAYS,
@@ -6255,12 +6321,17 @@ async def web_settings_logout_all(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     try:
         bump_user_auth_token_version(user)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/settings?session_revoke_error=save_failed", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, session_revoke_error="save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     audit_security_event("logout_all_devices", request, success=True, email=user.email, user_id=user.id)
     resp = RedirectResponse(url="/web/login?info=logged_out_all", status_code=HTTP_303_SEE_OTHER)
     delete_auth_cookie(resp, request)
@@ -6274,15 +6345,25 @@ async def web_settings_change_password(
     user: User = Depends(get_current_user),
 ):
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     current_password = (form.get("current_password") or "").strip()
     new_password = (form.get("new_password") or "").strip()
     new_password_confirm = (form.get("new_password_confirm") or "").strip()
     if not verify_password(current_password, user.password_hash):
-        return RedirectResponse(url="/web/settings?password_change_error=invalid_current_password", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, password_change_error="invalid_current_password"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     if len(new_password) < 8:
-        return RedirectResponse(url="/web/settings?password_change_error=password_too_short", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, password_change_error="password_too_short"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     if new_password != new_password_confirm:
-        return RedirectResponse(url="/web/settings?password_change_error=password_mismatch", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, password_change_error="password_mismatch"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     try:
         user.password_hash = hash_password(new_password)
         bump_user_auth_token_version(user)
@@ -6290,7 +6371,10 @@ async def web_settings_change_password(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/settings?password_change_error=save_failed", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, password_change_error="save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     audit_security_event("password_change", request, success=True, email=user.email, user_id=user.id)
     resp = RedirectResponse(url="/web/login?info=password_changed", status_code=HTTP_303_SEE_OTHER)
     delete_auth_cookie(resp, request)
@@ -6309,10 +6393,11 @@ async def web_settings_deadline_warning(
         raise HTTPException(404, "Company not found")
 
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     parsed = parse_deadline_soon_warning_minutes(form.get("deadline_soon_warning_minutes"))
     if parsed is None:
         return RedirectResponse(
-            url="/web/settings?deadline_warning_error=bad_value",
+            url=build_settings_url(section, deadline_warning_error="bad_value"),
             status_code=HTTP_303_SEE_OTHER,
         )
     try:
@@ -6321,10 +6406,13 @@ async def web_settings_deadline_warning(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url="/web/settings?deadline_warning_error=save_failed",
+            url=build_settings_url(section, deadline_warning_error="save_failed"),
             status_code=HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url="/web/settings?deadline_warning_saved=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_settings_url(section, deadline_warning_saved=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/settings/archive-retention")
@@ -6339,10 +6427,11 @@ async def web_settings_archive_retention(
         raise HTTPException(404, "Company not found")
 
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     parsed = parse_archive_retention_days(form.get("archive_retention_days_default"))
     if parsed is None:
         return RedirectResponse(
-            url="/web/settings?archive_retention_error=bad_value",
+            url=build_settings_url(section, archive_retention_error="bad_value"),
             status_code=HTTP_303_SEE_OTHER,
         )
     try:
@@ -6351,10 +6440,13 @@ async def web_settings_archive_retention(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url="/web/settings?archive_retention_error=save_failed",
+            url=build_settings_url(section, archive_retention_error="save_failed"),
             status_code=HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url="/web/settings?archive_retention_saved=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_settings_url(section, archive_retention_saved=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/settings/watcher-comments")
@@ -6364,6 +6456,7 @@ async def web_settings_watcher_comments(
     user: User = Depends(get_current_user),
 ):
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     # Unchecked checkbox is absent from form payload.
     enabled = (form.get("notify_comments_as_watcher") or "").strip() in {"1", "true", "on"}
     try:
@@ -6373,10 +6466,13 @@ async def web_settings_watcher_comments(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url="/web/settings?watcher_comments_error=save_failed",
+            url=build_settings_url(section, watcher_comments_error="save_failed"),
             status_code=HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url="/web/settings?watcher_comments_saved=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_settings_url(section, watcher_comments_saved=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/settings/receipt-notifications")
@@ -6386,6 +6482,7 @@ async def web_settings_receipt_notifications(
     user: User = Depends(get_current_user),
 ):
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     enabled = (form.get("notify_receipt_created") or "").strip() in {"1", "true", "on"}
     try:
         user.notify_receipt_created = enabled
@@ -6394,10 +6491,13 @@ async def web_settings_receipt_notifications(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url="/web/settings?receipt_notifications_error=save_failed",
+            url=build_settings_url(section, receipt_notifications_error="save_failed"),
             status_code=HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url="/web/settings?receipt_notifications_saved=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_settings_url(section, receipt_notifications_saved=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/settings/preferred-card")
@@ -6408,6 +6508,7 @@ async def web_settings_preferred_card(
 ):
     ensure_company_user(user)
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     raw_value = (form.get("preferred_payment_card_id") or "").strip()
     preferred_card_id: int | None = None
     if raw_value:
@@ -6417,7 +6518,7 @@ async def web_settings_preferred_card(
             preferred_card_id = None
     if raw_value and preferred_card_id is None:
         return RedirectResponse(
-            url="/web/settings?preferred_card_error=bad_value",
+            url=build_settings_url(section, preferred_card_error="bad_value"),
             status_code=HTTP_303_SEE_OTHER,
         )
     if preferred_card_id is not None:
@@ -6433,7 +6534,7 @@ async def web_settings_preferred_card(
         )
         if not exists:
             return RedirectResponse(
-                url="/web/settings?preferred_card_error=bad_value",
+                url=build_settings_url(section, preferred_card_error="bad_value"),
                 status_code=HTTP_303_SEE_OTHER,
             )
     try:
@@ -6443,10 +6544,13 @@ async def web_settings_preferred_card(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url="/web/settings?preferred_card_error=save_failed",
+            url=build_settings_url(section, preferred_card_error="save_failed"),
             status_code=HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url="/web/settings?preferred_card_saved=1", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_settings_url(section, preferred_card_saved=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.get("/web/notifications")
@@ -9029,9 +9133,13 @@ async def web_payment_cards_create(request: Request, db: Session = Depends(get_d
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
     form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     name = (form.get("name") or "").strip()
     if not name:
-        return RedirectResponse(url="/web/settings?card_create_error=missing_required", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, card_create_error="missing_required"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     exists = (
         db.query(PaymentCard.id)
         .filter(
@@ -9042,28 +9150,43 @@ async def web_payment_cards_create(request: Request, db: Session = Depends(get_d
         .first()
     )
     if exists:
-        return RedirectResponse(url="/web/settings?card_create_error=card_exists", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, card_create_error="card_exists"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     db.add(PaymentCard(company_id=user.company_id, owner_user_id=user.id, name=name, is_active=True))
     try:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/settings?card_create_error=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/settings?card_created=1", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, card_create_error="save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=build_settings_url(section, card_created=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/payment-cards/{card_id}/delete")
 async def web_payment_cards_delete(
     card_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     if user.role not in (Role.admin, Role.curator, Role.executor):
         raise HTTPException(403, "Forbidden")
     ensure_company_user(user)
+    form = await request.form()
+    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
     card = db.get(PaymentCard, card_id)
     if not card or card.company_id != user.company_id or card.owner_user_id != user.id:
-        return RedirectResponse(url="/web/settings?card_delete_error=not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, card_delete_error="not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     used_in_receipts = (
         db.query(Receipt.id)
@@ -9076,14 +9199,23 @@ async def web_payment_cards_delete(
         .first()
     )
     if used_in_receipts or used_in_user_defaults:
-        return RedirectResponse(url="/web/settings?card_delete_error=in_use", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, card_delete_error="in_use"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     try:
         db.delete(card)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/settings?card_delete_error=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/settings?card_deleted=1", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_settings_url(section, card_delete_error="save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=build_settings_url(section, card_deleted=True),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/receipts/create")
