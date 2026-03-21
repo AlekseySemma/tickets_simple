@@ -167,6 +167,62 @@ SETTINGS_SECTIONS = {
         "description": "Административные разделы и справочники компании.",
     },
 }
+ORG_STRUCTURE_SECTIONS = {
+    "nodes": {
+        "id": "nodes",
+        "title": "Узлы и отделы",
+        "description": "Дерево структуры, отделы и редактирование узлов.",
+    },
+    "executors": {
+        "id": "executors",
+        "title": "Исполнители",
+        "description": "Назначение исполнителей и управление закреплениями.",
+    },
+    "import": {
+        "id": "import",
+        "title": "Импорт",
+        "description": "Загрузка оргструктуры из CSV и шаблон для выгрузки.",
+    },
+}
+ORG_STRUCTURE_NODE_ERRORS = {
+    "empty_name",
+    "bad_parent",
+    "parent_not_found",
+    "create_failed",
+    "department_empty_name",
+    "department_exists",
+    "department_not_found",
+    "department_in_use",
+    "department_save_failed",
+    "edit_not_found",
+    "edit_empty_name",
+    "edit_bad_parent",
+    "edit_parent_not_found",
+    "edit_cycle",
+    "edit_failed",
+    "delete_not_found",
+    "delete_has_children",
+    "delete_has_assignments",
+    "delete_has_templates",
+    "delete_has_tickets",
+    "delete_has_generation_keys",
+    "delete_failed",
+}
+ORG_STRUCTURE_EXECUTOR_ERRORS = {
+    "assign_bad_input",
+    "assign_unit_not_found",
+    "assign_executor_not_found",
+    "assign_department_not_found",
+    "assign_failed",
+}
+ORG_STRUCTURE_IMPORT_ERRORS = {
+    "import_empty",
+    "import_read_failed",
+    "import_encoding",
+    "import_headers",
+    "import_need_path",
+    "import_failed",
+}
 LOCAL_TIME_OFFSET_HOURS = int(os.getenv("LOCAL_TIME_OFFSET_HOURS", "3"))
 RL_LOGIN_LIMIT = int(os.getenv("RL_LOGIN_LIMIT", "10"))
 RL_LOGIN_WINDOW_SEC = int(os.getenv("RL_LOGIN_WINDOW_SEC", "300"))
@@ -2813,6 +2869,68 @@ def build_settings_url(section: str | None = None, **params: object) -> str:
     if not items:
         return "/web/settings"
     return f"/web/settings?{urlencode(items)}"
+
+
+def normalize_org_structure_section(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in ORG_STRUCTURE_SECTIONS:
+        return value
+    return ""
+
+
+def infer_org_structure_section(
+    raw: str | None = None,
+    *,
+    error: str | None = None,
+    import_ok: str | None = None,
+    edit_unit_id: str | None = None,
+    assignment_unit_id: str | None = None,
+    assignment_executor_id: str | None = None,
+    assignment_department_id: str | None = None,
+    assignment_unit_q: str | None = None,
+    assignment_executor_q: str | None = None,
+    assignment_primary: str | None = None,
+    assignment_page: int | None = None,
+) -> str:
+    normalized = normalize_org_structure_section(raw)
+    if normalized:
+        return normalized
+    error_code = (error or "").strip().lower()
+    if (import_ok or "").strip() == "1" or error_code in ORG_STRUCTURE_IMPORT_ERRORS:
+        return "import"
+    if (
+        (edit_unit_id or "").strip()
+        or error_code in ORG_STRUCTURE_NODE_ERRORS
+    ):
+        return "nodes"
+    has_assignment_context = any(
+        (
+            (assignment_unit_id or "").strip(),
+            (assignment_executor_id or "").strip(),
+            (assignment_department_id or "").strip(),
+            (assignment_unit_q or "").strip(),
+            (assignment_executor_q or "").strip(),
+            (assignment_primary or "").strip(),
+            (assignment_page or 1) > 1,
+        )
+    )
+    if has_assignment_context or error_code in ORG_STRUCTURE_EXECUTOR_ERRORS:
+        return "executors"
+    return "nodes"
+
+
+def build_org_structure_url(section: str | None = None, **params: object) -> str:
+    items: list[tuple[str, str]] = []
+    normalized_section = normalize_org_structure_section(section)
+    if normalized_section:
+        items.append(("section", normalized_section))
+    for key, value in params.items():
+        if value is None or value is False or value == "":
+            continue
+        items.append((key, "1" if value is True else str(value)))
+    if not items:
+        return "/web/org-structure"
+    return f"/web/org-structure?{urlencode(items)}"
 
 
 def normalize_ticket_type_archive_retention_days(value: int | None) -> int | None:
@@ -6823,6 +6941,7 @@ def web_org_structure(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
+    section: str | None = None,
     edit_unit_id: str | None = None,
     assignment_unit_id: str | None = None,
     assignment_executor_id: str | None = None,
@@ -6835,6 +6954,19 @@ def web_org_structure(
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    selected_org_section = infer_org_structure_section(
+        section,
+        error=request.query_params.get("error"),
+        import_ok=request.query_params.get("import_ok"),
+        edit_unit_id=edit_unit_id,
+        assignment_unit_id=assignment_unit_id,
+        assignment_executor_id=assignment_executor_id,
+        assignment_department_id=assignment_department_id,
+        assignment_unit_q=assignment_unit_q,
+        assignment_executor_q=assignment_executor_q,
+        assignment_primary=assignment_primary,
+        assignment_page=assignment_page,
+    )
 
     rows = (
         db.query(
@@ -7073,6 +7205,14 @@ def web_org_structure(
         "updated": (request.query_params.get("import_updated") or "").strip(),
         "errors": (request.query_params.get("import_errors") or "").strip(),
     }
+    org_sections = [
+        {
+            **meta,
+            "href": build_org_structure_url(meta["id"]),
+            "is_active": meta["id"] == selected_org_section,
+        }
+        for meta in ORG_STRUCTURE_SECTIONS.values()
+    ]
 
     return templates.TemplateResponse(
         "org_structure.html",
@@ -7088,6 +7228,9 @@ def web_org_structure(
             "edit_unit": edit_unit,
             "edit_forbidden_parent_ids": edit_forbidden_parent_ids,
             "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
+            "org_sections": org_sections,
+            "selected_org_section": selected_org_section,
+            "selected_org_section_meta": ORG_STRUCTURE_SECTIONS.get(selected_org_section),
             "import_report": import_report,
             "can_manage_departments": is_admin(user),
             "assignment_unit_id_filter": assignment_unit_id_int if assignment_unit_id_int is not None else "",
@@ -7113,24 +7256,34 @@ async def web_departments_create(
 ):
     ensure_company_user(user)
     form = await request.form()
+    section = infer_org_structure_section(form.get("section"), error=request.query_params.get("error"))
     name = normalize_department_name(form.get("name"))
     is_active = (form.get("is_active") or "1").strip() in {"1", "on", "true", "yes"}
     if not name:
-        return RedirectResponse(url="/web/org-structure?error=department_empty_name", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_empty_name"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     exists = (
         db.query(Department.id)
         .filter(Department.company_id == user.company_id, func.lower(Department.name) == name.lower())
         .first()
     )
     if exists:
-        return RedirectResponse(url="/web/org-structure?error=department_exists", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_exists"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     try:
         db.add(Department(company_id=user.company_id, name=name, is_active=is_active))
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=department_save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/departments/{department_id}/update")
@@ -7141,14 +7294,22 @@ async def web_departments_update(
     user: User = Depends(require_role(Role.admin)),
 ):
     ensure_company_user(user)
+    section = infer_org_structure_section(request.query_params.get("section"))
     item = db.get(Department, department_id)
     if not item or item.company_id != user.company_id:
-        return RedirectResponse(url="/web/org-structure?error=department_not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     form = await request.form()
+    section = infer_org_structure_section(form.get("section") or section)
     name = normalize_department_name(form.get("name"))
     is_active = (form.get("is_active") or "").strip() in {"1", "on", "true", "yes"}
     if not name:
-        return RedirectResponse(url="/web/org-structure?error=department_empty_name", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_empty_name"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     exists = (
         db.query(Department.id)
         .filter(
@@ -7159,27 +7320,40 @@ async def web_departments_update(
         .first()
     )
     if exists:
-        return RedirectResponse(url="/web/org-structure?error=department_exists", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_exists"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     item.name = name
     item.is_active = is_active
     try:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=department_save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/departments/{department_id}/delete")
-def web_departments_delete(
+async def web_departments_delete(
     department_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin)),
 ):
     ensure_company_user(user)
+    section = infer_org_structure_section(request.query_params.get("section"))
+    form = await request.form()
+    section = infer_org_structure_section(form.get("section") or section)
     item = db.get(Department, department_id)
     if not item or item.company_id != user.company_id:
-        return RedirectResponse(url="/web/org-structure?error=department_not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     in_use = any(
         (
             db.query(TicketType.id).filter(TicketType.company_id == user.company_id, TicketType.department_id == item.id).first() is not None,
@@ -7189,14 +7363,20 @@ def web_departments_delete(
         )
     )
     if in_use:
-        return RedirectResponse(url="/web/org-structure?error=department_in_use", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_in_use"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     try:
         db.delete(item)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=department_save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="department_save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/org-structure/create")
@@ -7210,21 +7390,31 @@ async def web_org_structure_create(
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
 
     form = await request.form()
+    section = infer_org_structure_section(form.get("section"), error=request.query_params.get("error"))
     name = (form.get("name") or "").strip()
     parent_raw = (form.get("parent_id") or "").strip()
     type_name = (form.get("unit_type_name") or "").strip() or "РЈР·РµР»"
     if not name:
-        return RedirectResponse(url="/web/org-structure?error=empty_name", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="empty_name"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     try:
         parent_id = int(parent_raw) if parent_raw else None
     except ValueError:
-        return RedirectResponse(url="/web/org-structure?error=bad_parent", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="bad_parent"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     if parent_id is not None:
         parent = db.get(OrgUnit, parent_id)
         if not parent or parent.company_id != user.company_id:
-            return RedirectResponse(url="/web/org-structure?error=parent_not_found", status_code=HTTP_303_SEE_OTHER)
+            return RedirectResponse(
+                url=build_org_structure_url(section, error="parent_not_found"),
+                status_code=HTTP_303_SEE_OTHER,
+            )
 
     try:
         unit_type = get_or_create_unit_type(db, user.company_id, type_name)
@@ -7239,8 +7429,11 @@ async def web_org_structure_create(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=create_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="create_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/org-structure/assign")
@@ -7254,6 +7447,7 @@ async def web_org_structure_assign_executor(
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
 
     form = await request.form()
+    section = infer_org_structure_section(form.get("section"), error=request.query_params.get("error"))
     unit_values_raw = [str(v).strip() for v in form.getlist("unit_ids") if str(v).strip()]
     if not unit_values_raw:
         fallback_unit_raw = (form.get("unit_id") or "").strip()
@@ -7266,11 +7460,17 @@ async def web_org_structure_assign_executor(
     try:
         executor_id = int(executor_raw)
     except ValueError:
-        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_bad_input"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     try:
         department_id = int(department_raw) if department_raw else None
     except ValueError:
-        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_bad_input"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     unit_ids: list[int] = []
     seen_unit_ids: set[int] = set()
@@ -7281,18 +7481,30 @@ async def web_org_structure_assign_executor(
                 seen_unit_ids.add(unit_id)
                 unit_ids.append(unit_id)
     except ValueError:
-        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_bad_input"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     if not unit_ids:
-        return RedirectResponse(url="/web/org-structure?error=assign_bad_input", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_bad_input"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     executor = db.get(User, executor_id)
     if not executor or executor.company_id != user.company_id or executor.role != Role.executor:
-        return RedirectResponse(url="/web/org-structure?error=assign_executor_not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_executor_not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     if department_id is not None:
         department = db.get(Department, department_id)
         if not department or department.company_id != user.company_id or not department.is_active:
-            return RedirectResponse(url="/web/org-structure?error=assign_department_not_found", status_code=HTTP_303_SEE_OTHER)
+            return RedirectResponse(
+                url=build_org_structure_url(section, error="assign_department_not_found"),
+                status_code=HTTP_303_SEE_OTHER,
+            )
 
     found_unit_ids = {
         row[0]
@@ -7303,7 +7515,10 @@ async def web_org_structure_assign_executor(
         )
     }
     if len(found_unit_ids) != len(unit_ids):
-        return RedirectResponse(url="/web/org-structure?error=assign_unit_not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_unit_not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     try:
         existing_rows = (
@@ -7353,20 +7568,26 @@ async def web_org_structure_assign_executor(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=assign_failed", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="assign_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/org-structure/assign/{assignment_id}/primary")
-def web_org_structure_assignment_primary(
+async def web_org_structure_assignment_primary(
     assignment_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
 ):
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    form = await request.form()
+    section = infer_org_structure_section(form.get("section") or request.query_params.get("section"))
 
     assignment = db.get(UnitAssignment, assignment_id)
     if not assignment or assignment.company_id != user.company_id or assignment.role_code != "EXECUTOR":
@@ -7384,18 +7605,31 @@ def web_org_structure_assignment_primary(
     )
     assignment.is_primary = True
     db.commit()
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_org_structure_url(
+            section,
+            assignment_department_id=form.get("assignment_department_id"),
+            assignment_unit_q=form.get("assignment_unit_q"),
+            assignment_executor_q=form.get("assignment_executor_q"),
+            assignment_primary=(form.get("assignment_primary") or "").strip() in {"1", "true", "on", "yes"},
+            assignment_page=form.get("assignment_page"),
+        ),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/org-structure/assign/{assignment_id}/delete")
-def web_org_structure_assignment_delete(
+async def web_org_structure_assignment_delete(
     assignment_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
 ):
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    form = await request.form()
+    section = infer_org_structure_section(form.get("section") or request.query_params.get("section"))
 
     assignment = db.get(UnitAssignment, assignment_id)
     if not assignment or assignment.company_id != user.company_id or assignment.role_code != "EXECUTOR":
@@ -7403,7 +7637,17 @@ def web_org_structure_assignment_delete(
 
     db.delete(assignment)
     db.commit()
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=build_org_structure_url(
+            section,
+            assignment_department_id=form.get("assignment_department_id"),
+            assignment_unit_q=form.get("assignment_unit_q"),
+            assignment_executor_q=form.get("assignment_executor_q"),
+            assignment_primary=(form.get("assignment_primary") or "").strip() in {"1", "true", "on", "yes"},
+            assignment_page=form.get("assignment_page"),
+        ),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/org-structure/{unit_id}/update")
@@ -7416,12 +7660,17 @@ async def web_org_structure_update(
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    section = infer_org_structure_section(request.query_params.get("section"), edit_unit_id=str(unit_id))
 
     item = db.get(OrgUnit, unit_id)
     if not item or item.company_id != user.company_id:
-        return RedirectResponse(url="/web/org-structure?error=edit_not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, edit_unit_id=unit_id, error="edit_not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     form = await request.form()
+    section = infer_org_structure_section(form.get("section") or section, edit_unit_id=str(unit_id))
     name = (form.get("name") or "").strip()
     parent_raw = (form.get("parent_id") or "").strip()
     type_name = (form.get("unit_type_name") or "").strip() or "РЈР·РµР»"
@@ -7429,14 +7678,14 @@ async def web_org_structure_update(
 
     if not name:
         return RedirectResponse(
-            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_empty_name",
+            url=build_org_structure_url(section, edit_unit_id=unit_id, error="edit_empty_name"),
             status_code=HTTP_303_SEE_OTHER,
         )
     try:
         parent_id = int(parent_raw) if parent_raw else None
     except ValueError:
         return RedirectResponse(
-            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_bad_parent",
+            url=build_org_structure_url(section, edit_unit_id=unit_id, error="edit_bad_parent"),
             status_code=HTTP_303_SEE_OTHER,
         )
 
@@ -7444,14 +7693,14 @@ async def web_org_structure_update(
         parent = db.get(OrgUnit, parent_id)
         if not parent or parent.company_id != user.company_id:
             return RedirectResponse(
-                url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_parent_not_found",
+                url=build_org_structure_url(section, edit_unit_id=unit_id, error="edit_parent_not_found"),
                 status_code=HTTP_303_SEE_OTHER,
             )
 
     parent_map = build_unit_parent_map(db, user.company_id)
     if would_create_unit_cycle(parent_map, unit_id=unit_id, new_parent_id=parent_id):
         return RedirectResponse(
-            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_cycle",
+            url=build_org_structure_url(section, edit_unit_id=unit_id, error="edit_cycle"),
             status_code=HTTP_303_SEE_OTHER,
         )
 
@@ -7465,15 +7714,16 @@ async def web_org_structure_update(
     except SQLAlchemyError:
         db.rollback()
         return RedirectResponse(
-            url=f"/web/org-structure?edit_unit_id={unit_id}&error=edit_failed",
+            url=build_org_structure_url(section, edit_unit_id=unit_id, error="edit_failed"),
             status_code=HTTP_303_SEE_OTHER,
         )
 
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/org-structure/import-csv")
 async def web_org_structure_import_csv(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
@@ -7481,13 +7731,20 @@ async def web_org_structure_import_csv(
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    section = infer_org_structure_section(request.query_params.get("section") or "import")
 
     try:
         raw_bytes = await file.read()
     except Exception:
-        return RedirectResponse(url="/web/org-structure?error=import_read_failed", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="import_read_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     if not raw_bytes:
-        return RedirectResponse(url="/web/org-structure?error=import_empty", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="import_empty"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     text = None
     for enc in ("utf-8-sig", "utf-8", "cp1251"):
@@ -7497,7 +7754,10 @@ async def web_org_structure_import_csv(
         except UnicodeDecodeError:
             continue
     if text is None:
-        return RedirectResponse(url="/web/org-structure?error=import_encoding", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="import_encoding"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     csv_stream = io.StringIO(text)
     sample = text[:2048]
@@ -7507,10 +7767,16 @@ async def web_org_structure_import_csv(
         dialect = csv.excel
     reader = csv.DictReader(csv_stream, dialect=dialect)
     if not reader.fieldnames:
-        return RedirectResponse(url="/web/org-structure?error=import_headers", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="import_headers"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
     headers = {str(h or "").strip().lower() for h in reader.fieldnames}
     if "path" not in headers:
-        return RedirectResponse(url="/web/org-structure?error=import_need_path", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="import_need_path"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     existing_units = (
         db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.name, OrgUnit.is_active)
@@ -7575,13 +7841,19 @@ async def web_org_structure_import_csv(
         db.commit()
     except Exception:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=import_failed", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="import_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     return RedirectResponse(
-        url=(
-            "/web/org-structure"
-            f"?import_ok=1&import_rows={rows_total}&import_created={created_count}"
-            f"&import_updated={updated_count}&import_errors={errors_count}"
+        url=build_org_structure_url(
+            section,
+            import_ok=True,
+            import_rows=rows_total,
+            import_created=created_count,
+            import_updated=updated_count,
+            import_errors=errors_count,
         ),
         status_code=HTTP_303_SEE_OTHER,
     )
@@ -7603,36 +7875,45 @@ def web_org_structure_template_csv(
 
 
 @app.post("/web/org-structure/{unit_id}/toggle")
-def web_org_structure_toggle(
+async def web_org_structure_toggle(
     unit_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
 ):
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    form = await request.form()
+    section = infer_org_structure_section(form.get("section") or request.query_params.get("section"))
 
     item = db.get(OrgUnit, unit_id)
     if not item or item.company_id != user.company_id:
         raise HTTPException(404, "Org unit not found")
     item.is_active = not bool(item.is_active)
     db.commit()
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/org-structure/{unit_id}/delete")
-def web_org_structure_delete(
+async def web_org_structure_delete(
     unit_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.admin, Role.curator)),
 ):
     ensure_company_user(user)
     if not ORG_STRUCTURE_V2_ENABLED:
         return RedirectResponse(url="/web/settings", status_code=HTTP_303_SEE_OTHER)
+    form = await request.form()
+    section = infer_org_structure_section(form.get("section") or request.query_params.get("section"))
 
     item = db.get(OrgUnit, unit_id)
     if not item or item.company_id != user.company_id:
-        return RedirectResponse(url="/web/org-structure?error=delete_not_found", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="delete_not_found"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     has_children = (
         db.query(OrgUnit.id)
@@ -7641,7 +7922,10 @@ def web_org_structure_delete(
         is not None
     )
     if has_children:
-        return RedirectResponse(url="/web/org-structure?error=delete_has_children", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="delete_has_children"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     has_assignments = (
         db.query(UnitAssignment.id)
@@ -7650,7 +7934,10 @@ def web_org_structure_delete(
         is not None
     )
     if has_assignments:
-        return RedirectResponse(url="/web/org-structure?error=delete_has_assignments", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="delete_has_assignments"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     has_templates = (
         db.query(TicketTemplate.id)
@@ -7659,7 +7946,10 @@ def web_org_structure_delete(
         is not None
     )
     if has_templates:
-        return RedirectResponse(url="/web/org-structure?error=delete_has_templates", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="delete_has_templates"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     has_tickets = (
         db.query(Ticket.id)
@@ -7668,7 +7958,10 @@ def web_org_structure_delete(
         is not None
     )
     if has_tickets:
-        return RedirectResponse(url="/web/org-structure?error=delete_has_tickets", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="delete_has_tickets"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
     has_generation_keys = (
         db.query(TicketGenerationKey.id)
@@ -7678,7 +7971,7 @@ def web_org_structure_delete(
     )
     if has_generation_keys:
         return RedirectResponse(
-            url="/web/org-structure?error=delete_has_generation_keys",
+            url=build_org_structure_url(section, error="delete_has_generation_keys"),
             status_code=HTTP_303_SEE_OTHER,
         )
 
@@ -7687,9 +7980,12 @@ def web_org_structure_delete(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        return RedirectResponse(url="/web/org-structure?error=delete_failed", status_code=HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=build_org_structure_url(section, error="delete_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
 
-    return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=build_org_structure_url(section), status_code=HTTP_303_SEE_OTHER)
 
 
 @app.get("/web/admin/companies")

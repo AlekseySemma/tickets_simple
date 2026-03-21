@@ -121,6 +121,38 @@
       border-color: #9fd5c6 !important;
       box-shadow: 0 14px 30px rgba(31, 157, 143, 0.18);
     }
+    .org-section-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .org-section-tab {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 8px 13px;
+      border: 1px solid #cfe2da;
+      background: #fff;
+      color: #3b666a;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .org-section-tab:hover {
+      color: #1b5d57;
+      border-color: #8ac1b3;
+    }
+    .org-section-tab-active {
+      border-color: #1f9d8f;
+      background: rgba(31, 157, 143, 0.1);
+      color: #155e56;
+    }
+    .org-section-lead {
+      margin: 0 0 16px;
+      color: #55767b;
+      font-size: 14px;
+    }
     @media (max-width: 991.98px) {
       .org-kpi {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -163,6 +195,14 @@
     <div class="org-hint mb-3">
       Соберите иерархию, назначьте ответственных по узлам и управляйте жизненным циклом структуры в одном рабочем контуре.
     </div>
+    <div class="org-section-tabs">
+      {% for section in org_sections %}
+        <a class="org-section-tab {% if section.is_active %}org-section-tab-active{% endif %}" href="{{ section.href }}">{{ section.title }}</a>
+      {% endfor %}
+    </div>
+    {% if selected_org_section_meta %}
+      <p class="org-section-lead">{{ selected_org_section_meta.description }}</p>
+    {% endif %}
 
     {% set err = request.query_params.get("error", "") %}
     {% if err %}
@@ -209,11 +249,13 @@
       </div>
     {% endif %}
 
+    {% if selected_org_section == "nodes" %}
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
         <h5 class="mb-3">Отделы компании</h5>
         {% if can_manage_departments %}
           <form method="post" action="/web/departments/create" class="row g-2 mb-3">
+            <input type="hidden" name="section" value="nodes" />
             <div class="col-12 col-md-5">
               <input class="form-control" name="name" placeholder="Название отдела" required />
             </div>
@@ -245,6 +287,7 @@
                     <td>
                       {% if can_manage_departments %}
                         <form method="post" action="/web/departments/{{ department.id }}/update" class="row g-2 align-items-center">
+                          <input type="hidden" name="section" value="nodes" />
                           <div class="col-12 col-md-6">
                             <input class="form-control form-control-sm" name="name" value="{{ department.name }}" required />
                           </div>
@@ -286,6 +329,7 @@
       <div class="card-body">
         <h5 class="mb-3">Добавить узел</h5>
         <form method="post" action="/web/org-structure/create" class="row g-2">
+          <input type="hidden" name="section" value="nodes" />
           <div class="col-12 col-md-4">
             <input class="form-control" name="name" placeholder="Название узла" required />
           </div>
@@ -319,9 +363,10 @@
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Редактирование узла #{{ edit_unit.id }}</h5>
-            <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure">Отменить</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/web/org-structure?section=nodes">Отменить</a>
           </div>
           <form method="post" action="/web/org-structure/{{ edit_unit.id }}/update" class="row g-2">
+            <input type="hidden" name="section" value="nodes" />
             <div class="col-12 col-md-4">
               <input class="form-control" name="name" value="{{ edit_unit.name }}" required />
             </div>
@@ -351,11 +396,14 @@
         </div>
       </div>
     {% endif %}
+    {% endif %}
 
+    {% if selected_org_section == "import" %}
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
         <h5 class="mb-3">Импорт из CSV</h5>
         <form method="post" action="/web/org-structure/import-csv" enctype="multipart/form-data" class="row g-2">
+          <input type="hidden" name="section" value="import" />
           <div class="col-12 col-md-8">
             <input class="form-control" type="file" name="file" accept=".csv,text/csv" required />
           </div>
@@ -373,11 +421,14 @@
         </div>
       </div>
     </div>
+    {% endif %}
 
+    {% if selected_org_section == "executors" %}
     <div class="card shadow-sm mb-3 org-card">
       <div class="card-body">
         <h5 class="mb-3">Закрепление исполнителей по узлам</h5>
         <form method="post" action="/web/org-structure/assign" class="row g-2 mb-3">
+          <input type="hidden" name="section" value="executors" />
           <div class="col-12 col-md-6">
             <input
               class="form-control org-select-search"
@@ -431,6 +482,7 @@
         </form>
 
         <form method="get" action="/web/org-structure" class="row g-2 align-items-end mb-3">
+          <input type="hidden" name="section" value="executors" />
           <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
           <div class="col-12 col-md-4">
             <label class="form-label mb-1">Узел или поддерево</label>
@@ -514,7 +566,7 @@
           </div>
           <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
             <button class="btn btn-outline-primary btn-sm" type="submit">Применить</button>
-            <a class="btn btn-outline-secondary btn-sm" href="/web/org-structure{% if edit_unit %}?edit_unit_id={{ edit_unit.id }}{% endif %}">Сбросить</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/web/org-structure?section=executors{% if edit_unit %}&edit_unit_id={{ edit_unit.id }}{% endif %}">Сбросить</a>
             <span class="text-muted small">Показано {{ assignments|length }} из {{ assignments_total }}</span>
             {% if assignments_total_pages > 1 %}
               <span class="text-muted small">Страница {{ assignments_page }} из {{ assignments_total_pages }}</span>
@@ -551,10 +603,22 @@
                       <div class="d-flex gap-2 justify-content-end">
                         {% if not a.is_primary %}
                           <form class="js-preserve-scroll" method="post" action="/web/org-structure/assign/{{ a.id }}/primary">
+                            <input type="hidden" name="section" value="executors" />
+                            <input type="hidden" name="assignment_department_id" value="{{ assignment_department_id_filter }}" />
+                            <input type="hidden" name="assignment_unit_q" value="{{ assignment_unit_q_filter }}" />
+                            <input type="hidden" name="assignment_executor_q" value="{{ assignment_executor_q_filter }}" />
+                            {% if assignment_primary_filter %}<input type="hidden" name="assignment_primary" value="1" />{% endif %}
+                            <input type="hidden" name="assignment_page" value="{{ assignments_page }}" />
                             <button class="btn btn-sm btn-outline-primary" type="submit">Сделать основным</button>
                           </form>
                         {% endif %}
                         <form class="js-preserve-scroll" method="post" action="/web/org-structure/assign/{{ a.id }}/delete">
+                          <input type="hidden" name="section" value="executors" />
+                          <input type="hidden" name="assignment_department_id" value="{{ assignment_department_id_filter }}" />
+                          <input type="hidden" name="assignment_unit_q" value="{{ assignment_unit_q_filter }}" />
+                          <input type="hidden" name="assignment_executor_q" value="{{ assignment_executor_q_filter }}" />
+                          {% if assignment_primary_filter %}<input type="hidden" name="assignment_primary" value="1" />{% endif %}
+                          <input type="hidden" name="assignment_page" value="{{ assignments_page }}" />
                           <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
                         </form>
                       </div>
@@ -566,6 +630,7 @@
           </div>
           {% if assignments_total_pages > 1 %}
             <form method="get" action="/web/org-structure" class="d-flex flex-wrap gap-2 align-items-center mt-3">
+              <input type="hidden" name="section" value="executors" />
               <input type="hidden" name="edit_unit_id" value="{{ edit_unit.id if edit_unit else '' }}" />
               <input type="hidden" name="assignment_department_id" value="{{ assignment_department_id_filter }}" />
               <input type="hidden" name="assignment_unit_q" value="{{ assignment_unit_q_filter }}" />
@@ -586,7 +651,9 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
 
+    {% if selected_org_section == "nodes" %}
     <div class="card shadow-sm org-card">
       <div class="card-body">
         <h5 class="mb-3">Список узлов</h5>
@@ -617,8 +684,9 @@
                     </td>
                     <td class="text-end">
                       <div class="d-flex gap-2 justify-content-end">
-                        <a class="btn btn-sm btn-outline-primary" href="/web/org-structure?edit_unit_id={{ u.id }}">Редактировать</a>
+                        <a class="btn btn-sm btn-outline-primary" href="/web/org-structure?section=nodes&edit_unit_id={{ u.id }}">Редактировать</a>
                         <form class="js-preserve-scroll" method="post" action="/web/org-structure/{{ u.id }}/toggle">
+                          <input type="hidden" name="section" value="nodes" />
                           {% if u.is_active %}
                             <button class="btn btn-sm btn-outline-secondary" type="submit">Выключить</button>
                           {% else %}
@@ -626,6 +694,7 @@
                           {% endif %}
                         </form>
                         <form class="js-preserve-scroll" method="post" action="/web/org-structure/{{ u.id }}/delete" onsubmit="return confirm('Удалить узел #{{ u.id }} «{{ u.name }}»?');">
+                          <input type="hidden" name="section" value="nodes" />
                           <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
                         </form>
                       </div>
@@ -640,6 +709,7 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
   </div>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
