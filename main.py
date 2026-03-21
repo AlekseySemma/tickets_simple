@@ -149,7 +149,7 @@ SETTINGS_SECTIONS = {
     "receipts": {
         "id": "receipts",
         "title": "Чеки",
-        "description": "Настройки, которые используются при загрузке чеков.",
+        "description": "Карта по умолчанию и справочник карт для загрузки чеков.",
     },
     "archive": {
         "id": "archive",
@@ -164,7 +164,7 @@ SETTINGS_SECTIONS = {
     "directories": {
         "id": "directories",
         "title": "Справочники",
-        "description": "Карты и административные разделы компании.",
+        "description": "Административные разделы и справочники компании.",
     },
 }
 LOCAL_TIME_OFFSET_HOURS = int(os.getenv("LOCAL_TIME_OFFSET_HOURS", "3"))

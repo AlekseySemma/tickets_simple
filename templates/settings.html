@@ -352,8 +352,26 @@
         {% elif preferred_card_error == "save_failed" %}
           <div class="alert alert-danger py-2">Не удалось сохранить карту по умолчанию. Попробуйте еще раз.</div>
         {% endif %}
+        {% if card_created %}
+          <div class="alert alert-success py-2">Карта добавлена в справочник.</div>
+        {% elif card_create_error == "missing_required" %}
+          <div class="alert alert-danger py-2">Укажите название карты.</div>
+        {% elif card_create_error == "card_exists" %}
+          <div class="alert alert-danger py-2">Такая карта уже есть в справочнике.</div>
+        {% elif card_create_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось добавить карту в справочник. Попробуйте еще раз.</div>
+        {% endif %}
+        {% if card_deleted %}
+          <div class="alert alert-success py-2">Карта удалена из справочника.</div>
+        {% elif card_delete_error == "not_found" %}
+          <div class="alert alert-danger py-2">Карта не найдена.</div>
+        {% elif card_delete_error == "in_use" %}
+          <div class="alert alert-danger py-2">Карту нельзя удалить: она используется в чеках или в настройках пользователей.</div>
+        {% elif card_delete_error == "save_failed" %}
+          <div class="alert alert-danger py-2">Не удалось удалить карту. Попробуйте еще раз.</div>
+        {% endif %}
 
-        <div class="card shadow-sm settings-card">
+        <div class="card shadow-sm mb-3 settings-card">
           <div class="card-body">
             <h5 class="mb-2">Карта по умолчанию для чеков</h5>
             {% if can_manage_receipt_settings %}
@@ -380,6 +398,39 @@
             {% endif %}
           </div>
         </div>
+
+        {% if can_manage_cards %}
+          <div class="card shadow-sm settings-card">
+            <div class="card-body">
+              <h5 class="mb-2">Справочник карт</h5>
+              <div class="settings-note mt-0">Добавьте карты, которые используются при покупках материалов.</div>
+              <form method="post" action="/web/payment-cards/create" class="row g-2 align-items-end mt-1">
+                <input type="hidden" name="section" value="receipts" />
+                <div class="col-12 col-sm-8 col-md-6">
+                  <label class="form-label mb-1">Новая карта</label>
+                  <input name="name" class="form-control" placeholder="БК 1234 / Тинькофф 5678" required />
+                </div>
+                <div class="col-12 col-sm-auto">
+                  <button class="btn btn-outline-primary">Добавить</button>
+                </div>
+              </form>
+              <div class="mt-3">
+                {% for c in cards %}
+                  <form method="post" action="/web/payment-cards/{{ c.id }}/delete" class="d-inline-flex align-items-center me-1 mb-1" onsubmit="return confirm('Удалить карту {{ c.name }}?');">
+                    <input type="hidden" name="section" value="receipts" />
+                    <span class="badge text-bg-light border rounded-pill px-2 py-1">
+                      {{ c.name }}
+                      <button type="submit" class="btn btn-sm p-0 ms-2 border-0 bg-transparent text-danger fw-bold" title="Удалить карту" aria-label="Удалить карту">×</button>
+                    </span>
+                  </form>
+                {% endfor %}
+                {% if cards|length == 0 %}
+                  <div class="text-muted small">Карты пока не добавлены.</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endif %}
       {% elif selected_settings_section == "archive" %}
         {% if archive_retention_saved %}
           <div class="alert alert-success py-2">Срок хранения архивных заявок сохранен.</div>
@@ -477,58 +528,6 @@
           </div>
         </div>
       {% elif selected_settings_section == "directories" %}
-        {% if card_created %}
-          <div class="alert alert-success py-2">Карта добавлена в справочник.</div>
-        {% elif card_create_error == "missing_required" %}
-          <div class="alert alert-danger py-2">Укажите название карты.</div>
-        {% elif card_create_error == "card_exists" %}
-          <div class="alert alert-danger py-2">Такая карта уже есть в справочнике.</div>
-        {% elif card_create_error == "save_failed" %}
-          <div class="alert alert-danger py-2">Не удалось добавить карту в справочник. Попробуйте еще раз.</div>
-        {% endif %}
-        {% if card_deleted %}
-          <div class="alert alert-success py-2">Карта удалена из справочника.</div>
-        {% elif card_delete_error == "not_found" %}
-          <div class="alert alert-danger py-2">Карта не найдена.</div>
-        {% elif card_delete_error == "in_use" %}
-          <div class="alert alert-danger py-2">Карту нельзя удалить: она используется в чеках или в настройках пользователей.</div>
-        {% elif card_delete_error == "save_failed" %}
-          <div class="alert alert-danger py-2">Не удалось удалить карту. Попробуйте еще раз.</div>
-        {% endif %}
-
-        {% if can_manage_cards %}
-          <div class="card shadow-sm mb-3 settings-card">
-            <div class="card-body">
-              <h5 class="mb-2">Справочник карт</h5>
-              <div class="settings-note mt-0">Добавьте карты, которые используются при покупках материалов.</div>
-              <form method="post" action="/web/payment-cards/create" class="row g-2 align-items-end mt-1">
-                <input type="hidden" name="section" value="directories" />
-                <div class="col-12 col-sm-8 col-md-6">
-                  <label class="form-label mb-1">Новая карта</label>
-                  <input name="name" class="form-control" placeholder="БК 1234 / Тинькофф 5678" required />
-                </div>
-                <div class="col-12 col-sm-auto">
-                  <button class="btn btn-outline-primary">Добавить</button>
-                </div>
-              </form>
-              <div class="mt-3">
-                {% for c in cards %}
-                  <form method="post" action="/web/payment-cards/{{ c.id }}/delete" class="d-inline-flex align-items-center me-1 mb-1" onsubmit="return confirm('Удалить карту {{ c.name }}?');">
-                    <input type="hidden" name="section" value="directories" />
-                    <span class="badge text-bg-light border rounded-pill px-2 py-1">
-                      {{ c.name }}
-                      <button type="submit" class="btn btn-sm p-0 ms-2 border-0 bg-transparent text-danger fw-bold" title="Удалить карту" aria-label="Удалить карту">×</button>
-                    </span>
-                  </form>
-                {% endfor %}
-                {% if cards|length == 0 %}
-                  <div class="text-muted small">Карты пока не добавлены.</div>
-                {% endif %}
-              </div>
-            </div>
-          </div>
-        {% endif %}
-
         <div class="card shadow-sm settings-card">
           <div class="card-body">
             <h5 class="mb-3">Разделы управления</h5>

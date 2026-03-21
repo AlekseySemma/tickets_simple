@@ -111,19 +111,19 @@ class SettingsSectionsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/web/settings?section=archive&archive_retention_saved=1")
 
-    def test_card_create_redirects_back_to_directories_section(self):
+    def test_card_create_redirects_back_to_receipts_section(self):
         self.seed_user()
         self.login_web()
 
         response = self.client.post(
             "/web/payment-cards/create",
-            data={"name": "Tinkoff 5678", "section": "directories"},
+            data={"name": "Tinkoff 5678", "section": "receipts"},
             headers={"origin": "http://testserver"},
             follow_redirects=False,
         )
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/web/settings?section=directories&card_created=1")
+        self.assertEqual(response.headers["location"], "/web/settings?section=receipts&card_created=1")
 
 
 if __name__ == "__main__":
