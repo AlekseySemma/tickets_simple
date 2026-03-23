@@ -29,12 +29,13 @@
     .panel-card .card-body {
       background: linear-gradient(180deg, #fcfffd 0%, #edf6f2 100%);
       border-radius: 14px;
+      padding: 10px 12px;
     }
     .panel-title {
-      font-size: 1rem;
+      font-size: .86rem;
       font-weight: 700;
       color: #1f5558;
-      margin-bottom: .75rem;
+      margin-bottom: 0;
     }
     details.panel-toggle > summary {
       list-style: none;
@@ -43,9 +44,18 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: .75rem;
+      min-height: 36px;
+      padding: 6px 12px;
+      border: 1px solid #cfe2da;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: inset 0 0 0 1px rgba(31, 157, 143, 0.04);
+      margin-bottom: 0;
     }
     details.panel-toggle > summary::-webkit-details-marker { display: none; }
+    details.panel-toggle[open] > summary {
+      margin-bottom: .65rem;
+    }
     .panel-chevron {
       color: #4f7b7f;
       font-size: .9rem;
