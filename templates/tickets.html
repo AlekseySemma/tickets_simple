@@ -31,36 +31,83 @@
       border-radius: 14px;
       padding: 10px 12px;
     }
-    .panel-title {
-      font-size: .86rem;
-      font-weight: 700;
-      color: #1f5558;
-      margin-bottom: 0;
-    }
-    details.panel-toggle > summary {
-      list-style: none;
-      cursor: pointer;
-      user-select: none;
+    .panel-toolbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      min-height: 36px;
-      padding: 6px 12px;
-      border: 1px solid #cfe2da;
-      border-radius: 12px;
-      background: #fff;
-      box-shadow: inset 0 0 0 1px rgba(31, 157, 143, 0.04);
-      margin-bottom: 0;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
     }
-    details.panel-toggle > summary::-webkit-details-marker { display: none; }
-    details.panel-toggle[open] > summary {
-      margin-bottom: .65rem;
+    .panel-toolbar-btn {
+      appearance: none;
+      border: 1px solid #cfe2da;
+      background: #fff;
+      color: #23585b;
+      border-radius: 999px;
+      min-height: 34px;
+      padding: 6px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: 0 4px 10px rgba(18, 58, 61, .05);
+      transition: border-color .16s ease, background-color .16s ease, color .16s ease, box-shadow .16s ease;
+    }
+    .panel-toolbar-btn:hover {
+      border-color: #9fd1c3;
+      background: #f8fcfa;
+      color: #184d51;
+      box-shadow: 0 8px 16px rgba(18, 58, 61, .08);
+    }
+    .panel-toolbar-btn.is-active {
+      border-color: #1f9d8f;
+      background: rgba(31, 157, 143, 0.12);
+      color: #145e55;
+      box-shadow: 0 8px 18px rgba(31, 157, 143, .12);
+    }
+    .panel-toolbar-badge {
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border: 1px solid #cfe2da;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #eef7f3;
+      color: #245f5a;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .panel-collapse {
+      display: none;
+    }
+    .panel-collapse.is-open {
+      display: block;
     }
     .panel-chevron {
       color: #4f7b7f;
-      font-size: .9rem;
+      font-size: .82rem;
+      line-height: 1;
+      transition: transform .16s ease;
     }
-    details.panel-toggle[open] .panel-chevron { transform: rotate(180deg); }
+    .panel-toolbar-btn.is-active .panel-chevron {
+      transform: rotate(180deg);
+    }
+    @media (max-width: 767.98px) {
+      .panel-toolbar {
+        gap: 6px;
+      }
+      .panel-toolbar-btn {
+        flex: 1 1 calc(50% - 3px);
+        justify-content: center;
+      }
+      .panel-toolbar-btn:only-child {
+        flex-basis: 100%;
+      }
+    }
     .form-label {
       font-weight: 600;
       color: #2d5f62;
@@ -546,14 +593,48 @@
       Схема базы данных устарела. Выполните миграции: <code>alembic upgrade head</code>.
     </div>
     {% endif %}
+    {% set filter_state = namespace(active_count=0) %}
+    {% if q %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if status_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if project_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if ticket_type_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if department_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if target_unit_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if unit_executor_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if executor_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if only_overdue == "1" %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if sort and sort != "id_desc" %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+
+    <div class="panel-toolbar">
+      {% if create_enabled %}
+      <button
+        type="button"
+        class="panel-toolbar-btn {% if create_form_open %}is-active{% endif %}"
+        data-panel-toggle="create"
+        aria-expanded="{% if create_form_open %}true{% else %}false{% endif %}"
+      >
+        <span>+ Создать</span>
+        <span class="panel-chevron">▼</span>
+      </button>
+      {% endif %}
+      <button
+        type="button"
+        class="panel-toolbar-btn {% if filters_form_open %}is-active{% endif %}"
+        data-panel-toggle="filters"
+        aria-expanded="{% if filters_form_open %}true{% else %}false{% endif %}"
+      >
+        <span>Фильтры</span>
+        {% if filter_state.active_count > 0 %}
+          <span class="panel-toolbar-badge">{{ filter_state.active_count }}</span>
+        {% endif %}
+        <span class="panel-chevron">▼</span>
+      </button>
+    </div>
+
     {% if create_enabled %}
-    <div class="card shadow-sm mb-3 panel-card">
+    <div class="panel-collapse mb-3 {% if create_form_open %}is-open{% endif %}" data-panel-content="create">
+      <div class="card shadow-sm panel-card">
       <div class="card-body">
-        <details class="panel-toggle" {% if create_form_open %}open{% endif %}>
-          <summary class="panel-title mb-0">
-            <span>Создать заявку</span>
-            <span class="panel-chevron">▼</span>
-          </summary>
           <form method="post" action="/web/tickets/create" class="row g-2 mt-1 ticket-title-form">
             <div class="col-12 col-md-6">
               <input name="title" class="form-control ticket-title-input" placeholder="Название" required maxlength="{{ max_ticket_title_len }}" data-title-limit="{{ max_ticket_title_len }}" data-counter-target="create-title-counter" />
@@ -699,18 +780,14 @@
           <div class="mt-2 muted small">
             Чтобы список исполнителей и узлов был не пустым, заполните оргструктуру и назначения.
           </div>
-        </details>
+        </div>
       </div>
     </div>
     {% endif %}
 
-    <div class="card shadow-sm mb-3 panel-card">
+    <div class="panel-collapse mb-3 {% if filters_form_open %}is-open{% endif %}" data-panel-content="filters">
+      <div class="card shadow-sm panel-card">
       <div class="card-body">
-        <details class="panel-toggle" {% if filters_form_open %}open{% endif %}>
-          <summary class="panel-title mb-0">
-            <span>Фильтры и поиск</span>
-            <span class="panel-chevron">▼</span>
-          </summary>
           <form method="get" action="{{ list_path }}" class="row g-2 align-items-end mt-1">
             <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -818,7 +895,7 @@
               <a class="small" href="{{ reset_filters_url }}">Сбросить фильтры</a>
             </div>
           </form>
-        </details>
+        </div>
       </div>
     </div>
 
@@ -1330,6 +1407,28 @@
 
     render();
   })();
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const toggleButtons = Array.from(document.querySelectorAll("[data-panel-toggle]"));
+    if (!toggleButtons.length) return;
+
+    toggleButtons.forEach((button) => {
+      const panelName = button.dataset.panelToggle || "";
+      if (!panelName) return;
+
+      const panel = document.querySelector(`[data-panel-content="${panelName}"]`);
+      if (!panel) return;
+
+      button.addEventListener("click", function () {
+        const nextOpen = !panel.classList.contains("is-open");
+        panel.classList.toggle("is-open", nextOpen);
+        button.classList.toggle("is-active", nextOpen);
+        button.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+      });
+    });
+  });
 </script>
 
 <script>
