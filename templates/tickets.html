@@ -636,7 +636,7 @@
       <div class="card shadow-sm panel-card">
       <div class="card-body">
           <form method="post" action="/web/tickets/create" class="row g-2 mt-1 ticket-title-form">
-            <div class="col-12 col-md-6">
+            <div class="col-12">
               <input name="title" class="form-control ticket-title-input" placeholder="Название" required maxlength="{{ max_ticket_title_len }}" data-title-limit="{{ max_ticket_title_len }}" data-counter-target="create-title-counter" />
               <div class="d-flex justify-content-end mt-1">
                 <small id="create-title-counter" class="text-muted">0/{{ max_ticket_title_len }}</small>
@@ -645,25 +645,8 @@
                 Название слишком длинное. Максимум: {{ max_ticket_title_len }} символов.
               </div>
             </div>
-            {% if not org_v2_enabled %}
-            <div class="col-12 col-md-6">
-              <select name="project_id" class="form-select" required>
-                <option value="" selected disabled>Проект</option>
-                {% for p in projects %}
-                  <option value="{{ p.id }}">{{ p.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            {% endif %}
-            <div class="col-12 col-md-6">
-              <select name="ticket_type_id" class="form-select">
-                <option value="" selected>Тип заявки (необязательно)</option>
-                {% for tt in ticket_types %}
-                  {% if tt.is_active %}
-                    <option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}">{{ tt.name }}</option>
-                  {% endif %}
-                {% endfor %}
-              </select>
+            <div class="col-12">
+              <textarea name="description" class="form-control" placeholder="Описание"></textarea>
             </div>
             <div class="col-12 col-md-6">
               <select name="department_id" class="form-select" id="create-department-id">
@@ -715,6 +698,23 @@
             </div>
             {% endif %}
             <div class="col-12 col-md-6">
+              <label class="form-label mb-1">Крайний срок: дата</label>
+              <input id="deadline_date" name="deadline_date" type="date" class="form-control" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label mb-1">Время (введите 4 цифры, HHMM)</label>
+              <div class="input-group">
+                <input id="deadline_time4" name="deadline_time4" class="form-control" inputmode="numeric" placeholder="например 0930 или 1745" maxlength="4" />
+                <span class="input-group-text" id="deadline_time_pretty">--:--</span>
+              </div>
+              <div class="muted small mt-1">
+                Можно вводить 1–4 цифры: <code>9</code> → <code>09:00</code>, <code>930</code> → <code>09:30</code>. Пусто — срок не установлен.
+              </div>
+              <div class="muted small mt-1">
+                Если не заполнять — срок не будет установлен.
+              </div>
+            </div>
+            <div class="col-12 col-md-6">
               <label class="form-label mb-1">Исполнитель</label>
               {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_view_all_tickets) %}
                 <select name="executor_id" class="form-select">
@@ -727,32 +727,6 @@
                 <input type="hidden" name="executor_id" value="" />
                 <div class="form-control bg-light">Исполнитель: вы сами</div>
               {% endif %}
-            </div>
-            <div class="col-12">
-              <textarea name="description" class="form-control" placeholder="Описание"></textarea>
-            </div>
-            <div class="col-12 col-md-6">
-              <div class="row g-2">
-                <div class="col-12 col-md-6">
-                  <label class="form-label mb-1">Крайний срок: дата</label>
-                  <input id="deadline_date" name="deadline_date" type="date" class="form-control" />
-                </div>
-
-                <div class="col-12 col-md-6">
-                  <label class="form-label mb-1">Время (введите 4 цифры, HHMM)</label>
-                  <div class="input-group">
-                    <input id="deadline_time4" name="deadline_time4" class="form-control" inputmode="numeric" placeholder="например 0930 или 1745" maxlength="4" />
-                    <span class="input-group-text" id="deadline_time_pretty">--:--</span>
-                  </div>
-                  <div class="muted small mt-1">
-                    Можно вводить 1–4 цифры: <code>9</code> → <code>09:00</code>, <code>930</code> → <code>09:30</code>. Пусто — срок не установлен.
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12 muted small">
-                Если не заполнять — срок не будет установлен.
-              </div>
             </div>
             <div class="col-12">
               <label class="form-label mb-1">Наблюдатели</label>
@@ -772,6 +746,26 @@
               </details>
               <div class="muted small mt-1">Можно выбрать нескольких пользователей. Создатель и исполнитель добавляются автоматически.</div>
             </div>
+            <div class="col-12 col-md-6">
+              <select name="ticket_type_id" class="form-select">
+                <option value="" selected>Тип заявки (необязательно)</option>
+                {% for tt in ticket_types %}
+                  {% if tt.is_active %}
+                    <option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}">{{ tt.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            {% if not org_v2_enabled %}
+            <div class="col-12 col-md-6">
+              <select name="project_id" class="form-select" required>
+                <option value="" selected disabled>Проект</option>
+                {% for p in projects %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
             <div class="col-12">
               <button class="btn btn-primary">Создать</button>
             </div>
