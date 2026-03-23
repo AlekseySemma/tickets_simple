@@ -159,6 +159,22 @@ class CommentMediaTests(unittest.TestCase):
         self.assertIn('data-comment-recording-cancel', detail.text)
         self.assertIn('title="Записать голосовое сообщение"', detail.text)
 
+    def test_web_ticket_detail_hides_photo_and_voice_upload_fields(self):
+        ids = self.seed_ticket_context()
+        login_response = self.client.post(
+            "/web/login",
+            data={"email": "admin@acme.local", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(login_response.status_code, 303)
+
+        detail = self.client.get(f"/web/tickets/{ids['ticket_id']}?tab=overview")
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn('data-comment-attach', detail.text)
+        self.assertNotIn('name="photos"', detail.text)
+        self.assertNotIn('comment-upload-group', detail.text)
+
     def test_web_ticket_detail_enables_internal_scroll_after_ten_comments(self):
         ids = self.seed_ticket_context()
         with main.SessionLocal() as db:

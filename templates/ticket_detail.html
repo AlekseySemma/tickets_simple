@@ -1129,19 +1129,6 @@
                       onsubmit="return confirm('Отправить заявку в архив?');">
                   <input type="hidden" name="next" value="{{ next_url }}">
                   <button class="btn btn-sm btn-outline-secondary">В архив</button>
-                  <div class="comment-composer-tools">
-                    <div class="comment-upload-group">
-                      <label class="comment-upload-chip">
-                        <span>Фото</span>
-                        <input type="file" name="photos" accept="image/*" capture="environment" multiple>
-                      </label>
-                      <label class="comment-upload-chip">
-                        <span>Голос</span>
-                        <input type="file" name="voice_messages" accept="audio/*,.mp3,.ogg,.oga,.wav,.m4a,.aac,.webm,.opus" capture multiple>
-                      </label>
-                    </div>
-                  </div>
-                  <div class="small text-muted">Можно отправить текст, фото, голосовое сообщение или всё вместе.</div>
                 </form>
               {% endif %}
               {% if can_restore %}
@@ -1417,19 +1404,6 @@
                       </button>
                     </div>
                   </div>
-                  <div class="comment-composer-tools">
-                    <div class="comment-upload-group">
-                      <label class="comment-upload-chip">
-                        <span>Фото</span>
-                        <input type="file" name="photos" accept="image/*" capture="environment" multiple>
-                      </label>
-                      <label class="comment-upload-chip">
-                        <span>Голос</span>
-                        <input type="file" name="voice_messages" accept="audio/*,.mp3,.ogg,.oga,.wav,.m4a,.aac,.webm,.opus" capture multiple>
-                      </label>
-                    </div>
-                  </div>
-                  <div class="small text-muted">Можно отправить текст, фото, голосовое сообщение или всё вместе.</div>
                   <input name="text" class="form-control" placeholder="Добавить комментарий..." required />
                   <button class="btn btn-outline-secondary">Отправить</button>
                 </form>
