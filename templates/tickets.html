@@ -844,10 +844,6 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-12 col-md-2 d-flex gap-2">
-              <button class="btn btn-primary w-100">Применить</button>
-            </div>
-
             {% if user.role in ["ADMIN", "CURATOR"] %}
               <div class="col-6 col-md-3">
                 <label class="form-label mb-1">Исполнитель</label>
@@ -891,8 +887,9 @@
                 </select>
               </div>
 
-            <div class="col-6 col-md-3 d-flex align-items-end">
+            <div class="col-12 d-flex flex-wrap justify-content-between align-items-end gap-2 pt-1">
               <a class="small" href="{{ reset_filters_url }}">Сбросить фильтры</a>
+              <button class="btn btn-primary">Применить</button>
             </div>
           </form>
         </div>
@@ -1414,6 +1411,7 @@
     const toggleButtons = Array.from(document.querySelectorAll("[data-panel-toggle]"));
     if (!toggleButtons.length) return;
 
+    const panelsByName = new Map();
     toggleButtons.forEach((button) => {
       const panelName = button.dataset.panelToggle || "";
       if (!panelName) return;
@@ -1421,11 +1419,34 @@
       const panel = document.querySelector(`[data-panel-content="${panelName}"]`);
       if (!panel) return;
 
+      panelsByName.set(panelName, { button, panel });
+    });
+
+    function setPanelState(panelName, shouldOpen) {
+      const entry = panelsByName.get(panelName);
+      if (!entry) return;
+
+      entry.panel.classList.toggle("is-open", shouldOpen);
+      entry.button.classList.toggle("is-active", shouldOpen);
+      entry.button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    }
+
+    const initiallyOpen = Array.from(panelsByName.keys()).filter((panelName) => {
+      const entry = panelsByName.get(panelName);
+      return entry && entry.panel.classList.contains("is-open");
+    });
+    initiallyOpen.forEach((panelName, index) => setPanelState(panelName, index === 0));
+
+    panelsByName.forEach(({ button }, panelName) => {
       button.addEventListener("click", function () {
-        const nextOpen = !panel.classList.contains("is-open");
-        panel.classList.toggle("is-open", nextOpen);
-        button.classList.toggle("is-active", nextOpen);
-        button.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+        const entry = panelsByName.get(panelName);
+        if (!entry) return;
+
+        const nextOpen = !entry.panel.classList.contains("is-open");
+        panelsByName.forEach((_, otherPanelName) => setPanelState(otherPanelName, false));
+        if (nextOpen) {
+          setPanelState(panelName, true);
+        }
       });
     });
   });
