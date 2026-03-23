@@ -184,6 +184,13 @@ ORG_STRUCTURE_SECTIONS = {
         "description": "Загрузка оргструктуры из CSV и шаблон для выгрузки.",
     },
 }
+TICKET_BULK_ACTION_LABELS = {
+    "archive": "перенос в архив",
+    "delete": "удаление",
+    "restore": "восстановление",
+    "legal_hold_on": "включение Legal hold",
+    "legal_hold_off": "снятие Legal hold",
+}
 ORG_STRUCTURE_NODE_ERRORS = {
     "empty_name",
     "bad_parent",
@@ -1139,6 +1146,18 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     return n if n.startswith("/web") else fallback
 
 
+def append_query_params(url: str, **params: object) -> str:
+    items: list[tuple[str, str]] = []
+    for key, value in params.items():
+        if value is None or value is False or value == "":
+            continue
+        items.append((key, "1" if value is True else str(value)))
+    if not items:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{urlencode(items)}"
+
+
 def first_header_value(value: str | None) -> str:
     return (value or "").split(",")[0].strip()
 
@@ -1264,6 +1283,22 @@ def can_edit_ticket(user: User, ticket: Ticket) -> bool:
     if is_manager(user):
         return True
     return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
+
+
+def can_delete_ticket(user: User, ticket: Ticket) -> bool:
+    if ticket.status == TicketStatus.archived:
+        return is_manager(user)
+    if is_manager(user):
+        return True
+    return bool(user.role == Role.executor and ticket.created_by == user.id)
+
+
+def can_restore_ticket(user: User, ticket: Ticket) -> bool:
+    return bool(is_manager(user) and ticket.status == TicketStatus.archived)
+
+
+def can_manage_ticket_legal_hold(user: User, ticket: Ticket) -> bool:
+    return bool(is_manager(user) and ticket.status == TicketStatus.archived)
 
 
 def can_delete_comment(user: User, comment: Comment) -> bool:
@@ -6143,6 +6178,56 @@ def _render_web_tickets_page(
     )
     create_form_open = create_enabled and (open_create == "1")
     create_error_value = (create_error or "") if create_enabled else ""
+    bulk_action_value = (request.query_params.get("bulk_action") or "").strip().lower()
+    if bulk_action_value not in TICKET_BULK_ACTION_LABELS:
+        bulk_action_value = ""
+    bulk_error_value = (request.query_params.get("bulk_error") or "").strip().lower()
+    if bulk_error_value not in {"no_selection", "bad_action", "save_failed"}:
+        bulk_error_value = ""
+
+    def parse_non_negative_int(raw: str | None) -> int:
+        try:
+            parsed = int((raw or "").strip())
+        except (TypeError, ValueError):
+            return 0
+        return max(0, parsed)
+
+    bulk_done_count = parse_non_negative_int(request.query_params.get("bulk_done"))
+    bulk_skipped_count = parse_non_negative_int(request.query_params.get("bulk_skipped"))
+    bulk_notice = ""
+    bulk_notice_level = "success"
+    if (request.query_params.get("bulk_ok") or "").strip() == "1" and bulk_action_value:
+        bulk_notice = (
+            f"Массовое действие «{TICKET_BULK_ACTION_LABELS[bulk_action_value]}»: "
+            f"выполнено {bulk_done_count}"
+        )
+        if bulk_skipped_count:
+            bulk_notice += f", пропущено {bulk_skipped_count}"
+            bulk_notice_level = "warning" if bulk_done_count else "danger"
+    elif bulk_error_value == "no_selection":
+        bulk_notice = "Выберите хотя бы одну заявку."
+        bulk_notice_level = "warning"
+    elif bulk_error_value == "bad_action":
+        bulk_notice = "Выберите корректное действие для отмеченных заявок."
+        bulk_notice_level = "warning"
+    elif bulk_error_value == "save_failed":
+        bulk_notice = "Не удалось выполнить массовое действие. Попробуйте еще раз."
+        bulk_notice_level = "danger"
+
+    if archive_mode:
+        bulk_actions = []
+        if is_manager(user):
+            bulk_actions = [
+                {"id": "restore", "label": "Восстановить"},
+                {"id": "legal_hold_on", "label": "Включить Legal hold"},
+                {"id": "legal_hold_off", "label": "Снять Legal hold"},
+                {"id": "delete", "label": "Удалить навсегда"},
+            ]
+    else:
+        bulk_actions = [
+            {"id": "archive", "label": "В архив"},
+            {"id": "delete", "label": "Удалить"},
+        ]
     page_size_options = (10, 20, 30, 50, 100)
     page_size_raw = (page_size or "").strip() if page_size is not None else ""
     if not page_size_raw:
@@ -6218,6 +6303,9 @@ def _render_web_tickets_page(
             "filters_form_open": filters_form_open,
             "create_form_open": create_form_open,
             "create_error": create_error_value,
+            "bulk_actions": bulk_actions,
+            "bulk_notice": bulk_notice,
+            "bulk_notice_level": bulk_notice_level,
             "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
             "current_list_url": current_list_url,
             "current_list_url_encoded": current_list_url_encoded,
@@ -8682,19 +8770,7 @@ async def web_delete_ticket(
     user: User = Depends(get_current_user),
 ):
     t = get_company_ticket_or_404(db, user, ticket_id)
-    if t.status == TicketStatus.archived:
-        # Archived tickets can be removed manually only by managers.
-        allowed = is_manager(user)
-    else:
-        # РїСЂР°РІР°
-        if is_manager(user):
-            allowed = True
-        elif user.role == Role.executor and t.created_by == user.id:
-            allowed = True
-        else:
-            allowed = False
-
-    if not allowed:
+    if not can_delete_ticket(user, t):
         raise HTTPException(403, "Forbidden")
 
     default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
@@ -8706,6 +8782,139 @@ async def web_delete_ticket(
     form = await request.form()
     next_url = safe_next(form.get("next"), fallback=default_next)
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/tickets/bulk-action")
+async def web_tickets_bulk_action(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if is_platform_admin(user):
+        raise HTTPException(403, "Forbidden")
+    ensure_company_user(user)
+
+    form = await request.form()
+    next_url = safe_next(form.get("next"), fallback="/web")
+    action = (form.get("action") or "").strip().lower()
+    if action not in TICKET_BULK_ACTION_LABELS:
+        return RedirectResponse(
+            url=append_query_params(next_url, bulk_error="bad_action"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    ticket_ids: list[int] = []
+    for raw_ticket_id in form.getlist("ticket_ids"):
+        try:
+            ticket_id = int((raw_ticket_id or "").strip())
+        except (TypeError, ValueError):
+            continue
+        if ticket_id > 0 and ticket_id not in ticket_ids:
+            ticket_ids.append(ticket_id)
+    if not ticket_ids:
+        return RedirectResponse(
+            url=append_query_params(next_url, bulk_error="no_selection"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.company_id == user.company_id, Ticket.id.in_(ticket_ids))
+        .all()
+    )
+    tickets_by_id = {int(ticket.id): ticket for ticket in tickets}
+    company = db.get(Company, user.company_id) if user.company_id is not None else None
+    notifications: list[tuple[Ticket, TicketStatus]] = []
+    done_count = 0
+    skipped_count = 0
+
+    try:
+        for ticket_id in ticket_ids:
+            ticket = tickets_by_id.get(ticket_id)
+            if ticket is None or not can_access_ticket(user, ticket):
+                skipped_count += 1
+                continue
+
+            if action == "archive":
+                if not can_archive_ticket(user, ticket):
+                    skipped_count += 1
+                    continue
+                old_status = ticket.status
+                archive_ticket(db, ticket, actor_id=user.id, company=company)
+                notifications.append((ticket, old_status))
+                done_count += 1
+                continue
+
+            if action == "delete":
+                if not can_delete_ticket(user, ticket):
+                    skipped_count += 1
+                    continue
+                delete_ticket_with_related_data(db, ticket, remove_files=True)
+                done_count += 1
+                continue
+
+            if action == "restore":
+                if not can_restore_ticket(user, ticket):
+                    skipped_count += 1
+                    continue
+                old_status = ticket.status
+                restore_ticket_from_archive(db, ticket, actor_id=user.id)
+                notifications.append((ticket, old_status))
+                done_count += 1
+                continue
+
+            if action in {"legal_hold_on", "legal_hold_off"}:
+                if not can_manage_ticket_legal_hold(user, ticket):
+                    skipped_count += 1
+                    continue
+                hold_enabled = action == "legal_hold_on"
+                if bool(ticket.is_legal_hold) == hold_enabled:
+                    skipped_count += 1
+                    continue
+                ticket.is_legal_hold = hold_enabled
+                if not hold_enabled:
+                    if ticket.retention_days is None:
+                        ticket.retention_days = resolve_ticket_archive_retention_days(db, ticket, company)
+                    if ticket.archived_at is None:
+                        ticket.archived_at = local_now()
+                    ticket.delete_at = ticket.archived_at + timedelta(days=ticket.retention_days)
+                add_ticket_log(
+                    db,
+                    ticket_id=ticket.id,
+                    actor_id=user.id,
+                    action="установлен legal hold" if hold_enabled else "снят legal hold",
+                )
+                done_count += 1
+                continue
+
+            skipped_count += 1
+
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return RedirectResponse(
+            url=append_query_params(next_url, bulk_error="save_failed"),
+            status_code=HTTP_303_SEE_OTHER,
+        )
+
+    for ticket, old_status in notifications:
+        notify_curators_status_changed(db, ticket, actor=user, old_status=old_status)
+    if notifications:
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+
+    return RedirectResponse(
+        url=append_query_params(
+            next_url,
+            bulk_ok=True,
+            bulk_action=action,
+            bulk_done=done_count,
+            bulk_skipped=skipped_count,
+        ),
+        status_code=HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/web/tickets/{ticket_id}/status")
