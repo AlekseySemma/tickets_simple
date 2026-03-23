@@ -421,10 +421,14 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
     .bulk-actions-controls .form-select {
       min-width: 220px;
+    }
+    .bulk-actions-controls .btn {
+      flex: 0 0 auto;
+      white-space: nowrap;
     }
     .tickets-table-wrap .table-responsive {
       overflow: visible;
@@ -590,10 +594,11 @@
       }
       .bulk-actions-controls {
         width: 100%;
+        flex-wrap: nowrap;
       }
       .bulk-actions-controls .form-select,
       .bulk-actions-controls .btn {
-        width: 100%;
+        width: auto;
       }
       .form-check.mt-4 {
         margin-top: 0.5rem !important;
