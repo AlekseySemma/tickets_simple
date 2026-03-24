@@ -89,6 +89,21 @@
     .receipt-bulk-actions .form-select {
       flex: 0 1 240px;
     }
+    .receipt-status-form .form-select.form-select-sm {
+      --bs-form-select-bg-size: 12px 10px;
+      font-size: 0.78rem;
+      line-height: 1.1;
+      padding-top: 0.2rem;
+      padding-bottom: 0.2rem;
+      padding-left: 0.55rem;
+      min-height: calc(1.1em + 0.6rem + 2px);
+    }
+    .receipt-status-form .btn.btn-sm {
+      --bs-btn-padding-y: 0.24rem;
+      --bs-btn-padding-x: 0.5rem;
+      --bs-btn-font-size: 0.76rem;
+      line-height: 1.1;
+    }
     @media (max-width: 767.98px) {
       .receipt-filter-actions {
         display: grid !important;
@@ -481,7 +496,7 @@
                 {% endif %}
               {% endif %}
               {% if can_manage_status %}
-                <form method="post" action="/web/receipts/{{ r.id }}/status" class="d-flex gap-2 mt-2">
+                <form method="post" action="/web/receipts/{{ r.id }}/status" class="d-flex gap-2 mt-2 receipt-status-form">
                   <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
                   <select name="status" class="form-select form-select-sm" style="max-width: 220px;">
                     {% for s in status_options %}
