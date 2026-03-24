@@ -24,9 +24,14 @@ The backend also needs the `firebase-admin` Python dependency and the new Alembi
 
 1. Open the `android/` folder in Android Studio.
 2. Put the correct backend URL into `android/gradle.properties` as `SERVORA_BASE_URL`.
-3. Keep `SERVORA_APP_ID` aligned with your Firebase Android app id.
+3. Keep `SERVORA_APP_ID` aligned with your Firebase Android app id. For the first release, use `ru.servora.tickets`.
 4. Add `android/app/google-services.json` from Firebase Console.
 5. Sync Gradle and build the APK.
+
+Detailed setup:
+
+- `android/FIREBASE_SETUP.md`
+- `android/FIRST_RELEASE_CHECKLIST.md`
 
 ## Notes
 

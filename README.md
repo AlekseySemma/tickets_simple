@@ -78,3 +78,4 @@ An Android shell project now lives in `android/`.
 - Backend device registration uses `/api/mobile/devices/register`
 
 See `android/README.md` for setup details.
+Firebase and first-release runbooks live in `android/FIREBASE_SETUP.md` and `android/FIRST_RELEASE_CHECKLIST.md`.
