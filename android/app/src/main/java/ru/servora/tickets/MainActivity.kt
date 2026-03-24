@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity() {
         fetchFirebaseToken()
 
         if (savedInstanceState == null) {
-            webView.loadUrl(initialUrlFromIntent(intent))
+            webView.loadUrl(resolveIntentTarget(intent) ?: AppConfig.absoluteUrl(null))
         } else {
             webView.restoreState(savedInstanceState)
         }
@@ -107,7 +107,10 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        webView.loadUrl(initialUrlFromIntent(intent))
+        val targetUrl = resolveIntentTarget(intent)
+        if (!targetUrl.isNullOrBlank()) {
+            webView.loadUrl(targetUrl)
+        }
         deviceRegistrationApi.syncIfPossible()
     }
 
@@ -255,8 +258,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initialUrlFromIntent(intent: Intent?): String {
-        return AppConfig.absoluteUrl(intent?.getStringExtra(EXTRA_TARGET_URL))
+    private fun resolveIntentTarget(intent: Intent?): String? {
+        val explicitTarget = intent?.getStringExtra(EXTRA_TARGET_URL)?.trim().orEmpty()
+        if (explicitTarget.isNotEmpty()) {
+            return AppConfig.absoluteUrl(explicitTarget)
+        }
+
+        val dataUri = intent?.data
+        if (dataUri != null) {
+            return if (AppConfig.isInternalUri(dataUri)) dataUri.toString() else null
+        }
+
+        return null
     }
 
     private fun openExternal(uri: Uri): Boolean {
