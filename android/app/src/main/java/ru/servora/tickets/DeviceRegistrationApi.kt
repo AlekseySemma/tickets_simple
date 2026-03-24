@@ -88,6 +88,11 @@ class DeviceRegistrationApi(private val context: Context) {
         }
     }
 
+    fun clearRegisteredSnapshot() {
+        store.registeredUserId = null
+        store.registeredToken = null
+    }
+
     private fun sessionSnapshot(): SessionSnapshot? {
         val cookieHeader = CookieManager.getInstance().getCookie(AppConfig.baseUrl()) ?: return null
         if (!cookieHeader.contains("access_token=")) return null

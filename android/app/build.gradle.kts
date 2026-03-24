@@ -14,7 +14,7 @@ val servoraAppName = (providers.gradleProperty("SERVORA_APP_NAME").orNull ?: "Se
 val servoraAllowCleartext = (providers.gradleProperty("SERVORA_ALLOW_CLEARTEXT").orNull ?: "false").trim()
 
 android {
-    namespace = servoraAppId
+    namespace = "ru.servora.tickets"
     compileSdk = 35
 
     defaultConfig {

@@ -9,6 +9,7 @@ uploads/
 .pytest_cache/
 test_stage6.db
 test_stage6.db-journal
+firebase-service-account.json
 android/.gradle/
 android/build/
 android/app/build/

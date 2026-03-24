@@ -31,7 +31,7 @@ object NotificationHelper {
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            rawTargetUrl.hashCode(),
+            (rawTargetUrl ?: "").hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

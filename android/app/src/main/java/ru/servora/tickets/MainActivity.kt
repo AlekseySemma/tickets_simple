@@ -5,10 +5,10 @@ import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -146,11 +146,15 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val uri = request?.url ?: return false
+                if (AppConfig.isInternalUri(uri) && uri.encodedPath == "/web/logout") {
+                    deviceRegistrationApi.unregisterBestEffort()
+                    return false
+                }
                 if (AppConfig.isInternalUri(uri)) return false
                 return openExternal(uri)
             }
 
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 loadingIndicator.isVisible = true
             }
@@ -158,6 +162,12 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 loadingIndicator.isVisible = false
+                val hasSessionCookie = CookieManager.getInstance()
+                    .getCookie(AppConfig.baseUrl())
+                    ?.contains("access_token=") == true
+                if (!hasSessionCookie) {
+                    deviceRegistrationApi.clearRegisteredSnapshot()
+                }
                 deviceRegistrationApi.syncIfPossible()
             }
         }
