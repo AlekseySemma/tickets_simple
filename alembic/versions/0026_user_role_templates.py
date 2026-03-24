@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0026_user_role_templates"
@@ -16,12 +17,13 @@ branch_labels = None
 depends_on = None
 
 
-ROLE_ENUM = sa.Enum(
+ROLE_ENUM = postgresql.ENUM(
     "platform_admin",
     "admin",
     "curator",
     "executor",
     name="role",
+    create_type=False,
 )
 
 
