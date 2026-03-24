@@ -9,3 +9,8 @@ uploads/
 .pytest_cache/
 test_stage6.db
 test_stage6.db-journal
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/google-services.json

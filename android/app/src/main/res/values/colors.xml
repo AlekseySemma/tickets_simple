@@ -1,0 +1,6 @@
+﻿<resources>
+    <color name="servora_primary">#0D6EFD</color>
+    <color name="servora_primary_dark">#0A58CA</color>
+    <color name="servora_surface">#FFFFFF</color>
+    <color name="servora_on_surface">#111827</color>
+</resources>

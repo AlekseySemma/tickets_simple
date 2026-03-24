@@ -54,6 +54,16 @@ except Exception:
     class ClientError(Exception):
         pass
     BOTO3_AVAILABLE = False
+try:
+    import firebase_admin
+    from firebase_admin import credentials as firebase_credentials
+    from firebase_admin import messaging as firebase_messaging
+    FIREBASE_ADMIN_AVAILABLE = True
+except Exception:
+    firebase_admin = None
+    firebase_credentials = None
+    firebase_messaging = None
+    FIREBASE_ADMIN_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +124,7 @@ PUSH_REMINDER_POLL_SECONDS = int(os.getenv("PUSH_REMINDER_POLL_SECONDS", "30"))
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip()
+FIREBASE_CREDENTIALS_FILE = (os.getenv("FIREBASE_CREDENTIALS_FILE") or "").strip()
 MAX_TICKET_TITLE_LEN = 255
 NOTIFICATION_TICKET_TITLE_PREVIEW_LEN = 30
 MIN_ARCHIVE_RETENTION_DAYS = 1
@@ -184,6 +195,9 @@ ORG_STRUCTURE_SECTIONS = {
         "description": "Загрузка оргструктуры из CSV и шаблон для выгрузки.",
     },
 }
+ANDROID_APP_USER_AGENT_TOKEN = "servoraandroidapp"
+_FIREBASE_APP = None
+_FIREBASE_APP_LOCK = threading.Lock()
 TICKET_BULK_ACTION_LABELS = {
     "archive": "перенос в архив",
     "delete": "удаление",
@@ -731,6 +745,23 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
+class MobileDevice(Base):
+    __tablename__ = "mobile_devices"
+    __table_args__ = (
+        UniqueConstraint("platform", "device_id", name="uq_mobile_devices_platform_device"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(32), index=True)
+    device_id: Mapped[str] = mapped_column(String(128))
+    token: Mapped[str] = mapped_column(String(2048), unique=True, index=True)
+    app_version: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    device_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 class DeadlineReminderLog(Base):
     __tablename__ = "deadline_reminder_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1122,6 +1153,20 @@ class PushSubscriptionIn(BaseModel):
 class PushUnsubscribeIn(BaseModel):
     endpoint: str
 
+
+class MobileDeviceRegisterIn(BaseModel):
+    token: str = Field(min_length=16, max_length=2048)
+    device_id: str = Field(min_length=8, max_length=128)
+    platform: str = Field(default="android", max_length=32)
+    app_version: Optional[str] = Field(default=None, max_length=64)
+    device_name: Optional[str] = Field(default=None, max_length=255)
+
+
+class MobileDeviceUnregisterIn(BaseModel):
+    token: Optional[str] = Field(default=None, max_length=2048)
+    device_id: Optional[str] = Field(default=None, max_length=128)
+    platform: str = Field(default="android", max_length=32)
+
 # =========================
 # Р‘РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ
 # =========================
@@ -1144,6 +1189,16 @@ def safe_next(next_url: str | None, fallback: str = "/web") -> str:
     if not n:
         return fallback
     return n if n.startswith("/web") else fallback
+
+
+def is_native_android_app_request(request: Request) -> bool:
+    user_agent = (request.headers.get("user-agent") or "").strip().lower()
+    return ANDROID_APP_USER_AGENT_TOKEN in user_agent
+
+
+def normalize_mobile_platform(value: str | None) -> str:
+    platform = (value or "android").strip().lower()
+    return platform if platform in {"android"} else ""
 
 
 def append_query_params(url: str, **params: object) -> str:
@@ -3282,6 +3337,46 @@ def push_is_configured() -> bool:
     return bool(PYWEBPUSH_AVAILABLE and VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY and VAPID_SUBJECT)
 
 
+def mobile_push_is_configured() -> bool:
+    return bool(
+        FIREBASE_ADMIN_AVAILABLE
+        and FIREBASE_CREDENTIALS_FILE
+        and Path(FIREBASE_CREDENTIALS_FILE).is_file()
+    )
+
+
+def get_firebase_app():
+    global _FIREBASE_APP
+    if not mobile_push_is_configured():
+        return None
+    with _FIREBASE_APP_LOCK:
+        if _FIREBASE_APP is None:
+            try:
+                _FIREBASE_APP = firebase_admin.initialize_app(
+                    firebase_credentials.Certificate(FIREBASE_CREDENTIALS_FILE)
+                )
+            except Exception as exc:
+                logger.warning("Firebase app init failed: %s", exc)
+                return None
+        return _FIREBASE_APP
+
+
+def should_drop_mobile_token(exc: Exception) -> bool:
+    name = exc.__class__.__name__
+    details = str(exc).lower()
+    if name in {"UnregisteredError", "SenderIdMismatchError", "InvalidArgumentError"}:
+        return True
+    return any(
+        marker in details
+        for marker in (
+            "registration token is not a valid",
+            "requested entity was not found",
+            "unregistered",
+            "sender id mismatch",
+        )
+    )
+
+
 def send_push_to_user_report(db: Session, user_id: int, title: str, body: str, url: str) -> list[dict]:
     if not push_is_configured():
         return []
@@ -3319,6 +3414,59 @@ def send_push_to_user_report(db: Session, user_id: int, title: str, body: str, u
     return results
 
 
+def send_mobile_push_to_user_report(db: Session, user_id: int, title: str, body: str, url: str) -> list[dict]:
+    if not mobile_push_is_configured():
+        return []
+
+    app = get_firebase_app()
+    if app is None:
+        return []
+
+    devices = (
+        db.query(MobileDevice)
+        .filter(MobileDevice.user_id == user_id, MobileDevice.platform == "android")
+        .all()
+    )
+    if not devices:
+        return []
+
+    safe_url = (url or "").strip() or "/web"
+    results: list[dict] = []
+    for device in devices:
+        message = firebase_messaging.Message(
+            token=device.token,
+            data={
+                "title": title,
+                "body": body or "",
+                "url": safe_url,
+            },
+            android=firebase_messaging.AndroidConfig(priority="high"),
+        )
+        try:
+            firebase_messaging.send(message, app=app)
+            now = datetime.utcnow()
+            device.last_seen_at = now
+            device.updated_at = now
+            results.append({"id": device.id, "ok": True, "channel": "android"})
+        except Exception as exc:
+            logger.warning(
+                "Android push send failed for mobile device %s: %s",
+                device.id,
+                exc,
+            )
+            results.append(
+                {
+                    "id": device.id,
+                    "ok": False,
+                    "channel": "android",
+                    "error_type": exc.__class__.__name__,
+                }
+            )
+            if should_drop_mobile_token(exc):
+                db.delete(device)
+    return results
+
+
 def create_inapp_notification(db: Session, user_id: int, title: str, body: str, url: str) -> None:
     user = db.get(User, user_id)
     if not user:
@@ -3340,6 +3488,7 @@ def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str
     safe_url = (url or "").strip() or "/web"
     create_inapp_notification(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
     _ = send_push_to_user_report(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
+    _ = send_mobile_push_to_user_report(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
 
 
 def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None:
@@ -4065,6 +4214,7 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
     db.query(ArchiveCleanupLog).filter(ArchiveCleanupLog.company_id == company_id).delete(synchronize_session=False)
     if user_ids:
         db.query(PushSubscription).filter(PushSubscription.user_id.in_(user_ids)).delete(synchronize_session=False)
+        db.query(MobileDevice).filter(MobileDevice.user_id.in_(user_ids)).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id.in_(user_ids)).delete(synchronize_session=False)
     db.query(User).filter(User.company_id == company_id).delete(synchronize_session=False)
     db.query(Company).filter(Company.id == company_id).delete(synchronize_session=False)
@@ -4367,6 +4517,154 @@ def push_reset(db: Session = Depends(get_db), user: User = Depends(get_current_u
     deleted = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).delete(synchronize_session=False)
     db.commit()
     return {"ok": True, "deleted": int(deleted)}
+
+
+@app.post("/api/mobile/devices/register")
+def mobile_device_register(
+    payload: MobileDeviceRegisterIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    platform = normalize_mobile_platform(payload.platform)
+    if not platform:
+        raise HTTPException(400, "Unsupported mobile platform")
+
+    token = (payload.token or "").strip()
+    device_id = (payload.device_id or "").strip()
+    if not token or not device_id:
+        raise HTTPException(400, "Device token and device id are required")
+
+    now = datetime.utcnow()
+    existing_by_device = (
+        db.query(MobileDevice)
+        .filter(MobileDevice.platform == platform, MobileDevice.device_id == device_id)
+        .first()
+    )
+    existing_by_token = db.query(MobileDevice).filter(MobileDevice.token == token).first()
+
+    if existing_by_device and existing_by_token and existing_by_device.id != existing_by_token.id:
+        db.delete(existing_by_token)
+        db.flush()
+        existing_by_token = None
+
+    device = existing_by_device or existing_by_token
+    if device:
+        device.user_id = user.id
+        device.platform = platform
+        device.device_id = device_id
+        device.token = token
+        device.app_version = (payload.app_version or "").strip()[:64] or None
+        device.device_name = (payload.device_name or "").strip()[:255] or None
+        device.last_seen_at = now
+        device.updated_at = now
+    else:
+        db.add(
+            MobileDevice(
+                user_id=user.id,
+                platform=platform,
+                device_id=device_id,
+                token=token,
+                app_version=(payload.app_version or "").strip()[:64] or None,
+                device_name=(payload.device_name or "").strip()[:255] or None,
+                last_seen_at=now,
+            )
+        )
+    db.commit()
+    return {
+        "ok": True,
+        "platform": platform,
+        "device_id": device_id,
+        "mobile_push_configured": mobile_push_is_configured(),
+    }
+
+
+@app.post("/api/mobile/devices/unregister")
+def mobile_device_unregister(
+    payload: MobileDeviceUnregisterIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    platform = normalize_mobile_platform(payload.platform)
+    if not platform:
+        raise HTTPException(400, "Unsupported mobile platform")
+
+    query = db.query(MobileDevice).filter(
+        MobileDevice.user_id == user.id,
+        MobileDevice.platform == platform,
+    )
+    token = (payload.token or "").strip()
+    device_id = (payload.device_id or "").strip()
+    if device_id:
+        query = query.filter(MobileDevice.device_id == device_id)
+    elif token:
+        query = query.filter(MobileDevice.token == token)
+    else:
+        raise HTTPException(400, "Device token or device id is required")
+
+    deleted = query.delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "deleted": int(deleted)}
+
+
+@app.get("/api/mobile/devices/debug")
+def mobile_devices_debug(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    devices = (
+        db.query(MobileDevice)
+        .filter(MobileDevice.user_id == user.id)
+        .order_by(MobileDevice.updated_at.desc())
+        .all()
+    )
+    items = []
+    for device in devices:
+        masked = device.token[:18] + ("..." if len(device.token) > 18 else "")
+        items.append(
+            {
+                "id": device.id,
+                "platform": device.platform,
+                "device_id": device.device_id,
+                "token": masked,
+                "app_version": device.app_version,
+                "device_name": device.device_name,
+                "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
+                "updated_at": device.updated_at.isoformat() if device.updated_at else None,
+            }
+        )
+    return {
+        "user_id": user.id,
+        "count": len(items),
+        "mobile_push_configured": mobile_push_is_configured(),
+        "devices": items,
+    }
+
+
+@app.post("/api/mobile/push/test")
+def mobile_push_test(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    limited_user, _ = hit_rate_limit(f"mobile-push-test-user:{user.id}", RL_PUSH_TEST_LIMIT, RL_PUSH_TEST_WINDOW_SEC)
+    limited_ip, _ = hit_rate_limit(f"mobile-push-test-ip:{get_client_ip(request)}", RL_PUSH_TEST_LIMIT * 2, RL_PUSH_TEST_WINDOW_SEC)
+    if limited_user or limited_ip:
+        audit_security_event("mobile_push_test", request, success=False, user_id=user.id, detail="rate_limited")
+        raise HTTPException(status_code=429, detail="Too many mobile push test requests")
+    if not mobile_push_is_configured():
+        audit_security_event("mobile_push_test", request, success=False, user_id=user.id, detail="mobile_push_not_configured")
+        raise HTTPException(503, "Mobile push is not configured")
+
+    report = send_mobile_push_to_user_report(
+        db=db,
+        user_id=user.id,
+        title="Тест мобильного push",
+        body=f"Проверка Android-уведомлений для {user.name}",
+        url="/web",
+    )
+    db.commit()
+    ok_count = sum(1 for item in report if item.get("ok"))
+    audit_security_event(
+        "mobile_push_test",
+        request,
+        success=True,
+        user_id=user.id,
+        detail=f"sent={ok_count}/{len(report)}",
+    )
+    return {"ok": True, "sent": ok_count, "total": len(report), "report": report}
 
 # =========================
 # AUTH API
@@ -6509,6 +6807,7 @@ def web_settings(
             "settings_sections": settings_sections,
             "selected_settings_section": selected_settings_section,
             "selected_settings_section_meta": SETTINGS_SECTIONS.get(selected_settings_section),
+            "native_push_managed": is_native_android_app_request(request),
             "can_manage_deadline_warning": can_manage_deadline_warning,
             "can_manage_archive_retention": can_manage_archive_retention,
             "can_manage_cards": not is_platform_admin(user),
@@ -8492,6 +8791,7 @@ async def web_admin_company_user_delete(
             synchronize_session=False,
         )
         db.query(PushSubscription).filter(PushSubscription.user_id == item.id).delete(synchronize_session=False)
+        db.query(MobileDevice).filter(MobileDevice.user_id == item.id).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id == item.id).delete(synchronize_session=False)
         db.query(Notification).filter(Notification.user_id == item.id).delete(synchronize_session=False)
         db.query(RegistrationInvite).filter(
@@ -11014,6 +11314,7 @@ async def web_users_delete(
             synchronize_session=False,
         )
         db.query(PushSubscription).filter(PushSubscription.user_id == item.id).delete(synchronize_session=False)
+        db.query(MobileDevice).filter(MobileDevice.user_id == item.id).delete(synchronize_session=False)
         db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id == item.id).delete(synchronize_session=False)
         db.query(Notification).filter(Notification.user_id == item.id).delete(synchronize_session=False)
         db.query(RegistrationInvite).filter(

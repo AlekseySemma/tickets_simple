@@ -67,3 +67,14 @@ Set in `.env` to control visibility of upcoming org-structure mode in UI:
 ```env
 ORG_STRUCTURE_V2_ENABLED=0
 ```
+
+## Android APK
+
+An Android shell project now lives in `android/`.
+
+- Uses the existing `/web` UI inside WebView
+- Auth stays cookie-based through the current web login flow
+- Native Android push is delivered through Firebase Cloud Messaging
+- Backend device registration uses `/api/mobile/devices/register`
+
+See `android/README.md` for setup details.

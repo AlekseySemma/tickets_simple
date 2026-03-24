@@ -222,6 +222,7 @@
                 <p class="settings-section-text">{{ section.description }}</p>
               </a>
             {% endfor %}
+            {% endif %}
           </div>
         </div>
       </div>
@@ -336,12 +337,18 @@
         <div class="card shadow-sm settings-card">
           <div class="card-body">
             <h5 class="mb-3">Push уведомления</h5>
+            {% if native_push_managed %}
+              <div class="alert alert-info py-2 mb-0">
+                Push-уведомления в Android-приложении работают через систему Android и Firebase. Дополнительно включать browser push здесь не нужно.
+              </div>
+            {% else %}
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <button id="enable-push-btn" class="btn btn-outline-primary" type="button">Уведомления</button>
               <button id="test-push-btn" class="btn btn-outline-success" type="button">Тест push</button>
               <span id="test-push-result" class="small text-muted align-self-center"></span>
             </div>
             <div class="settings-note">Включите push один раз в браузере, чтобы получать напоминания и события по заявкам.</div>
+            {% endif %}
           </div>
         </div>
       {% elif selected_settings_section == "receipts" %}

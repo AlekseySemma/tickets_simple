@@ -1,0 +1,8 @@
+﻿<resources>
+    <string name="app_name">Servora Tickets</string>
+    <string name="notification_channel_name">Servora notifications</string>
+    <string name="notification_channel_description">Ticket updates and reminders</string>
+    <string name="notification_permission_message">Allow notifications so Android can show ticket updates.</string>
+    <string name="microphone_permission_message">Allow microphone access for voice comments.</string>
+    <string name="camera_permission_message">Allow camera access when the site asks for it.</string>
+</resources>
