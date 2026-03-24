@@ -157,7 +157,7 @@
       position: relative;
     }
     .comment-bubble.has-voice-media {
-      width: min(480px, calc(100vw - 72px));
+      width: min(100%, 480px);
       max-width: 96%;
     }
     .comment-row.mine .comment-bubble {
@@ -2224,6 +2224,35 @@ document.addEventListener("DOMContentLoaded", function () {
       recorderStream = null;
     }
 
+    function getRecorderConstraints() {
+      return {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      };
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    async function requestRecorderStream() {
+      stopRecorderStream();
+      try {
+        return await navigator.mediaDevices.getUserMedia(getRecorderConstraints());
+      } catch (error) {
+        if (error?.name === "NotReadableError" || error?.name === "TrackStartError") {
+          await sleep(350);
+          stopRecorderStream();
+          return navigator.mediaDevices.getUserMedia(getRecorderConstraints());
+        }
+        throw error;
+      }
+    }
+
     async function sendRecordedVoice(file, mimeType) {
       saveTicketScrollPosition();
       const formData = new FormData();
@@ -2271,7 +2300,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       try {
         const preset = getRecordingPreset();
-        recorderStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorderStream = await requestRecorderStream();
         mediaRecorder = preset.mimeType
           ? new MediaRecorder(recorderStream, { mimeType: preset.mimeType })
           : new MediaRecorder(recorderStream);
@@ -2354,7 +2383,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       try {
         const preset = getRecordingPreset();
-        recorderStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorderStream = await requestRecorderStream();
         mediaRecorder = preset.mimeType
           ? new MediaRecorder(recorderStream, { mimeType: preset.mimeType })
           : new MediaRecorder(recorderStream);

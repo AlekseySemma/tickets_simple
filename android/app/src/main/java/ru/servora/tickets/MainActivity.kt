@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -81,6 +82,8 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         loadingIndicator = findViewById(R.id.loadingIndicator)
         deviceRegistrationApi = DeviceRegistrationApi(applicationContext)
+        webView.isHorizontalScrollBarEnabled = false
+        webView.overScrollMode = View.OVER_SCROLL_NEVER
 
         NotificationHelper.createChannel(this)
         configureWebView()
@@ -142,6 +145,11 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             allowFileAccess = true
             mediaPlaybackRequiresUserGesture = false
+            displayZoomControls = false
+            builtInZoomControls = false
+            setSupportZoom(false)
+            useWideViewPort = false
+            loadWithOverviewMode = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             userAgentString = userAgentString + " " + BuildConfig.WEBVIEW_USER_AGENT_SUFFIX
         }
