@@ -17,10 +17,10 @@ depends_on = None
 
 
 ROLE_ENUM = sa.Enum(
-    "PLATFORM_ADMIN",
-    "ADMIN",
-    "CURATOR",
-    "EXECUTOR",
+    "platform_admin",
+    "admin",
+    "curator",
+    "executor",
     name="role",
 )
 
@@ -54,13 +54,13 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "UPDATE users SET is_assignable_executor = true "
-            "WHERE role = 'EXECUTOR' AND coalesce(is_assignable_executor, false) = false"
+            "WHERE role = 'executor' AND coalesce(is_assignable_executor, false) = false"
         )
     )
     op.execute(
         sa.text(
             "UPDATE users SET is_assignable_executor = false "
-            "WHERE role = 'PLATFORM_ADMIN'"
+            "WHERE role = 'platform_admin'"
         )
     )
 
