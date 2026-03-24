@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -41,6 +41,7 @@
       color: #184a4c;
       font-weight: 700;
       font-size: 1.03rem;
+      max-width: 720px;
     }
     .users-kpi {
       display: grid;
@@ -71,149 +72,169 @@
     .users-card .card-body > h5 {
       color: #20565b;
     }
-    .user-item-card {
-      border: 1px solid #d5e7df;
-      border-radius: 13px;
-      box-shadow: 0 8px 16px rgba(22, 64, 67, 0.06);
-      background: #fcfffd;
+    .users-table th {
+      white-space: nowrap;
+      font-size: 12px;
+      color: #51767b;
     }
-    .invite-row {
-      border: 1px solid #d7e8e1;
-      border-radius: 12px;
-      background: #fcfffd;
-      padding: 10px;
+    .users-table td {
+      vertical-align: top;
+      min-width: 110px;
+    }
+    .users-table .meta-cell {
+      min-width: 180px;
+    }
+    .users-table .checkbox-col {
+      min-width: 132px;
+    }
+    .users-table .compact-input {
+      min-width: 170px;
+    }
+    .users-table .row-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #20565b;
+      background: #eaf7f2;
+      border: 1px solid #cde7dd;
+    }
+    .template-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .template-checkboxes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .hint {
+      color: #5b7a7a;
+      font-size: 12px;
     }
     @media (max-width: 991.98px) {
       .users-kpi {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .template-grid,
+      .template-checkboxes {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
     @media (max-width: 575.98px) {
-      .users-kpi {
+      .users-kpi,
+      .template-grid,
+      .template-checkboxes {
         grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body class="bg-light">
-  <div class="container py-4 service-shell" style="max-width: 1280px;">
+  <div class="container py-4 service-shell" style="max-width: 1500px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Пользователи</h3></span>
-        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ user.role }})</div>
+        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ access_level_label_ru(user.role) }})</div>
       </div>
       {% include "_top_nav.html" %}
     </div>
-    {% set curators_count = curators|length if user.role == "ADMIN" else 0 %}
-    {% set executors_count = executors|length %}
-    {% set total_managed = curators_count + executors_count %}
+
+    {% set assignable_count = managed_users|selectattr("is_assignable_executor")|list|length %}
     <div class="users-hero mb-3">
       <div>
-        <span class="users-kicker">Управление доступами</span>
-        <p class="users-title">Создавайте пользователей, управляйте ролями и контролируйте инвайты в одной точке.</p>
+        <span class="users-kicker">Практичная схема доступа</span>
+        <p class="users-title">Уровень доступа, участие в списке исполнителей, точечные права и шаблоны собраны в одном окне. Можно включить самого себя в исполнители под той же почтой.</p>
       </div>
       <div class="users-kpi">
         <div class="users-kpi-card">
-          <span>Всего под управлением</span>
-          <strong>{{ total_managed }}</strong>
+          <span>Пользователей в таблице</span>
+          <strong>{{ managed_users|length }}</strong>
         </div>
         <div class="users-kpi-card">
-          <span>Кураторы</span>
-          <strong>{{ curators_count }}</strong>
+          <span>В списке исполнителей</span>
+          <strong>{{ assignable_count }}</strong>
         </div>
         <div class="users-kpi-card">
-          <span>Исполнители</span>
-          <strong>{{ executors_count }}</strong>
+          <span>Шаблонов ролей</span>
+          <strong>{{ role_templates|length }}</strong>
         </div>
         <div class="users-kpi-card">
-          <span>Ссылки-инвайты</span>
+          <span>Ссылок-инвайтов</span>
           <strong>{{ invite_links|length }}</strong>
         </div>
       </div>
     </div>
 
-    {% if ok == "created" %}
-      <div class="alert alert-success">Пользователь создан.</div>
-    {% elif ok == "updated" %}
-      <div class="alert alert-success">Данные пользователя обновлены.</div>
-    {% elif ok == "deleted" %}
-      <div class="alert alert-success">Пользователь удален.</div>
-    {% elif ok == "invite_created" %}
-      <div class="alert alert-success">Ссылка приглашения создана.</div>
+    {% if ok_message %}
+      <div class="alert alert-success">{{ ok_message }}</div>
     {% endif %}
-
-    {% if err == "bad_input" %}
-      <div class="alert alert-danger">Заполните обязательные поля.</div>
-    {% elif err == "bad_role" %}
-      <div class="alert alert-danger">Недопустимая роль для создания пользователя.</div>
-    {% elif err == "email_exists" %}
-      <div class="alert alert-danger">Пользователь с таким email уже существует.</div>
-    {% elif err == "user_not_found" %}
-      <div class="alert alert-danger">Пользователь не найден или недоступен для управления.</div>
-    {% elif err == "save_failed" %}
-      <div class="alert alert-danger">Не удалось сохранить изменения.</div>
-    {% elif err == "delete_blocked" %}
-      <div class="alert alert-danger">Нельзя удалить пользователя: он уже участвует в заявках или шаблонах.</div>
-    {% elif err == "delete_failed" %}
-      <div class="alert alert-danger">Не удалось удалить пользователя.</div>
+    {% if err_message %}
+      <div class="alert alert-danger">{{ err_message }}</div>
     {% endif %}
 
     <div class="card shadow-sm mb-3 users-card">
       <div class="card-body">
         <h5 class="mb-3">Добавить пользователя</h5>
-        <form method="post" action="/web/users/create" class="row g-2">
-          <div class="col-12 col-md-4">
+        <form method="post" action="/web/users/create" class="js-role-form row g-2">
+          <div class="col-12 col-md-3">
             <input name="name" class="form-control" placeholder="Имя" required />
           </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-3">
             <input name="email" type="email" class="form-control" placeholder="Email" required />
           </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-2">
             <input name="password" type="password" class="form-control" placeholder="Пароль" required />
           </div>
-          {% if user.role == "ADMIN" %}
-            <div class="col-12 col-md-4">
-              <select name="role" class="form-select" id="create-user-role" required>
-                <option value="EXECUTOR">Исполнитель</option>
-                <option value="CURATOR">Куратор</option>
-              </select>
-            </div>
-          {% else %}
-            <input type="hidden" name="role" value="EXECUTOR" />
-            <div class="col-12">
-              <div class="form-control bg-light">Будет создан пользователь с ролью: Исполнитель</div>
-            </div>
-          {% endif %}
-          <div class="col-12" id="create-executor-permissions">
-            <div class="row g-2">
-              <div class="col-12 col-md-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="show_receipts_accounting_mode" value="1" id="create-show-accounting" />
-                  <label class="form-check-label" for="create-show-accounting">Бухгалтерский режим</label>
-                </div>
+          <div class="col-12 col-md-2">
+            <select name="role" class="form-select">
+              {% for option in access_level_options %}
+                <option value="{{ option.value }}">{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <select name="role_template_id" class="form-select js-role-template-select">
+              <option value="">Без шаблона</option>
+              {% for t in role_templates %}
+                <option value="{{ t.id }}">{{ t.name }} · {{ access_level_label_ru(t.access_level) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <input name="role_label" class="form-control js-role-label-input" placeholder="Как показывать роль" />
+          </div>
+          <div class="col-12">
+            <div class="template-checkboxes">
+              <div class="form-check">
+                <input class="form-check-input js-flag-assignable" type="checkbox" name="is_assignable_executor" value="1" id="create-assignable" />
+                <label class="form-check-label" for="create-assignable">В списке исполнителей</label>
               </div>
-              <div class="col-12 col-md-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="can_view_all_tickets" value="1" id="create-view-all" />
-                  <label class="form-check-label" for="create-view-all">Видеть все заявки</label>
-                </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-accounting" type="checkbox" name="show_receipts_accounting_mode" value="1" id="create-accounting" checked />
+                <label class="form-check-label" for="create-accounting">Бухгалтерский режим</label>
               </div>
-              <div class="col-12 col-md-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="can_create_tickets" value="1" id="create-can-create" checked />
-                  <label class="form-check-label" for="create-can-create">Создавать заявки</label>
-                </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-view-all" type="checkbox" name="can_view_all_tickets" value="1" id="create-view-all" />
+                <label class="form-check-label" for="create-view-all">Видеть все заявки</label>
               </div>
-              <div class="col-12 col-md-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="can_close_tickets" value="1" id="create-can-close" checked />
-                  <label class="form-check-label" for="create-can-close">Закрывать заявки</label>
-                </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-create" type="checkbox" name="can_create_tickets" value="1" id="create-can-create" checked />
+                <label class="form-check-label" for="create-can-create">Создавать заявки</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-close" type="checkbox" name="can_close_tickets" value="1" id="create-can-close" checked />
+                <label class="form-check-label" for="create-can-close">Закрывать заявки</label>
               </div>
             </div>
           </div>
-          <div class="col-12">
+          <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
             <button class="btn btn-primary">Создать пользователя</button>
+            <span class="hint">Если выбран шаблон, он подставит уровень доступа и галочки. Ярлык роли можно оставить пустым, тогда возьмётся название шаблона.</span>
           </div>
         </form>
       </div>
@@ -221,179 +242,299 @@
 
     <div class="card shadow-sm mb-3 users-card">
       <div class="card-body">
-        <h5 class="mb-3">Ссылка для саморегистрации</h5>
-        <form method="post" action="/web/users/invites/create" class="row g-2">
-          {% if user.role == "ADMIN" %}
-            <div class="col-12 col-md-4">
-              <select name="role" class="form-select" required>
-                <option value="EXECUTOR">Исполнитель</option>
-                <option value="CURATOR">Куратор</option>
-              </select>
-            </div>
-          {% else %}
-            <input type="hidden" name="role" value="EXECUTOR" />
-            <div class="col-12">
-              <div class="form-control bg-light">Ссылка будет создана для роли: Исполнитель</div>
-            </div>
-          {% endif %}
-          <div class="col-12 col-md-4">
-            <input name="expires_days" type="number" min="1" max="30" value="7" class="form-control" />
+        <h5 class="mb-3">Шаблоны ролей</h5>
+        <form method="post" action="/web/users/templates/create" class="js-role-form row g-2 mb-3">
+          <div class="col-12 col-md-3">
+            <input name="name" class="form-control" placeholder="Название шаблона" required />
+          </div>
+          <div class="col-12 col-md-2">
+            <select name="access_level" class="form-select">
+              {% for option in access_level_options %}
+                <option value="{{ option.value }}">{{ option.label }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="col-12">
-            <button class="btn btn-outline-primary">Сгенерировать ссылку</button>
+            <div class="template-checkboxes">
+              <div class="form-check">
+                <input class="form-check-input js-flag-assignable" type="checkbox" name="is_assignable_executor" value="1" id="template-assignable" />
+                <label class="form-check-label" for="template-assignable">В списке исполнителей</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-accounting" type="checkbox" name="show_receipts_accounting_mode" value="1" id="template-accounting" checked />
+                <label class="form-check-label" for="template-accounting">Бухгалтерский режим</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-view-all" type="checkbox" name="can_view_all_tickets" value="1" id="template-view-all" />
+                <label class="form-check-label" for="template-view-all">Видеть все заявки</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-create" type="checkbox" name="can_create_tickets" value="1" id="template-can-create" checked />
+                <label class="form-check-label" for="template-can-create">Создавать заявки</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input js-flag-close" type="checkbox" name="can_close_tickets" value="1" id="template-can-close" checked />
+                <label class="form-check-label" for="template-can-close">Закрывать заявки</label>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+            <button class="btn btn-outline-primary">Сохранить шаблон</button>
+            <span class="hint">Шаблон не связывается жёстко с пользователем, а просто быстро подставляет настройки.</span>
           </div>
         </form>
-        <div class="text-muted small mt-2">Ссылка одноразовая и действует ограниченное время.</div>
-      </div>
-    </div>
 
-    <div class="card shadow-sm mb-3 users-card">
-      <div class="card-body">
-        <h5 class="mb-3">Активные/последние ссылки</h5>
-        {% if invite_links and invite_links|length > 0 %}
-          {% for inv in invite_links %}
-            <div class="invite-row mb-2">
-              <div class="small text-muted mb-1">
-                #{{ inv.id }} · {{ inv.role }} ·
-                {% if inv.is_used %}использована{% else %}не использована{% endif %}
-                {% if inv.expires_at %} · до {{ format_dt(inv.expires_at) }}{% endif %}
-              </div>
-              <div class="input-group input-group-sm">
-                <input class="form-control" readonly value="{{ inv.url }}" />
-              </div>
-            </div>
-          {% endfor %}
-        {% else %}
-          <div class="alert alert-info mb-0">Ссылок пока нет.</div>
-        {% endif %}
-      </div>
-    </div>
-
-    {% if user.role == "ADMIN" %}
-      <div class="card shadow-sm mb-3 users-card">
-        <div class="card-body">
-          <h5 class="mb-3">Кураторы</h5>
-          {% for u in curators %}
-            <div class="card shadow-sm mb-2 user-item-card">
-              <div class="card-body">
-                <div class="small text-muted mb-2">#{{ u.id }} · {{ u.role }}</div>
-                <form method="post" action="/web/users/{{ u.id }}/update" class="row g-2 align-items-end">
-                  <div class="col-12 col-md-4">
-                    <label class="form-label mb-1">Имя</label>
-                    <input name="name" class="form-control" value="{{ u.name }}" required />
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <label class="form-label mb-1">Email</label>
-                    <input name="email" type="email" class="form-control" value="{{ u.email }}" required />
-                  </div>
-                  <div class="col-12 col-md-2">
-                    <label class="form-label mb-1">Новый пароль</label>
-                    <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
-                  </div>
-                  <div class="col-12 col-md-2">
-                    <div class="form-check mt-4">
-                      <input class="form-check-input" type="checkbox" name="show_receipts_accounting_mode" value="1" id="show-accounting-{{ u.id }}" {% if u.show_receipts_accounting_mode %}checked{% endif %} />
-                      <label class="form-check-label" for="show-accounting-{{ u.id }}">Бухгалтерский режим</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-2 d-grid">
-                    <button class="btn btn-outline-primary">Сохранить</button>
-                  </div>
-                </form>
-                <form method="post" action="/web/users/{{ u.id }}/delete" class="mt-2" onsubmit="return confirm('Удалить пользователя #{{ u.id }} ({{ u.name }})?');">
-                  <button class="btn btn-outline-danger btn-sm">Удалить пользователя</button>
-                </form>
-              </div>
-            </div>
-          {% endfor %}
-          {% if curators|length == 0 %}
-            <div class="alert alert-info mb-0">Кураторов пока нет.</div>
-          {% endif %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle users-table">
+            <thead>
+              <tr>
+                <th>Шаблон</th>
+                <th>Уровень</th>
+                <th>Исполнитель</th>
+                <th>Бух.</th>
+                <th>Все заявки</th>
+                <th>Создание</th>
+                <th>Закрытие</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in role_templates %}
+                <tr>
+                  <form method="post" action="/web/users/templates/{{ t.id }}/update">
+                    <td class="compact-input">
+                      <input name="name" class="form-control form-control-sm" value="{{ t.name }}" required />
+                    </td>
+                    <td class="compact-input">
+                      <select name="access_level" class="form-select form-select-sm">
+                        {% for option in access_level_options %}
+                          <option value="{{ option.value }}" {% if t.access_level.value == option.value %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td><input class="form-check-input" type="checkbox" name="is_assignable_executor" value="1" {% if t.is_assignable_executor %}checked{% endif %} /></td>
+                    <td><input class="form-check-input" type="checkbox" name="show_receipts_accounting_mode" value="1" {% if t.show_receipts_accounting_mode %}checked{% endif %} /></td>
+                    <td><input class="form-check-input" type="checkbox" name="can_view_all_tickets" value="1" {% if t.can_view_all_tickets %}checked{% endif %} /></td>
+                    <td><input class="form-check-input" type="checkbox" name="can_create_tickets" value="1" {% if t.can_create_tickets %}checked{% endif %} /></td>
+                    <td><input class="form-check-input" type="checkbox" name="can_close_tickets" value="1" {% if t.can_close_tickets %}checked{% endif %} /></td>
+                    <td class="text-end">
+                      <div class="d-flex justify-content-end gap-2">
+                        <button class="btn btn-outline-primary btn-sm">Сохранить</button>
+                        <button class="btn btn-outline-danger btn-sm" type="submit" formaction="/web/users/templates/{{ t.id }}/delete" formmethod="post" onclick="return confirm('Удалить шаблон {{ t.name }}?');">Удалить</button>
+                      </div>
+                    </td>
+                  </form>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="8" class="text-muted">Шаблонов пока нет.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
-    {% endif %}
+    </div>
 
     <div class="card shadow-sm mb-3 users-card">
       <div class="card-body">
-        <h5 class="mb-3">Исполнители</h5>
-        {% for u in executors %}
-          <div class="card shadow-sm mb-2 user-item-card">
-            <div class="card-body">
-              <div class="small text-muted mb-2">#{{ u.id }} · {{ u.role }}</div>
-              <form method="post" action="/web/users/{{ u.id }}/update" class="row g-2 align-items-end">
-                <div class="col-12 col-md-4">
-                  <label class="form-label mb-1">Имя</label>
-                  <input name="name" class="form-control" value="{{ u.name }}" required />
-                </div>
-                <div class="col-12 col-md-4">
-                  <label class="form-label mb-1">Email</label>
-                  <input name="email" type="email" class="form-control" value="{{ u.email }}" required />
-                </div>
-                <div class="col-12 col-md-2">
-                  <label class="form-label mb-1">Новый пароль</label>
-                  <input name="password" type="password" class="form-control" placeholder="Оставьте пустым" />
-                </div>
-                <div class="col-12 col-md-2">
-                  <div class="form-check mt-4">
-                    <input class="form-check-input" type="checkbox" name="show_receipts_accounting_mode" value="1" id="show-accounting-{{ u.id }}" {% if u.show_receipts_accounting_mode %}checked{% endif %} />
-                    <label class="form-check-label" for="show-accounting-{{ u.id }}">Бухгалтерский режим</label>
-                  </div>
-                </div>
-                  <div class="col-12 col-md-2">
-                    <div class="form-check mt-4">
-                      <input class="form-check-input" type="checkbox" name="can_view_all_tickets" value="1" id="view-all-{{ u.id }}" {% if u.can_view_all_tickets %}checked{% endif %} />
-                      <label class="form-check-label" for="view-all-{{ u.id }}">Все заявки</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-2">
-                    <div class="form-check mt-4">
-                      <input class="form-check-input" type="checkbox" name="can_create_tickets" value="1" id="can-create-{{ u.id }}" {% if u.can_create_tickets %}checked{% endif %} />
-                      <label class="form-check-label" for="can-create-{{ u.id }}">Создание</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-2">
-                    <div class="form-check mt-4">
-                      <input class="form-check-input" type="checkbox" name="can_close_tickets" value="1" id="can-close-{{ u.id }}" {% if u.can_close_tickets %}checked{% endif %} />
-                      <label class="form-check-label" for="can-close-{{ u.id }}">Закрытие</label>
-                    </div>
-                  </div>
-                <div class="col-12 col-md-2 d-grid">
-                  <button class="btn btn-outline-primary">Сохранить</button>
-                </div>
-              </form>
-              <form method="post" action="/web/users/{{ u.id }}/delete" class="mt-2" onsubmit="return confirm('Удалить пользователя #{{ u.id }} ({{ u.name }})?');">
-                <button class="btn btn-outline-danger btn-sm">Удалить пользователя</button>
-              </form>
-            </div>
+        <h5 class="mb-3">Пользователи компании</h5>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle users-table">
+            <thead>
+              <tr>
+                <th class="meta-cell">Пользователь</th>
+                <th class="compact-input">Email</th>
+                <th class="compact-input">Уровень доступа</th>
+                <th class="compact-input">Ярлык роли</th>
+                <th class="compact-input">Шаблон</th>
+                <th class="checkbox-col">Исполнитель</th>
+                <th class="checkbox-col">Бух.</th>
+                <th class="checkbox-col">Все заявки</th>
+                <th class="checkbox-col">Создание</th>
+                <th class="checkbox-col">Закрытие</th>
+                <th class="compact-input">Пароль</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for u in managed_users %}
+                <tr>
+                  <form method="post" action="/web/users/{{ u.id }}/update" class="js-role-form">
+                    <td class="meta-cell">
+                      <div class="fw-semibold">{{ u.name }}</div>
+                      <div class="small text-muted">#{{ u.id }}</div>
+                      {% if u.id == user.id %}
+                        <div class="row-badge mt-2">Это ваш аккаунт</div>
+                      {% endif %}
+                      <div class="mt-2">
+                        <input name="name" class="form-control form-control-sm" value="{{ u.name }}" required />
+                      </div>
+                    </td>
+                    <td class="compact-input">
+                      <input name="email" type="email" class="form-control form-control-sm" value="{{ u.email }}" required />
+                    </td>
+                    <td class="compact-input">
+                      {% if user.role == "ADMIN" and u.id != user.id %}
+                        <select name="role" class="form-select form-select-sm">
+                          {% for option in access_level_options %}
+                            <option value="{{ option.value }}" {% if u.role.value == option.value %}selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </select>
+                      {% else %}
+                        <div class="form-control form-control-sm bg-light">{{ access_level_label_ru(u.role) }}</div>
+                        <input type="hidden" name="role" value="{{ u.role.value }}" />
+                      {% endif %}
+                    </td>
+                    <td class="compact-input">
+                      <input name="role_label" class="form-control form-control-sm js-role-label-input" value="{{ u.role_label or '' }}" placeholder="{{ access_level_label_ru(u.role) }}" />
+                    </td>
+                    <td class="compact-input">
+                      <select name="role_template_id" class="form-select form-select-sm js-role-template-select">
+                        <option value="">Без шаблона</option>
+                        {% for t in role_templates %}
+                          {% if (u.id != user.id) or (t.access_level == u.role) %}
+                            <option value="{{ t.id }}">{{ t.name }} · {{ access_level_label_ru(t.access_level) }}</option>
+                          {% endif %}
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td><input class="form-check-input js-flag-assignable" type="checkbox" name="is_assignable_executor" value="1" {% if u.is_assignable_executor %}checked{% endif %} /></td>
+                    <td><input class="form-check-input js-flag-accounting" type="checkbox" name="show_receipts_accounting_mode" value="1" {% if u.show_receipts_accounting_mode %}checked{% endif %} /></td>
+                    <td><input class="form-check-input js-flag-view-all" type="checkbox" name="can_view_all_tickets" value="1" {% if u.can_view_all_tickets %}checked{% endif %} /></td>
+                    <td><input class="form-check-input js-flag-create" type="checkbox" name="can_create_tickets" value="1" {% if u.can_create_tickets %}checked{% endif %} /></td>
+                    <td><input class="form-check-input js-flag-close" type="checkbox" name="can_close_tickets" value="1" {% if u.can_close_tickets %}checked{% endif %} /></td>
+                    <td class="compact-input">
+                      <input name="password" type="password" class="form-control form-control-sm" placeholder="Оставьте пустым" />
+                    </td>
+                    <td class="text-end">
+                      <div class="d-flex justify-content-end gap-2">
+                        <button class="btn btn-outline-primary btn-sm">Сохранить</button>
+                        {% if u.id != user.id %}
+                          <button class="btn btn-outline-danger btn-sm" type="submit" formaction="/web/users/{{ u.id }}/delete" formmethod="post" onclick="return confirm('Удалить пользователя {{ u.name }}?');">Удалить</button>
+                        {% endif %}
+                      </div>
+                    </td>
+                  </form>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="12" class="text-muted">Пользователей пока нет.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="hint mt-2">Для владельца и куратора базовые управленческие права задаются уровнем доступа. Галочки ниже помогают быстро настроить сценарий частного исполнителя и пользователей-исполнителей.</div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm users-card">
+      <div class="card-body">
+        <h5 class="mb-3">Ссылки для саморегистрации</h5>
+        <form method="post" action="/web/users/invites/create" class="row g-2 mb-3">
+          <div class="col-12 col-md-3">
+            <select name="role" class="form-select">
+              {% for option in access_level_options %}
+                <option value="{{ option.value }}">{{ option.label }}</option>
+              {% endfor %}
+            </select>
           </div>
-        {% endfor %}
-        {% if executors|length == 0 %}
-          <div class="alert alert-info mb-0">Исполнителей пока нет.</div>
-        {% endif %}
+          <div class="col-12 col-md-2">
+            <input name="expires_days" type="number" min="1" max="30" value="7" class="form-control" />
+          </div>
+          <div class="col-12 col-md-3">
+            <button class="btn btn-outline-primary">Сгенерировать ссылку</button>
+          </div>
+          <div class="col-12 hint">Инвайт задаёт только уровень доступа. После регистрации права можно сразу докрутить в таблице выше.</div>
+        </form>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Уровень доступа</th>
+                <th>Срок</th>
+                <th>Статус</th>
+                <th>Ссылка</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for inv in invite_links %}
+                <tr>
+                  <td class="text-muted">#{{ inv.id }}</td>
+                  <td>{{ access_level_label_ru(inv.role) }}</td>
+                  <td>{% if inv.expires_at %}{{ format_dt(inv.expires_at) }}{% else %}—{% endif %}</td>
+                  <td>{% if inv.is_used %}Использована{% else %}Свободна{% endif %}</td>
+                  <td><input class="form-control form-control-sm" readonly value="{{ inv.url }}" /></td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="5" class="text-muted">Ссылок пока нет.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
+
+  <script id="role-templates-data" type="application/json">
+    [
+      {% for t in role_templates %}
+        {
+          "id": {{ t.id }},
+          "name": {{ t.name|tojson }},
+          "access_level": {{ t.access_level.value|tojson }},
+          "is_assignable_executor": {{ "true" if t.is_assignable_executor else "false" }},
+          "show_receipts_accounting_mode": {{ "true" if t.show_receipts_accounting_mode else "false" }},
+          "can_view_all_tickets": {{ "true" if t.can_view_all_tickets else "false" }},
+          "can_create_tickets": {{ "true" if t.can_create_tickets else "false" }},
+          "can_close_tickets": {{ "true" if t.can_close_tickets else "false" }}
+        }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  </script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      const roleSelect = document.getElementById("create-user-role");
-      const permissionsWrap = document.getElementById("create-executor-permissions");
-      if (!permissionsWrap) return;
-      if (!roleSelect) return;
+      const templatesEl = document.getElementById("role-templates-data");
+      const templatesData = templatesEl ? JSON.parse(templatesEl.textContent) : [];
+      const templatesById = new Map(templatesData.map((item) => [String(item.id), item]));
 
-      function syncExecutorOptions() {
-        const isExecutor = roleSelect.value === "EXECUTOR";
-        permissionsWrap.classList.toggle("d-none", !isExecutor);
+      function applyTemplate(form, templateId) {
+        const template = templatesById.get(String(templateId || ""));
+        if (!template) return;
+
+        const roleSelect = form.querySelector('select[name="role"]');
+        const roleLabel = form.querySelector(".js-role-label-input");
+        const assignable = form.querySelector(".js-flag-assignable");
+        const accounting = form.querySelector(".js-flag-accounting");
+        const viewAll = form.querySelector(".js-flag-view-all");
+        const canCreate = form.querySelector(".js-flag-create");
+        const canClose = form.querySelector(".js-flag-close");
+
+        if (roleSelect) roleSelect.value = template.access_level;
+        if (roleLabel && !roleLabel.value.trim()) roleLabel.value = template.name;
+        if (assignable) assignable.checked = !!template.is_assignable_executor;
+        if (accounting) accounting.checked = !!template.show_receipts_accounting_mode;
+        if (viewAll) viewAll.checked = !!template.can_view_all_tickets;
+        if (canCreate) canCreate.checked = !!template.can_create_tickets;
+        if (canClose) canClose.checked = !!template.can_close_tickets;
       }
 
-      roleSelect.addEventListener("change", syncExecutorOptions);
-      syncExecutorOptions();
+      document.querySelectorAll(".js-role-form").forEach(function (form) {
+        const select = form.querySelector(".js-role-template-select");
+        if (!select) return;
+        select.addEventListener("change", function () {
+          if (!select.value) return;
+          applyTemplate(form, select.value);
+        });
+      });
     });
   </script>
   <script src="/static/sw-register.js"></script>
   <script src="/static/notifications-widget.js"></script>
 </body>
 </html>
-
-
-
-
