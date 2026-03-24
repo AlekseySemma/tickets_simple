@@ -75,6 +75,41 @@
     .service-shell > .card > .card-body {
       overflow: visible;
     }
+    .receipt-filter-actions,
+    .receipt-bulk-actions {
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .receipt-filter-actions > *,
+    .receipt-bulk-actions > * {
+      min-width: 0;
+    }
+    .receipt-bulk-actions .form-select {
+      flex: 0 1 240px;
+    }
+    @media (max-width: 767.98px) {
+      .receipt-filter-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch !important;
+      }
+      .receipt-filter-actions > .btn {
+        width: 100%;
+        white-space: normal;
+      }
+      .receipt-bulk-actions {
+        flex-direction: column;
+        align-items: stretch !important;
+      }
+      .receipt-bulk-actions .form-select,
+      .receipt-bulk-actions .btn {
+        width: 100%;
+        max-width: none !important;
+      }
+      .receipt-bulk-actions .btn {
+        white-space: normal;
+      }
+    }
     @media (max-width: 575.98px) {
       .btn-group[role="group"] {
         width: 100%;
@@ -255,7 +290,7 @@
             <label class="form-label">Поиск</label>
             <input class="form-control" name="q" value="{{ q_filter }}" placeholder="Комментарий / категория / поставщик" />
           </div>
-          <div class="col-12 col-md-4 d-flex gap-2 align-items-end">
+          <div class="col-12 col-md-4 d-flex gap-2 align-items-end receipt-filter-actions">
             <button class="btn btn-outline-primary">Фильтровать</button>
             <a class="btn btn-outline-secondary" href="/web/receipts?mode={{ mode }}">Сброс</a>
             {% set query_string = request.url.query %}
@@ -269,7 +304,7 @@
     {% if mode == "accounting" and can_manage_status %}
       <form method="post" action="/web/receipts/status/bulk">
         <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
-        <div class="d-flex gap-2 mb-2">
+        <div class="d-flex gap-2 mb-2 receipt-bulk-actions">
           <select name="status" class="form-select" style="max-width: 240px;">
             <option value="IN_PROCESSING">В обработке</option>
             <option value="ACCEPTED">Принят</option>
