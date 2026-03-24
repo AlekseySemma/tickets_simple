@@ -53,6 +53,22 @@ h3.mb-0 {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.company-brand h3,
+.company-brand .mb-0 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.top-nav-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px !important;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .company-logo-link {
@@ -555,8 +571,34 @@ a:hover {
 
   .service-shell > .d-flex.justify-content-between.align-items-center.mb-3 .btn,
   .service-shell > .page-head.mb-3 .btn {
-    flex: 1 1 auto;
-    min-width: 120px;
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .top-nav-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px !important;
+  }
+
+  .top-nav-bar > .btn,
+  .top-nav-bar > .more-menu {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .top-nav-bar > .btn,
+  .top-nav-bar > .more-menu > summary {
+    white-space: normal;
+    text-align: center;
+  }
+
+  .more-menu-list {
+    left: 0;
+    right: 0;
+    min-width: 0;
   }
 }
 

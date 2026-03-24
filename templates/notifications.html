@@ -12,11 +12,44 @@
       background: #e8f7f1;
       border-left: 4px solid #1f9d8f;
     }
+    .notifications-head,
+    .notification-item-row,
+    .notification-item-actions {
+      min-width: 0;
+    }
+    .notification-item-body {
+      min-width: 0;
+    }
+    @media (max-width: 575.98px) {
+      .notifications-head {
+        gap: 10px;
+      }
+      .notification-item-row {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 10px;
+      }
+      .notification-item-side {
+        margin-left: 0 !important;
+        width: 100%;
+        text-align: left !important;
+      }
+      .notification-item-actions {
+        flex-wrap: wrap;
+      }
+      .notification-item-actions .btn,
+      .notification-item-actions form {
+        width: 100%;
+      }
+      .notification-item-actions form .btn {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1200px;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap notifications-head mb-3">
       <div>
         <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Уведомления</h3></span>
         <div class="text-muted">Непрочитанных: <b>{{ unread_count }}</b></div>
@@ -77,8 +110,8 @@
           <div class="list-group">
             {% for n in notifications %}
               <div class="list-group-item {% if not n.is_read %}notification-unread{% endif %}">
-                <div class="d-flex w-100 justify-content-between">
-                  <div>
+                <div class="d-flex w-100 justify-content-between notification-item-row">
+                  <div class="notification-item-body">
                     <h6 class="mb-1">{{ fix_mojibake_text(n.title) }}</h6>
                     {% if n.body %}
                       <p class="mb-1">{{ fix_mojibake_text(n.body) }}</p>
@@ -89,9 +122,9 @@
                       <small class="text-muted">Прочитано</small>
                     {% endif %}
                   </div>
-                  <div class="text-end ms-3">
+                  <div class="text-end ms-3 notification-item-side">
                     <small class="text-muted d-block mb-2">{{ format_dt(n.created_at) }}</small>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 notification-item-actions">
                       <a class="btn btn-sm btn-outline-primary" href="/web/notifications/{{ n.id }}/open">Открыть</a>
                       <form method="post" action="/web/notifications/{{ n.id }}/delete" onsubmit="return confirm('Удалить это уведомление?');">
                         <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>

@@ -16,7 +16,7 @@
 {% set show_users = can_manage_company %}
 {% set show_ticket_types = can_manage_company %}
 {% set is_more = is_archive or is_settings or (show_templates and is_templates) or (show_org and is_org) or (show_users and is_users) or (show_ticket_types and is_ticket_types) %}
-<div class="{{ nav_class }}">
+<div class="top-nav-bar {{ nav_class }}">
   <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
   <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
   <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>

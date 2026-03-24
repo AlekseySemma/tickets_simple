@@ -968,6 +968,9 @@
       .meta-chip {
         white-space: normal;
       }
+      .container.service-shell {
+        overflow-x: clip;
+      }
       .comments-list.is-scrollable {
         max-height: min(48vh, 520px);
       }
@@ -988,7 +991,7 @@
       }
       .page-actions .btn {
         flex: 1 1 auto;
-        min-width: 120px;
+        min-width: 0;
       }
       .detail-badges {
         width: 100%;
@@ -1009,6 +1012,14 @@
       }
       .log-item::before {
         left: -23px;
+      }
+      .ticket-side,
+      .ticket-main,
+      .detail-banner,
+      .ticket-head,
+      .section-card,
+      .comments-card {
+        min-width: 0;
       }
     }
   </style>

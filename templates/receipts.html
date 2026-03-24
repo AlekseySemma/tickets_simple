@@ -75,6 +75,17 @@
     .service-shell > .card > .card-body {
       overflow: visible;
     }
+    @media (max-width: 575.98px) {
+      .btn-group[role="group"] {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .btn-group[role="group"] > .btn {
+        min-width: 0;
+        white-space: normal;
+      }
+    }
     .st-NEW { background: #eef2f3; color: #42585e; border: 1px solid #ced7da; }
     .st-IN_PROCESSING { background: #fff6dc; color: #6f5200; border: 1px solid #f3d98f; }
     .st-ACCEPTED { background: #e3f6ef; color: #195a50; border: 1px solid #b6e0d0; }
