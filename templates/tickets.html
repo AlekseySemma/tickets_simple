@@ -1095,18 +1095,18 @@
                   <input type="checkbox" data-ticket-select-all aria-label="Выбрать все заявки на странице">
                 </th>
                 {% endif %}
+                <th class="col-title">Заявка</th>
+                <th>Крайний срок</th>
+                <th>Узел</th>
                 <th>#</th>
                 <th>Дата создания</th>
-                <th>Крайний срок</th>
                 {% if is_archive_page %}
                 <th>Удалить после</th>
                 {% endif %}
-                <th>Узел</th>
                 <th>Тип заявки</th>
                 <th>Отдел</th>
                 <th>Исполнитель</th>
                 <th>Статус</th>
-                <th class="col-title">Заявка</th>
                 <th>Действия</th>
               </tr>
             </thead>
@@ -1130,8 +1130,9 @@
                   >
                 </td>
                 {% endif %}
-                <td class="text-nowrap">#{{ t.id }}</td>
-                <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
+                <td class="col-title">
+                  <a href="/web/tickets/{{ t.id }}?next={{ current_list_url_encoded }}">{{ t.title }}</a>
+                </td>
                 <td class="text-nowrap">
                   {% if t.deadline %}
                   <span class="deadline-pill">{{ format_deadline(t.deadline) }}</span>
@@ -1139,10 +1140,12 @@
                   —
                   {% endif %}
                 </td>
+                <td class="text-nowrap">{{ projects_by_id.get(t.project_id, "—") }}</td>
+                <td class="text-nowrap">#{{ t.id }}</td>
+                <td class="text-nowrap">{{ format_dt(t.created_at) }}</td>
                 {% if is_archive_page %}
                 <td class="text-nowrap">{{ format_dt(t.delete_at) if t.delete_at else "—" }}</td>
                 {% endif %}
-                <td class="text-nowrap">{{ projects_by_id.get(t.project_id, "—") }}</td>
                 <td class="text-nowrap">{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</td>
                 <td class="text-nowrap">{{ departments_by_id.get(t.department_id, "—") }}</td>
                 <td class="text-nowrap">{{ users_by_id.get(t.executor_id, "—") }}</td>
@@ -1176,9 +1179,6 @@
                     </span>
                     {% endif %}
                   </div>
-                </td>
-                <td class="col-title">
-                  <a href="/web/tickets/{{ t.id }}?next={{ current_list_url_encoded }}">{{ t.title }}</a>
                 </td>
                 <td class="text-nowrap">
                   <div class="d-flex gap-1">
