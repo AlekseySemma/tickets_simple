@@ -1031,14 +1031,9 @@
   {% set overview_url = "/web/tickets/" ~ t.id ~ "?tab=overview&next=" ~ next_url_encoded %}
   {% set files_url = "/web/tickets/" ~ t.id ~ "?tab=files&next=" ~ next_url_encoded %}
   <div class="container py-4 service-shell" style="max-width: 1000px;">
-    <div class="page-head mb-3">
-      <div>
-        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Заявка</h3></span>
-        <div class="muted">ID: #{{ t.id }}</div>
-      </div>
-      {% set top_nav_class = "page-actions" %}
-      {% include "_top_nav.html" %}
-    </div>
+    {% set app_header_title %}Заявка #{{ t.id }}{% endset %}
+    {% set app_header_meta %}Пользователь: <b>{{ user.name }}</b> ({{ user.role }}){% endset %}
+    {% include "_app_header.html" %}
 
     <div class="detail-banner mb-3">
       <div>

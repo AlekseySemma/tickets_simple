@@ -63,6 +63,58 @@ h3.mb-0 {
   overflow-wrap: anywhere;
 }
 
+.app-header {
+  position: relative;
+  z-index: 2000;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid rgba(23, 51, 58, 0.1);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(250, 255, 252, 0.7));
+  box-shadow: var(--srv-shadow-sm);
+  backdrop-filter: blur(8px);
+}
+
+.app-header-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-header-logo {
+  align-self: flex-start;
+}
+
+.app-header-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-header-copy .mb-0 {
+  margin-bottom: 0;
+}
+
+.app-header-meta {
+  font-size: 0.98rem;
+  line-height: 1.4;
+}
+
+.app-header-nav {
+  min-width: 0;
+  flex: 0 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-self: center;
+}
+
 .top-nav-bar {
   display: flex !important;
   flex-wrap: wrap;
@@ -76,6 +128,30 @@ h3.mb-0 {
 .top-nav-bar > * {
   min-width: 0;
   max-width: 100%;
+}
+
+.top-nav-bar > .btn,
+.top-nav-bar > .more-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding-left: 14px;
+  padding-right: 14px;
+  border-radius: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.top-nav-bar > .btn.position-relative {
+  padding-right: 2.4rem;
+}
+
+.top-nav-bar [data-notifications-badge] {
+  top: 6px !important;
+  left: auto !important;
+  right: 8px;
+  transform: none !important;
 }
 
 .company-logo-link {
@@ -554,6 +630,16 @@ a:hover {
 
 .service-shell > .card,
 @media (max-width: 991.98px) {
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .app-header-nav {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .service-shell > .d-flex.justify-content-between.align-items-center.mb-3,
   .service-shell > .page-head.mb-3 {
     align-items: flex-start !important;
@@ -569,6 +655,21 @@ a:hover {
 
   .auth-shell .auth-card .card-body {
     padding: 1.25rem !important;
+  }
+
+  .app-header {
+    padding: 12px 14px;
+    gap: 14px;
+  }
+
+  .app-header-main,
+  .app-header-copy,
+  .app-header-nav {
+    width: 100%;
+  }
+
+  .app-header-main {
+    align-items: flex-start;
   }
 
   .service-shell > .d-flex.justify-content-between.align-items-center.mb-3 .d-flex.gap-2,
@@ -602,6 +703,11 @@ a:hover {
     min-width: 0 !important;
   }
 
+  .top-nav-bar > .btn,
+  .top-nav-bar > .more-menu > summary {
+    min-height: 42px;
+  }
+
   .service-shell:not(.auth-shell) .top-nav-bar > .btn,
   .service-shell:not(.auth-shell) .top-nav-bar > .more-menu > summary {
     white-space: normal !important;
@@ -630,6 +736,10 @@ a:hover {
 }
 
 @media (max-width: 430px) {
+  .app-header {
+    padding: 12px;
+  }
+
   .top-nav-bar {
     grid-template-columns: minmax(0, 1fr);
   }

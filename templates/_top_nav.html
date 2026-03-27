@@ -19,9 +19,9 @@
 <div class="top-nav-bar {{ nav_class }}">
   <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
   <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
-  <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+  <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
   <details class="more-menu">
-    <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">еще</summary>
+    <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">Еще</summary>
     <div class="more-menu-list">
       <a class="{% if is_archive %}top-nav-item-active{% endif %}" href="/web/archive">Архив</a>
       <a class="{% if is_settings %}top-nav-item-active{% endif %}" href="/web/settings">Настройки</a>

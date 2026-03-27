@@ -136,13 +136,9 @@
 </head>
 <body class="bg-light">
   <div class="container py-4 service-shell" style="max-width: 1500px;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="company-brand"><a class="company-logo-link" href="/web" title="Go to tickets" aria-label="Go to tickets"><img class="company-logo-img" src="/static/icon-192.png" alt="Logo" /></a><h3 class="mb-0">Пользователи</h3></span>
-        <div class="text-muted">Пользователь: <b>{{ user.name }}</b> ({{ access_level_label_ru(user.role) }})</div>
-      </div>
-      {% include "_top_nav.html" %}
-    </div>
+    {% set app_header_title = "Пользователи" %}
+    {% set app_header_meta %}Пользователь: <b>{{ user.name }}</b> ({{ access_level_label_ru(user.role) }}){% endset %}
+    {% include "_app_header.html" %}
 
     {% set assignable_count = managed_users|selectattr("is_assignable_executor")|list|length %}
     <div class="users-hero mb-3">

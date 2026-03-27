@@ -1,0 +1,19 @@
+{% set app_header_title_value = app_header_title|default(page_title|default("Сервис")) %}
+{% set app_header_meta_value = app_header_meta|default("") %}
+<div class="app-header mb-3">
+  <div class="app-header-main">
+    <a class="company-logo-link app-header-logo" href="/web" title="Go to tickets" aria-label="Go to tickets">
+      <img class="company-logo-img" src="/static/icon-192.png" alt="Logo" />
+    </a>
+    <div class="app-header-copy">
+      <h3 class="mb-0">{{ app_header_title_value }}</h3>
+      {% if app_header_meta_value %}
+      <div class="app-header-meta muted">{{ app_header_meta_value | safe }}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="app-header-nav">
+    {% set top_nav_class = "app-header-nav-bar" %}
+    {% include "_top_nav.html" %}
+  </div>
+</div>
