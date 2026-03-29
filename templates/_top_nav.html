@@ -16,13 +16,47 @@
 {% set show_users = can_manage_company %}
 {% set show_ticket_types = can_manage_company %}
 {% set is_more = is_archive or is_settings or (show_templates and is_templates) or (show_org and is_org) or (show_users and is_users) or (show_ticket_types and is_ticket_types) %}
-<div class="top-nav-bar {{ nav_class }}">
-  <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
-  <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
-  <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
-  <details class="more-menu">
-    <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">Еще</summary>
-    <div class="more-menu-list">
+<div class="top-nav-wrap {{ nav_class }}">
+  <div class="top-nav-bar top-nav-bar-desktop">
+    <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
+    <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
+    <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+    <details class="more-menu">
+      <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">Еще</summary>
+      <div class="more-menu-list">
+        <a class="{% if is_archive %}top-nav-item-active{% endif %}" href="/web/archive">Архив</a>
+        <a class="{% if is_settings %}top-nav-item-active{% endif %}" href="/web/settings">Настройки</a>
+        {% if show_templates %}
+        <a class="{% if is_templates %}top-nav-item-active{% endif %}" href="/web/ticket-templates">Шаблоны</a>
+        {% endif %}
+        {% if show_org %}
+        <a class="{% if is_org %}top-nav-item-active{% endif %}" href="/web/org-structure">Оргструктура</a>
+        {% endif %}
+        {% if show_users %}
+        <a class="{% if is_users %}top-nav-item-active{% endif %}" href="/web/users">Пользователи</a>
+        {% endif %}
+        {% if show_ticket_types %}
+        <a class="{% if is_ticket_types %}top-nav-item-active{% endif %}" href="/web/ticket-types">Типы заявок</a>
+        {% endif %}
+        <hr />
+        <a class="danger-link" href="/web/logout">Выход</a>
+      </div>
+    </details>
+  </div>
+  <details class="mobile-nav-menu">
+    <summary class="mobile-nav-toggle{% if is_more %} mobile-nav-toggle-active{% endif %}" aria-label="Открыть меню" title="Меню">
+      <span class="mobile-nav-icon" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </span>
+      <span class="mobile-nav-label visually-hidden">Меню</span>
+      <span class="mobile-nav-badge badge rounded-pill text-bg-danger d-none" data-notifications-badge></span>
+    </summary>
+    <div class="mobile-nav-list more-menu-list">
+      <a class="{% if is_tickets %}top-nav-item-active{% endif %}" href="/web">Заявки</a>
+      <a class="{% if is_receipts %}top-nav-item-active{% endif %}" href="/web/receipts">Чеки</a>
+      <a class="{% if is_notifications %}top-nav-item-active{% endif %}" href="/web/notifications">Уведомления</a>
       <a class="{% if is_archive %}top-nav-item-active{% endif %}" href="/web/archive">Архив</a>
       <a class="{% if is_settings %}top-nav-item-active{% endif %}" href="/web/settings">Настройки</a>
       {% if show_templates %}
