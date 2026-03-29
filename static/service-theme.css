@@ -118,8 +118,9 @@ h3.mb-0 {
 .top-nav-wrap {
   min-width: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .top-nav-bar {
@@ -161,10 +162,52 @@ h3.mb-0 {
   padding-right: 2.4rem;
 }
 
-.top-nav-bar [data-notifications-badge] {
-  top: 6px !important;
+.top-nav-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--srv-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1d5c59;
+  box-shadow: 0 8px 16px rgba(20, 68, 70, 0.08);
+  position: relative;
+  text-decoration: none;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.top-nav-icon-btn:hover {
+  background: #f6fcf9;
+  border-color: #9fd1c5;
+  color: #154f4a;
+}
+
+.top-nav-icon-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.top-nav-icon-btn-active {
+  background: #ddf2ec;
+  border-color: #6fb6aa;
+  color: #154f4a;
+}
+
+.top-nav-icon-btn-mobile {
+  display: none;
+}
+
+.top-nav-wrap [data-notifications-badge] {
+  top: -6px !important;
   left: auto !important;
-  right: 8px;
+  right: -6px;
   transform: none !important;
 }
 
@@ -223,12 +266,6 @@ h3.mb-0 {
   height: 2px;
   border-radius: 999px;
   background: currentColor;
-}
-
-.mobile-nav-badge {
-  position: absolute;
-  top: -6px;
-  right: -6px;
 }
 
 .mobile-nav-list {
@@ -780,6 +817,7 @@ a:hover {
 
   .top-nav-wrap {
     width: auto;
+    gap: 8px;
   }
 
   .service-shell > .d-flex.justify-content-between.align-items-center.mb-3 .d-flex.gap-2,
@@ -804,6 +842,10 @@ a:hover {
     display: none !important;
   }
 
+  .top-nav-icon-btn-mobile {
+    display: inline-flex;
+  }
+
   .mobile-nav-menu {
     display: block !important;
   }
@@ -826,6 +868,11 @@ a:hover {
   }
 
   .mobile-nav-toggle {
+    width: 40px;
+    height: 40px;
+  }
+
+  .top-nav-icon-btn {
     width: 40px;
     height: 40px;
   }

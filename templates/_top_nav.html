@@ -20,7 +20,13 @@
   <div class="top-nav-bar top-nav-bar-desktop">
     <a class="btn btn-outline-secondary{% if is_tickets %} top-nav-link-active{% endif %}" href="/web">Заявки</a>
     <a class="btn btn-outline-secondary{% if is_receipts %} top-nav-link-active{% endif %}" href="/web/receipts">Чеки</a>
-    <a class="btn btn-outline-secondary position-relative{% if is_notifications %} top-nav-link-active{% endif %}" href="/web/notifications">Уведомления<span class="position-absolute badge rounded-pill text-bg-danger d-none" data-notifications-badge></span></a>
+    <a class="top-nav-icon-btn position-relative{% if is_notifications %} top-nav-icon-btn-active{% endif %}" href="/web/notifications" aria-label="Уведомления" title="Уведомления">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3a4 4 0 0 0-4 4v1.2a6.8 6.8 0 0 1-1.5 4.3l-.9 1.1a1 1 0 0 0 .8 1.7h11.2a1 1 0 0 0 .8-1.7l-.9-1.1A6.8 6.8 0 0 1 16 8.2V7a4 4 0 0 0-4-4Z"></path>
+        <path d="M9.8 18a2.3 2.3 0 0 0 4.4 0"></path>
+      </svg>
+      <span class="position-absolute badge rounded-pill text-bg-danger d-none" data-notifications-badge></span>
+    </a>
     <details class="more-menu">
       <summary class="btn btn-outline-secondary{% if is_more %} top-nav-link-active{% endif %}">Еще</summary>
       <div class="more-menu-list">
@@ -43,6 +49,13 @@
       </div>
     </details>
   </div>
+  <a class="top-nav-icon-btn top-nav-icon-btn-mobile position-relative{% if is_notifications %} top-nav-icon-btn-active{% endif %}" href="/web/notifications" aria-label="Уведомления" title="Уведомления">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3a4 4 0 0 0-4 4v1.2a6.8 6.8 0 0 1-1.5 4.3l-.9 1.1a1 1 0 0 0 .8 1.7h11.2a1 1 0 0 0 .8-1.7l-.9-1.1A6.8 6.8 0 0 1 16 8.2V7a4 4 0 0 0-4-4Z"></path>
+      <path d="M9.8 18a2.3 2.3 0 0 0 4.4 0"></path>
+    </svg>
+    <span class="position-absolute badge rounded-pill text-bg-danger d-none" data-notifications-badge></span>
+  </a>
   <details class="mobile-nav-menu">
     <summary class="mobile-nav-toggle{% if is_more %} mobile-nav-toggle-active{% endif %}" aria-label="Открыть меню" title="Меню">
       <span class="mobile-nav-icon" aria-hidden="true">
@@ -51,12 +64,10 @@
         <span></span>
       </span>
       <span class="mobile-nav-label visually-hidden">Меню</span>
-      <span class="mobile-nav-badge badge rounded-pill text-bg-danger d-none" data-notifications-badge></span>
     </summary>
     <div class="mobile-nav-list more-menu-list">
       <a class="{% if is_tickets %}top-nav-item-active{% endif %}" href="/web">Заявки</a>
       <a class="{% if is_receipts %}top-nav-item-active{% endif %}" href="/web/receipts">Чеки</a>
-      <a class="{% if is_notifications %}top-nav-item-active{% endif %}" href="/web/notifications">Уведомления</a>
       <a class="{% if is_archive %}top-nav-item-active{% endif %}" href="/web/archive">Архив</a>
       <a class="{% if is_settings %}top-nav-item-active{% endif %}" href="/web/settings">Настройки</a>
       {% if show_templates %}
