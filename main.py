@@ -1614,6 +1614,16 @@ def can_access_ticket(user: User, ticket: Ticket) -> bool:
     return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
 
 
+def can_take_ticket_in_work(user: User, ticket: Ticket) -> bool:
+    if ticket.status != TicketStatus.new:
+        return False
+    if not can_access_ticket(user, ticket):
+        return False
+    if not is_assignable_executor_user(user):
+        return False
+    return ticket.executor_id is None or ticket.executor_id == user.id
+
+
 def get_api_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
@@ -9567,6 +9577,72 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
 
     # РёРЅР°С‡Рµ РѕР±С‹С‡РЅС‹Р№ СЃС†РµРЅР°СЂРёР№ (РїРµСЂРµР·Р°РіСЂСѓР·РєР°)
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/web/tickets/{ticket_id}/quick-action")
+async def web_ticket_quick_action(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = get_company_ticket_or_404(db, user, ticket_id)
+    if not can_access_ticket(user, t):
+        raise HTTPException(403, "Forbidden")
+
+    form = await request.form()
+    action = (form.get("action") or "").strip()
+    default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
+    next_url = safe_next(form.get("next"), fallback=default_next)
+
+    old_status = t.status
+    old_executor_id = t.executor_id
+    changed = False
+
+    if action == "take_in_work":
+        if not can_take_ticket_in_work(user, t):
+            raise HTTPException(403, "Forbidden")
+        if t.executor_id != user.id:
+            t.executor_id = user.id
+            add_ticket_log(
+                db,
+                ticket_id=t.id,
+                actor_id=user.id,
+                action=ticket_field_change_log_action(
+                    "исполнителя",
+                    _ticket_user_name(db, old_executor_id),
+                    _ticket_user_name(db, t.executor_id),
+                ),
+            )
+            changed = True
+        if t.status != TicketStatus.in_progress:
+            t.status = TicketStatus.in_progress
+            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
+            changed = True
+    elif action == "complete":
+        if not can_close_ticket(user, t):
+            raise HTTPException(403, "Forbidden")
+        if t.status != TicketStatus.in_progress:
+            return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+        t.status = TicketStatus.done
+        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
+        changed = True
+    else:
+        raise HTTPException(400, "Unknown quick action")
+
+    if not changed:
+        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
+
+    ensure_default_ticket_watchers(db, t)
+    db.commit()
+    db.refresh(t)
+
+    notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
+    if t.status != old_status:
+        notify_curators_status_changed(db, t, actor=user, old_status=old_status)
+    db.commit()
+
+    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/tickets/{ticket_id}/archive")

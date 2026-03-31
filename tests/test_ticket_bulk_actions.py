@@ -63,6 +63,7 @@ class TicketBulkActionsTests(unittest.TestCase):
                 role=main.Role.executor,
                 company_id=company.id,
                 email_verified=True,
+                is_assignable_executor=True,
             )
             other_executor = main.User(
                 email="other@example.com",
@@ -71,6 +72,7 @@ class TicketBulkActionsTests(unittest.TestCase):
                 role=main.Role.executor,
                 company_id=company.id,
                 email_verified=True,
+                is_assignable_executor=True,
             )
             db.add_all([admin, executor, other_executor])
             db.flush()
@@ -111,6 +113,15 @@ class TicketBulkActionsTests(unittest.TestCase):
                 project_id=project.id,
                 created_by=other_executor.id,
             )
+            in_progress_ticket = main.Ticket(
+                title="In progress ticket",
+                description="ready to complete",
+                status=main.TicketStatus.in_progress,
+                company_id=company.id,
+                project_id=project.id,
+                created_by=admin.id,
+                executor_id=executor.id,
+            )
             archived_ticket = main.Ticket(
                 title="Archived ticket",
                 description="in archive",
@@ -123,7 +134,7 @@ class TicketBulkActionsTests(unittest.TestCase):
                 retention_days=30,
                 delete_at=main.local_now() + timedelta(days=30),
             )
-            db.add_all([done_ticket, new_ticket, own_ticket, foreign_ticket, archived_ticket])
+            db.add_all([done_ticket, new_ticket, own_ticket, foreign_ticket, in_progress_ticket, archived_ticket])
             db.commit()
             return {
                 "admin_id": admin.id,
@@ -134,6 +145,7 @@ class TicketBulkActionsTests(unittest.TestCase):
                 "new_ticket_id": new_ticket.id,
                 "own_ticket_id": own_ticket.id,
                 "foreign_ticket_id": foreign_ticket.id,
+                "in_progress_ticket_id": in_progress_ticket.id,
                 "archived_ticket_id": archived_ticket.id,
             }
 
@@ -205,6 +217,59 @@ class TicketBulkActionsTests(unittest.TestCase):
         with main.SessionLocal() as db:
             self.assertIsNone(db.get(main.Ticket, ids["own_ticket_id"]))
             self.assertIsNotNone(db.get(main.Ticket, ids["foreign_ticket_id"]))
+
+    def test_table_view_renders_status_based_quick_actions(self):
+        ids = self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.get("/web?view_mode=table")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'action="/web/tickets/{ids["own_ticket_id"]}/quick-action"', response.text)
+        self.assertIn("Взять в работу", response.text)
+        self.assertIn(f'action="/web/tickets/{ids["in_progress_ticket_id"]}/quick-action"', response.text)
+        self.assertIn("Выполнить", response.text)
+
+    def test_quick_action_take_in_work_assigns_executor_and_sets_in_progress(self):
+        ids = self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.post(
+            f"/web/tickets/{ids['own_ticket_id']}/quick-action",
+            data={
+                "action": "take_in_work",
+                "next": "/web?view_mode=table",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/web?view_mode=table")
+        with main.SessionLocal() as db:
+            ticket = db.get(main.Ticket, ids["own_ticket_id"])
+            self.assertEqual(ticket.status, main.TicketStatus.in_progress)
+            self.assertEqual(ticket.executor_id, ids["executor_id"])
+
+    def test_quick_action_complete_sets_done_status(self):
+        ids = self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.post(
+            f"/web/tickets/{ids['in_progress_ticket_id']}/quick-action",
+            data={
+                "action": "complete",
+                "next": "/web?view_mode=table",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/web?view_mode=table")
+        with main.SessionLocal() as db:
+            ticket = db.get(main.Ticket, ids["in_progress_ticket_id"])
+            self.assertEqual(ticket.status, main.TicketStatus.done)
 
 
 if __name__ == "__main__":

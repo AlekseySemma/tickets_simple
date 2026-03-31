@@ -1112,6 +1112,8 @@
               {% set can_close_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_close_tickets and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id)) %}
               {% set can_edit_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
               {% set can_delete_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+              {% set can_take_in_work_current = t.status.value == "NEW" and user.is_assignable_executor and (t.executor_id is none or t.executor_id == user.id) and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id))) %}
+              {% set can_quick_complete_current = t.status.value == "IN_PROGRESS" and can_close_current %}
               <tr id="ticket-{{ t.id }}" class="ticket-status-{{ t.status.value }}{% if is_overdue %} overdue{% elif is_deadline_soon %} soon{% endif %}">
                 {% if has_bulk_actions %}
                 <td class="bulk-select-cell">
@@ -1178,6 +1180,19 @@
                 <td class="text-nowrap">
                   <div class="d-flex gap-1">
                     {% if not is_archive_page %}
+                      {% if can_take_in_work_current %}
+                      <form method="post" action="/web/tickets/{{ t.id }}/quick-action" class="m-0">
+                        <input type="hidden" name="action" value="take_in_work">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <button class="btn btn-sm btn-outline-primary">Взять в работу</button>
+                      </form>
+                      {% elif can_quick_complete_current %}
+                      <form method="post" action="/web/tickets/{{ t.id }}/quick-action" class="m-0">
+                        <input type="hidden" name="action" value="complete">
+                        <input type="hidden" name="next" value="{{ current_list_url }}">
+                        <button class="btn btn-sm btn-primary">Выполнить</button>
+                      </form>
+                      {% endif %}
                       {% if can_edit_current %}
                       <a class="btn btn-sm btn-outline-secondary" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
                       {% endif %}
@@ -1227,6 +1242,8 @@
       {% set can_close_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_close_tickets and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id)) %}
       {% set can_edit_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
       {% set can_delete_current = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+      {% set can_take_in_work_current = t.status.value == "NEW" and user.is_assignable_executor and (t.executor_id is none or t.executor_id == user.id) and (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (user.can_view_all_tickets or t.executor_id == user.id or t.created_by == user.id))) %}
+      {% set can_quick_complete_current = t.status.value == "IN_PROGRESS" and can_close_current %}
       <div id="ticket-{{ t.id }}" class="ticket ticket-status-{{ t.status.value }} shadow-sm{% if deadline_overdue %} overdue{% elif is_deadline_soon %} soon{% endif %}">
         <div class="ticket-row">
           <div class="ticket-main">
@@ -1301,6 +1318,20 @@
 
             {% set can_archive = (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) and t.status.value in ["DONE", "CANCELED"] %}
             {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
+
+            {% if not is_archive_page and can_take_in_work_current %}
+            <form method="post" action="/web/tickets/{{ t.id }}/quick-action" class="mt-2">
+            <input type="hidden" name="action" value="take_in_work">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
+              <button class="btn btn-sm btn-outline-primary w-100">Взять в работу</button>
+            </form>
+            {% elif not is_archive_page and can_quick_complete_current %}
+            <form method="post" action="/web/tickets/{{ t.id }}/quick-action" class="mt-2">
+            <input type="hidden" name="action" value="complete">
+            <input type="hidden" name="next" value="{{ current_list_url }}">
+              <button class="btn btn-sm btn-primary w-100">Выполнить</button>
+            </form>
+            {% endif %}
 
             {% if not is_archive_page and can_edit_current %}
   <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/web/tickets/{{ t.id }}/edit?next={{ current_list_url_encoded }}">Изменить</a>
