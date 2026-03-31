@@ -57,6 +57,31 @@ class WebAuthRoutesTests(unittest.TestCase):
             db.add(user)
             db.commit()
 
+    def seed_invite(self) -> str:
+        with main.SessionLocal() as db:
+            company = main.Company(name="Invite Co")
+            db.add(company)
+            db.flush()
+            admin = main.User(
+                email="admin@invite.local",
+                name="Admin",
+                password_hash=main.hash_password("secret123"),
+                role=main.Role.admin,
+                company_id=company.id,
+                email_verified=True,
+            )
+            db.add(admin)
+            db.flush()
+            invite = main.RegistrationInvite(
+                token="web-auth-invite-token",
+                role=main.Role.executor,
+                company_id=company.id,
+                created_by=admin.id,
+            )
+            db.add(invite)
+            db.commit()
+            return invite.token
+
     def test_login_page_renders_logout_message(self):
         response = self.client.get("/web/login?info=logged_out_all")
 
@@ -74,6 +99,33 @@ class WebAuthRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/web")
+        self.assertIn("access_token=", response.headers.get("set-cookie", ""))
+
+    def test_register_submit_creates_unverified_user_from_invite(self):
+        invite_token = self.seed_invite()
+
+        response = self.client.post(
+            "/web/register",
+            data={
+                "token": invite_token,
+                "name": "Worker",
+                "email": "worker@example.com",
+                "password": "secret123",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        with main.SessionLocal() as db:
+            user = db.query(main.User).filter(main.User.email == "worker@example.com").first()
+            self.assertIsNotNone(user)
+            self.assertFalse(user.email_verified)
+            self.assertEqual(user.role, main.Role.executor)
+
+    def test_web_logout_clears_cookie_and_redirects(self):
+        response = self.client.get("/web/logout", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/web/login")
         self.assertIn("access_token=", response.headers.get("set-cookie", ""))
 
 

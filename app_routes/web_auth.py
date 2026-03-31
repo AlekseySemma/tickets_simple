@@ -1,4 +1,6 @@
-from fastapi import Depends, Request
+from datetime import datetime
+
+from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 
@@ -21,10 +23,25 @@ def register_web_auth_routes(
     bump_user_auth_token_version,
     clear_password_reset_state,
     hash_password,
+    normalize_capability_flags,
+    prepare_user_email_verification,
+    send_user_verification_email,
+    send_user_password_reset_email,
+    get_active_invite,
+    register_company_owner,
     templates,
+    logger,
     user_model,
+    company_model,
+    role_enum,
+    email_delivery_error,
+    bootstrap_setup_in_model,
     rl_login_limit,
     rl_login_window_sec,
+    rl_register_limit,
+    rl_register_window_sec,
+    rl_password_reset_limit,
+    rl_password_reset_window_sec,
     http_303_see_other,
     sqlalchemy_error,
 ):
@@ -82,6 +99,272 @@ def register_web_auth_routes(
             **get_auth_cookie_params(request),
         )
         audit_security_event("web_login", request, success=True, email=email, user_id=user.id)
+        return response
+
+    @app.get("/web/register-company")
+    def web_register_company_page(request: Request):
+        return templates.TemplateResponse(
+            "register_company.html",
+            {"request": request, "error": None, "success": False},
+        )
+
+    @app.post("/web/register-company")
+    async def web_register_company_submit(request: Request, db=Depends(get_db)):
+        form = await request.form()
+        company_name = (form.get("company_name") or "").strip()
+        admin_name = (form.get("admin_name") or "").strip()
+        admin_email = (form.get("admin_email") or "").strip()
+        admin_password = (form.get("admin_password") or "").strip()
+
+        try:
+            payload = bootstrap_setup_in_model(
+                company_name=company_name,
+                admin_name=admin_name,
+                admin_email=admin_email,
+                admin_password=admin_password,
+            )
+            _ = register_company_owner(
+                payload=payload,
+                request=request,
+                db=db,
+                get_client_ip=get_client_ip,
+                hit_rate_limit=hit_rate_limit,
+                audit_security_event=audit_security_event,
+                hash_password=hash_password,
+                normalize_capability_flags=normalize_capability_flags,
+                prepare_user_email_verification=prepare_user_email_verification,
+                send_user_verification_email=send_user_verification_email,
+                logger=logger,
+                user_model=user_model,
+                company_model=company_model,
+                role_enum=role_enum,
+                email_delivery_error=email_delivery_error,
+                rl_register_limit=rl_register_limit,
+                rl_register_window_sec=rl_register_window_sec,
+            )
+            return templates.TemplateResponse(
+                "register_company.html",
+                {"request": request, "error": None, "success": True},
+            )
+        except HTTPException as exc:
+            return templates.TemplateResponse(
+                "register_company.html",
+                {"request": request, "error": str(exc.detail), "success": False},
+            )
+        except Exception:
+            audit_security_event("register_company", request, success=False, email=admin_email, detail="validation_error")
+            return templates.TemplateResponse(
+                "register_company.html",
+                {"request": request, "error": "РџСЂРѕРІРµСЂСЊС‚Рµ РІРІРµРґРµРЅРЅС‹Рµ РґР°РЅРЅС‹Рµ", "success": False},
+            )
+
+    @app.get("/web/register")
+    def web_register_page(request: Request, token: str | None = None, db=Depends(get_db)):
+        invite = get_active_invite(db, token)
+        role_value = invite.role.value if invite else ""
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "token": (token or "").strip(),
+                "role_value": role_value,
+                "error": None,
+                "success": False,
+            },
+        )
+
+    @app.post("/web/register")
+    async def web_register_submit(request: Request, db=Depends(get_db)):
+        form = await request.form()
+        token = (form.get("token") or "").strip()
+        name = (form.get("name") or "").strip()
+        email = (form.get("email") or "").strip()
+        password = (form.get("password") or "").strip()
+        ip = get_client_ip(request)
+        limited, _ = hit_rate_limit(f"web-register:{ip}", rl_register_limit * 2, rl_register_window_sec)
+        if limited:
+            audit_security_event("web_register", request, success=False, email=email, detail="rate_limited")
+            return templates.TemplateResponse(
+                "register.html",
+                {"request": request, "token": token, "role_value": "", "error": "Слишком много попыток. Попробуйте позже.", "success": False},
+                status_code=429,
+            )
+
+        invite = get_active_invite(db, token)
+        role_value = invite.role.value if invite else ""
+
+        if not invite:
+            audit_security_event("web_register", request, success=False, email=email, detail="invalid_invite")
+            return templates.TemplateResponse(
+                "register.html",
+                {"request": request, "token": token, "role_value": role_value, "error": "Ссылка недействительна", "success": False},
+            )
+        if not (name and email and password):
+            audit_security_event("web_register", request, success=False, email=email, detail="missing_fields")
+            return templates.TemplateResponse(
+                "register.html",
+                {"request": request, "token": token, "role_value": role_value, "error": "Заполните все поля", "success": False},
+            )
+        if db.query(user_model).filter(user_model.email == email).first():
+            audit_security_event("web_register", request, success=False, email=email, detail="email_exists")
+            return templates.TemplateResponse(
+                "register.html",
+                {"request": request, "token": token, "role_value": role_value, "error": "Email уже используется", "success": False},
+            )
+
+        try:
+            user = user_model(
+                email=email,
+                name=name,
+                password_hash=hash_password(password),
+                role=invite.role,
+                company_id=invite.company_id,
+                **normalize_capability_flags(invite.role),
+            )
+            prepare_user_email_verification(user, force_new_token=True)
+            db.add(user)
+            db.flush()
+
+            invite.used_by = user.id
+            invite.used_at = datetime.utcnow()
+            db.commit()
+        except sqlalchemy_error:
+            audit_security_event("web_register", request, success=False, email=email, detail="db_error")
+            db.rollback()
+            return templates.TemplateResponse(
+                "register.html",
+                {"request": request, "token": token, "role_value": role_value, "error": "Не удалось завершить регистрацию", "success": False},
+            )
+        try:
+            send_user_verification_email(request, db, user)
+        except email_delivery_error:
+            logger.exception("Could not send verification email to %s", user.email)
+
+        audit_security_event("web_register", request, success=True, email=email, user_id=user.id)
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "token": "", "role_value": invite.role.value, "error": None, "success": True},
+        )
+
+    @app.get("/web/password-reset")
+    def web_password_reset_page(request: Request):
+        return templates.TemplateResponse(
+            "password_reset_request.html",
+            {"request": request, "success": False, "message": None},
+        )
+
+    @app.post("/web/password-reset")
+    async def web_password_reset_submit(request: Request, db=Depends(get_db)):
+        form = await request.form()
+        email = (form.get("email") or "").strip()
+        ip = get_client_ip(request)
+        limited_ip, _ = hit_rate_limit(
+            f"password-reset-ip:{ip}",
+            rl_password_reset_limit * 2,
+            rl_password_reset_window_sec,
+        )
+        limited_email, _ = hit_rate_limit(
+            f"password-reset-email:{(email or '').lower()}",
+            rl_password_reset_limit,
+            rl_password_reset_window_sec,
+        )
+        if not limited_ip and not limited_email and email:
+            user = db.query(user_model).filter(user_model.email == email).first()
+            if user:
+                try:
+                    send_user_password_reset_email(request, db, user, force_new_token=True)
+                    audit_security_event("password_reset_request", request, success=True, email=email, user_id=user.id)
+                except email_delivery_error:
+                    logger.exception("Could not send password reset email to %s", user.email)
+            else:
+                audit_security_event("password_reset_request", request, success=True, email=email, detail="ignored")
+        else:
+            audit_security_event("password_reset_request", request, success=False, email=email, detail="rate_limited")
+        return templates.TemplateResponse(
+            "password_reset_request.html",
+            {
+                "request": request,
+                "success": True,
+                "message": "Если аккаунт существует, мы отправили письмо со ссылкой для сброса пароля.",
+            },
+        )
+
+    @app.get("/web/password-reset/confirm")
+    def web_password_reset_confirm_page(request: Request, token: str | None = None, db=Depends(get_db)):
+        token_value = (token or "").strip()
+        user = None
+        if token_value:
+            user = db.query(user_model).filter(user_model.password_reset_token == token_value).first()
+        if not user:
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
+                status_code=400,
+            )
+        if user.password_reset_expires_at and user.password_reset_expires_at <= datetime.utcnow():
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
+                status_code=400,
+            )
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": token_value, "success": False, "error": None},
+        )
+
+    @app.post("/web/password-reset/confirm")
+    async def web_password_reset_confirm_submit(request: Request, db=Depends(get_db)):
+        form = await request.form()
+        token_value = (form.get("token") or "").strip()
+        password = (form.get("password") or "").strip()
+        password_confirm = (form.get("password_confirm") or "").strip()
+        user = None
+        if token_value:
+            user = db.query(user_model).filter(user_model.password_reset_token == token_value).first()
+        if not user:
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
+                status_code=400,
+            )
+        if user.password_reset_expires_at and user.password_reset_expires_at <= datetime.utcnow():
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
+                status_code=400,
+            )
+        if not password:
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": token_value, "success": False, "error": "Введите новый пароль."},
+                status_code=400,
+            )
+        if len(password) < 8:
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": token_value, "success": False, "error": "Пароль должен быть не короче 8 символов."},
+                status_code=400,
+            )
+        if password != password_confirm:
+            return templates.TemplateResponse(
+                "password_reset_confirm.html",
+                {"request": request, "token": token_value, "success": False, "error": "Пароли не совпадают."},
+                status_code=400,
+            )
+        user.password_hash = hash_password(password)
+        bump_user_auth_token_version(user)
+        clear_password_reset_state(user)
+        db.commit()
+        audit_security_event("password_reset_confirm", request, success=True, email=user.email, user_id=user.id)
+        return templates.TemplateResponse(
+            "password_reset_confirm.html",
+            {"request": request, "token": "", "success": True, "error": None},
+        )
+
+    @app.get("/web/logout")
+    def web_logout(request: Request):
+        response = RedirectResponse(url="/web/login", status_code=http_303_see_other)
+        delete_auth_cookie(response, request)
         return response
 
     @app.post("/web/settings/logout-all")
