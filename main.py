@@ -35,6 +35,7 @@ from starlette.responses import JSONResponse
 from app_routes.auth import register_auth_routes, register_company_owner
 from app_routes.notifications import register_notification_routes
 from app_routes.push_mobile import register_push_mobile_routes
+from app_routes.web_auth import register_web_auth_routes
 from app_support.access import (
     can_access_receipt,
     can_access_ticket,
@@ -4379,6 +4380,32 @@ register_auth_routes(
     rl_email_verification_window_sec=RL_EMAIL_VERIFICATION_WINDOW_SEC,
 )
 
+register_web_auth_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    get_client_ip=get_client_ip,
+    hit_rate_limit=hit_rate_limit,
+    audit_security_event=audit_security_event,
+    verify_password=verify_password,
+    is_user_email_verified=is_user_email_verified,
+    create_access_token=create_access_token,
+    get_user_auth_token_version=get_user_auth_token_version,
+    get_auth_cookie_params=get_auth_cookie_params,
+    delete_auth_cookie=delete_auth_cookie,
+    normalize_settings_section=normalize_settings_section,
+    build_settings_url=build_settings_url,
+    bump_user_auth_token_version=bump_user_auth_token_version,
+    clear_password_reset_state=clear_password_reset_state,
+    hash_password=hash_password,
+    templates=templates,
+    user_model=User,
+    rl_login_limit=RL_LOGIN_LIMIT,
+    rl_login_window_sec=RL_LOGIN_WINDOW_SEC,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
 register_notification_routes(
     app,
     get_db=get_db,
@@ -5442,61 +5469,6 @@ def download_comment_media(
 # =========================
 # WEB UI
 # =========================
-@app.get("/web/login")
-def web_login_page(request: Request):
-    info = (request.query_params.get("info") or "").strip().lower()
-    info_message = None
-    if info == "logged_out_all":
-        info_message = "Сессии на всех устройствах завершены. Войдите снова."
-    elif info == "password_changed":
-        info_message = "Пароль изменён. Войдите с новым паролем."
-    return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info_message})
-
-@app.post("/web/login")
-async def web_login(request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    email = (form.get("email") or "").strip()
-    password = form.get("password")
-    ip = get_client_ip(request)
-
-    limited_ip, _ = hit_rate_limit(f"web-login-ip:{ip}", RL_LOGIN_LIMIT * 3, RL_LOGIN_WINDOW_SEC)
-    limited_user, _ = hit_rate_limit(f"web-login-user:{ip}:{email.lower()}", RL_LOGIN_LIMIT, RL_LOGIN_WINDOW_SEC)
-    if limited_ip or limited_user:
-        audit_security_event("web_login", request, success=False, email=email, detail="rate_limited")
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u043f\u043e\u043f\u044b\u0442\u043e\u043a \u0432\u0445\u043e\u0434\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0437\u0436\u0435.", "info": None},
-            status_code=429,
-        )
-
-    user = db.query(User).filter(User.email == email).first()
-    if not user or not verify_password(password, user.password_hash):
-        audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
-        return templates.TemplateResponse("login.html", {"request": request, "error": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c", "info": None})
-    if not is_user_email_verified(user):
-        audit_security_event("web_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "error": "Подтвердите email по ссылке из письма, затем повторите вход.",
-                "info": None,
-            },
-            status_code=403,
-        )
-
-    token = create_access_token(str(user.id), get_user_auth_token_version(user))
-    resp = RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
-
-    resp.set_cookie(
-        "access_token",
-        token,
-        **get_auth_cookie_params(request),
-    )
-    audit_security_event("web_login", request, success=True, email=email, user_id=user.id)
-    return resp
-
-
 @app.get("/web/register-company")
 def web_register_company_page(request: Request):
     return templates.TemplateResponse(
@@ -6438,72 +6410,6 @@ def web_settings(
             "max_archive_retention_days": MAX_ARCHIVE_RETENTION_DAYS,
         },
     )
-
-
-@app.post("/web/settings/logout-all")
-async def web_settings_logout_all(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    form = await request.form()
-    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
-    try:
-        bump_user_auth_token_version(user)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(
-            url=build_settings_url(section, session_revoke_error="save_failed"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    audit_security_event("logout_all_devices", request, success=True, email=user.email, user_id=user.id)
-    resp = RedirectResponse(url="/web/login?info=logged_out_all", status_code=HTTP_303_SEE_OTHER)
-    delete_auth_cookie(resp, request)
-    return resp
-
-
-@app.post("/web/settings/change-password")
-async def web_settings_change_password(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    form = await request.form()
-    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
-    current_password = (form.get("current_password") or "").strip()
-    new_password = (form.get("new_password") or "").strip()
-    new_password_confirm = (form.get("new_password_confirm") or "").strip()
-    if not verify_password(current_password, user.password_hash):
-        return RedirectResponse(
-            url=build_settings_url(section, password_change_error="invalid_current_password"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    if len(new_password) < 8:
-        return RedirectResponse(
-            url=build_settings_url(section, password_change_error="password_too_short"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    if new_password != new_password_confirm:
-        return RedirectResponse(
-            url=build_settings_url(section, password_change_error="password_mismatch"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    try:
-        user.password_hash = hash_password(new_password)
-        bump_user_auth_token_version(user)
-        clear_password_reset_state(user)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(
-            url=build_settings_url(section, password_change_error="save_failed"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    audit_security_event("password_change", request, success=True, email=user.email, user_id=user.id)
-    resp = RedirectResponse(url="/web/login?info=password_changed", status_code=HTTP_303_SEE_OTHER)
-    delete_auth_cookie(resp, request)
-    return resp
 
 
 @app.post("/web/settings/deadline-warning")
