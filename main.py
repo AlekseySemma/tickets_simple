@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, date
 import csv
 from decimal import Decimal, InvalidOperation
 from email.message import EmailMessage
-from enum import Enum
 import hashlib
 import io
 import json
@@ -33,6 +32,54 @@ from starlette.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
+from app_support.access import (
+    can_access_receipt,
+    can_access_ticket,
+    can_archive_ticket,
+    can_close_ticket,
+    can_create_company_ticket,
+    can_delete_comment,
+    can_delete_ticket,
+    can_edit_ticket,
+    can_manage_ticket_legal_hold,
+    can_restore_ticket,
+    can_take_ticket_in_work,
+    can_view_all_company_tickets,
+    ensure_company_user,
+    is_admin,
+    is_assignable_executor_user,
+    is_manager,
+    is_platform_admin,
+)
+from app_support.enums import (
+    ARCHIVE_SOURCE_STATUSES,
+    COMPANY_ACCESS_LEVELS,
+    DEFAULT_ROLE_TEMPLATE_PRESETS,
+    FINAL_TICKET_STATUSES,
+    MANAGER_ROLES,
+    MAX_ROLE_LABEL_LEN,
+    MAX_ROLE_TEMPLATE_NAME_LEN,
+    ReceiptStatus,
+    Role,
+    TicketStatus,
+    access_level_label_ru,
+    receipt_status_label_ru,
+    status_label_ru,
+    ticket_status_change_log_action,
+)
+from app_support.startup import (
+    ensure_platform_admin_user,
+    maybe_repair_text_on_start,
+    start_background_threads,
+)
+from app_support.web import (
+    append_query_params,
+    first_header_value,
+    get_client_ip,
+    normalize_origin,
+    request_origin,
+    safe_next,
+)
 try:
     from pywebpush import webpush, WebPushException
     PYWEBPUSH_AVAILABLE = True
@@ -301,112 +348,6 @@ class Base(DeclarativeBase):
 # =========================
 # РњРѕРґРµР»Рё
 # =========================
-class Role(str, Enum):
-    platform_admin = "PLATFORM_ADMIN"
-    admin = "ADMIN"
-    curator = "CURATOR"
-    executor = "EXECUTOR"
-
-
-MANAGER_ROLES = (Role.admin, Role.curator)
-COMPANY_ACCESS_LEVELS = (Role.admin, Role.curator, Role.executor)
-ACCESS_LEVEL_LABELS_RU = {
-    Role.platform_admin: "Платформенный админ",
-    Role.admin: "Владелец",
-    Role.curator: "Куратор",
-    Role.executor: "Сотрудник",
-}
-MAX_ROLE_LABEL_LEN = 80
-MAX_ROLE_TEMPLATE_NAME_LEN = 80
-DEFAULT_ROLE_TEMPLATE_PRESETS = (
-    {
-        "name": "Куратор",
-        "access_level": Role.curator,
-        "is_assignable_executor": False,
-        "show_receipts_accounting_mode": True,
-        "can_view_all_tickets": True,
-        "can_create_tickets": True,
-        "can_close_tickets": True,
-    },
-    {
-        "name": "Исполнитель",
-        "access_level": Role.executor,
-        "is_assignable_executor": True,
-        "show_receipts_accounting_mode": False,
-        "can_view_all_tickets": False,
-        "can_create_tickets": True,
-        "can_close_tickets": True,
-    },
-    {
-        "name": "Старший исполнитель",
-        "access_level": Role.executor,
-        "is_assignable_executor": True,
-        "show_receipts_accounting_mode": True,
-        "can_view_all_tickets": True,
-        "can_create_tickets": True,
-        "can_close_tickets": True,
-    },
-)
-
-class TicketStatus(str, Enum):
-    new = "NEW"
-    in_progress = "IN_PROGRESS"
-    done = "DONE"
-    canceled = "CANCELED"
-    archived = "ARCHIVED"
-
-
-class ReceiptStatus(str, Enum):
-    new = "NEW"
-    in_processing = "IN_PROCESSING"
-    accepted = "ACCEPTED"
-    rejected = "REJECTED"
-
-
-STATUS_LABELS_RU = {
-    TicketStatus.new: "\u041d\u043e\u0432\u0430\u044f",
-    TicketStatus.in_progress: "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
-    TicketStatus.done: "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
-    TicketStatus.canceled: "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
-    TicketStatus.archived: "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435",
-}
-
-FINAL_TICKET_STATUSES = (TicketStatus.done, TicketStatus.canceled, TicketStatus.archived)
-ARCHIVE_SOURCE_STATUSES = (TicketStatus.done, TicketStatus.canceled)
-RECEIPT_STATUS_LABELS_RU = {
-    ReceiptStatus.new: "Новый",
-    ReceiptStatus.in_processing: "В обработке",
-    ReceiptStatus.accepted: "Принят",
-    ReceiptStatus.rejected: "Отклонён",
-}
-
-
-def status_label_ru(value: TicketStatus | str) -> str:
-    if isinstance(value, TicketStatus):
-        return STATUS_LABELS_RU.get(value, value.value)
-    try:
-        status_value = TicketStatus(value)
-    except ValueError:
-        return value
-    return STATUS_LABELS_RU.get(status_value, status_value.value)
-
-
-def receipt_status_label_ru(value: ReceiptStatus | str) -> str:
-    if isinstance(value, ReceiptStatus):
-        return RECEIPT_STATUS_LABELS_RU.get(value, value.value)
-    try:
-        status_value = ReceiptStatus(value)
-    except ValueError:
-        return value
-    return RECEIPT_STATUS_LABELS_RU.get(status_value, status_value.value)
-
-
-def ticket_status_change_log_action(old_status: TicketStatus | str, new_status: TicketStatus | str) -> str:
-    old_label = status_label_ru(old_status)
-    new_label = status_label_ru(new_status)
-    return f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u0430: {old_label} -> {new_label}"
-
-
 def ticket_field_change_log_action(field_label: str, old_value: str | None, new_value: str | None) -> str:
     old_text = (old_value or "").strip() or "\u2014"
     new_text = (new_value or "").strip() or "\u2014"
@@ -451,16 +392,6 @@ def _department_name(db: Session, department_id: int | None) -> str | None:
 
 def _ticket_deadline_text(value: datetime | None) -> str | None:
     return format_deadline(value) if value else None
-
-
-def access_level_label_ru(value: Role | str) -> str:
-    if isinstance(value, Role):
-        return ACCESS_LEVEL_LABELS_RU.get(value, value.value)
-    try:
-        role_value = Role(value)
-    except ValueError:
-        return str(value)
-    return ACCESS_LEVEL_LABELS_RU.get(role_value, role_value.value)
 
 
 def normalize_role_label(raw_value: str | None) -> str | None:
@@ -1374,12 +1305,6 @@ def get_db():
     finally:
         db.close()
 
-def safe_next(next_url: str | None, fallback: str = "/web") -> str:
-    n = (next_url or "").strip()
-    if not n:
-        return fallback
-    return n if n.startswith("/web") else fallback
-
 
 def is_native_android_app_request(request: Request) -> bool:
     user_agent = (request.headers.get("user-agent") or "").strip().lower()
@@ -1391,33 +1316,6 @@ def normalize_mobile_platform(value: str | None) -> str:
     return platform if platform in {"android"} else ""
 
 
-def append_query_params(url: str, **params: object) -> str:
-    items: list[tuple[str, str]] = []
-    for key, value in params.items():
-        if value is None or value is False or value == "":
-            continue
-        items.append((key, "1" if value is True else str(value)))
-    if not items:
-        return url
-    separator = "&" if "?" in url else "?"
-    return f"{url}{separator}{urlencode(items)}"
-
-
-def first_header_value(value: str | None) -> str:
-    return (value or "").split(",")[0].strip()
-
-
-def get_client_ip(request: Request | None) -> str:
-    if request is None:
-        return "unknown"
-    forwarded_for = first_header_value(request.headers.get("x-forwarded-for"))
-    if forwarded_for:
-        return forwarded_for
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
-
-
 def normalize_email(value: str | None) -> str | None:
     v = (value or "").strip().lower()
     return v or None
@@ -1425,30 +1323,6 @@ def normalize_email(value: str | None) -> str | None:
 
 def normalize_department_name(value: str | None) -> str:
     return " ".join((value or "").split()).strip()
-
-
-def normalize_origin(value: str | None) -> tuple[str, str, int] | None:
-    raw = (value or "").strip()
-    if not raw:
-        return None
-    parsed = urlsplit(raw)
-    if not parsed.scheme or not parsed.hostname:
-        return None
-    scheme = parsed.scheme.lower()
-    host = parsed.hostname.lower()
-    port = parsed.port if parsed.port is not None else (443 if scheme == "https" else 80)
-    return scheme, host, port
-
-
-def request_origin(request: Request) -> tuple[str, str, int] | None:
-    forwarded_proto = first_header_value(request.headers.get("x-forwarded-proto"))
-    forwarded_host = first_header_value(request.headers.get("x-forwarded-host"))
-    host_header = first_header_value(request.headers.get("host"))
-    scheme = (forwarded_proto or request.url.scheme or "http").lower()
-    host = forwarded_host or host_header or request.url.netloc
-    if not host:
-        return None
-    return normalize_origin(f"{scheme}://{host}")
 
 
 def hit_rate_limit(bucket: str, max_calls: int, window_seconds: int) -> tuple[bool, int]:
@@ -1492,64 +1366,6 @@ def audit_security_event(
         db.rollback()
     finally:
         db.close()
-
-
-def can_archive_ticket(user: User, ticket: Ticket) -> bool:
-    if ticket.status not in ARCHIVE_SOURCE_STATUSES:
-        return False
-    if is_manager(user):
-        return True
-    return bool(user.role == Role.executor and ticket.created_by == user.id)
-
-
-def can_view_all_company_tickets(user: User) -> bool:
-    return bool(is_manager(user) or getattr(user, "can_view_all_tickets", False))
-
-
-def can_create_company_ticket(user: User) -> bool:
-    if is_platform_admin(user):
-        return False
-    if is_manager(user):
-        return True
-    return bool(user.role == Role.executor and getattr(user, "can_create_tickets", True))
-
-
-def can_close_ticket(user: User, ticket: Ticket) -> bool:
-    if is_manager(user):
-        return True
-    if user.role != Role.executor or not getattr(user, "can_close_tickets", True):
-        return False
-    if getattr(user, "can_view_all_tickets", False):
-        return True
-    return bool(ticket.executor_id == user.id or ticket.created_by == user.id)
-
-
-def can_edit_ticket(user: User, ticket: Ticket) -> bool:
-    if is_manager(user):
-        return True
-    return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
-
-
-def can_delete_ticket(user: User, ticket: Ticket) -> bool:
-    if ticket.status == TicketStatus.archived:
-        return is_manager(user)
-    if is_manager(user):
-        return True
-    return bool(user.role == Role.executor and ticket.created_by == user.id)
-
-
-def can_restore_ticket(user: User, ticket: Ticket) -> bool:
-    return bool(is_manager(user) and ticket.status == TicketStatus.archived)
-
-
-def can_manage_ticket_legal_hold(user: User, ticket: Ticket) -> bool:
-    return bool(is_manager(user) and ticket.status == TicketStatus.archived)
-
-
-def can_delete_comment(user: User, comment: Comment) -> bool:
-    if is_manager(user):
-        return True
-    return bool(comment.author_id == user.id)
 
 
 def department_match_filter(column, department_id: int | None):
@@ -1604,24 +1420,6 @@ def ensure_default_ticket_watchers(db: Session, ticket: Ticket) -> bool:
             added_by=ticket.created_by,
         ) or changed
     return changed
-
-
-def can_access_ticket(user: User, ticket: Ticket) -> bool:
-    if is_platform_admin(user):
-        return True
-    if can_view_all_company_tickets(user):
-        return True
-    return bool(user.role == Role.executor and (ticket.executor_id == user.id or ticket.created_by == user.id))
-
-
-def can_take_ticket_in_work(user: User, ticket: Ticket) -> bool:
-    if ticket.status != TicketStatus.new:
-        return False
-    if not can_access_ticket(user, ticket):
-        return False
-    if not is_assignable_executor_user(user):
-        return False
-    return ticket.executor_id is None or ticket.executor_id == user.id
 
 
 def get_api_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
@@ -4207,25 +4005,6 @@ def require_role(*roles: Role):
     return checker
 
 
-def is_admin(user: User) -> bool:
-    return user.role == Role.admin
-
-
-def is_manager(user: User) -> bool:
-    return user.role in MANAGER_ROLES
-
-
-def is_platform_admin(user: User) -> bool:
-    return user.role == Role.platform_admin
-
-
-def ensure_company_user(user: User) -> None:
-    if is_platform_admin(user):
-        return
-    if user.company_id is None:
-        raise HTTPException(403, "Company is not assigned")
-
-
 def get_company_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
     ensure_company_user(user)
     ticket = db.get(Ticket, ticket_id)
@@ -4234,14 +4013,6 @@ def get_company_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket
     if ticket.company_id != user.company_id:
         raise HTTPException(403, "Forbidden")
     return ticket
-
-
-def can_access_receipt(user: User, receipt: Receipt) -> bool:
-    if is_platform_admin(user):
-        return True
-    if is_manager(user):
-        return True
-    return bool(user.role == Role.executor and receipt.created_by == user.id)
 
 
 def get_company_receipt_or_404(db: Session, user: User, receipt_id: int) -> Receipt:
@@ -4550,40 +4321,25 @@ templates.env.globals["access_level_label_ru"] = access_level_label_ru
 
 @app.on_event("startup")
 def app_startup() -> None:
-    if TEXT_REPAIR_ON_START:
-        db = SessionLocal()
-        try:
-            repair_mojibake_data(db)
-        finally:
-            db.close()
-
-    platform_email = (os.getenv("PLATFORM_ADMIN_EMAIL", "") or "").strip()
-    platform_password = (os.getenv("PLATFORM_ADMIN_PASSWORD", "") or "").strip()
-    if platform_email and platform_password:
-        db = SessionLocal()
-        try:
-            existing = db.query(User).filter(User.email == platform_email).first()
-            if not existing:
-                platform_name = (os.getenv("PLATFORM_ADMIN_NAME", "") or "").strip() or "Platform Admin"
-                user = User(
-                    email=platform_email,
-                    name=platform_name,
-                    password_hash=hash_password(platform_password),
-                    role=Role.platform_admin,
-                    company_id=None,
-                    email_verified=True,
-                    email_verified_at=datetime.utcnow(),
-                    **normalize_capability_flags(Role.platform_admin),
-                )
-                db.add(user)
-                db.commit()
-        finally:
-            db.close()
-    if push_is_configured():
-        threading.Thread(target=run_deadline_reminders_forever, daemon=True).start()
-    if TEMPLATE_AUTOGEN_ENABLED:
-        threading.Thread(target=run_template_autogen_forever, daemon=True).start()
-    threading.Thread(target=run_archive_cleanup_forever, daemon=True).start()
+    maybe_repair_text_on_start(
+        enabled=TEXT_REPAIR_ON_START,
+        session_factory=SessionLocal,
+        repair_fn=repair_mojibake_data,
+    )
+    ensure_platform_admin_user(
+        session_factory=SessionLocal,
+        user_model=User,
+        role_enum=Role,
+        hash_password=hash_password,
+        normalize_capability_flags=normalize_capability_flags,
+    )
+    start_background_threads(
+        push_enabled=push_is_configured(),
+        template_autogen_enabled=TEMPLATE_AUTOGEN_ENABLED,
+        deadline_runner=run_deadline_reminders_forever,
+        template_runner=run_template_autogen_forever,
+        archive_runner=run_archive_cleanup_forever,
+    )
 
 
 
