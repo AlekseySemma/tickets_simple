@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
 from app_routes.auth import register_auth_routes, register_company_owner
 from app_routes.notifications import register_notification_routes
+from app_routes.payment_cards import register_payment_card_routes
 from app_routes.push_mobile import register_push_mobile_routes
 from app_routes.settings import register_settings_routes
 from app_routes.web_auth import register_web_auth_routes
@@ -4447,6 +4448,22 @@ register_settings_routes(
     max_deadline_soon_warning_minutes=MAX_DEADLINE_SOON_WARNING_MINUTES,
     min_archive_retention_days=MIN_ARCHIVE_RETENTION_DAYS,
     max_archive_retention_days=MAX_ARCHIVE_RETENTION_DAYS,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
+register_payment_card_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    ensure_company_user=ensure_company_user,
+    normalize_settings_section=normalize_settings_section,
+    build_settings_url=build_settings_url,
+    func=func,
+    payment_card_model=PaymentCard,
+    receipt_model=Receipt,
+    user_model=User,
+    role_enum=Role,
     http_303_see_other=HTTP_303_SEE_OTHER,
     sqlalchemy_error=SQLAlchemyError,
 )
@@ -8926,97 +8943,6 @@ def web_receipts(
             "can_view_accounting_mode": can_view_accounting_mode,
             "preferred_card_id": preferred_card_id,
         },
-    )
-
-
-@app.post("/web/payment-cards/create")
-async def web_payment_cards_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role not in (Role.admin, Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-    form = await request.form()
-    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
-    name = (form.get("name") or "").strip()
-    if not name:
-        return RedirectResponse(
-            url=build_settings_url(section, card_create_error="missing_required"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    exists = (
-        db.query(PaymentCard.id)
-        .filter(
-            PaymentCard.company_id == user.company_id,
-            PaymentCard.owner_user_id == user.id,
-            func.lower(PaymentCard.name) == name.lower(),
-        )
-        .first()
-    )
-    if exists:
-        return RedirectResponse(
-            url=build_settings_url(section, card_create_error="card_exists"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    db.add(PaymentCard(company_id=user.company_id, owner_user_id=user.id, name=name, is_active=True))
-    try:
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(
-            url=build_settings_url(section, card_create_error="save_failed"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    return RedirectResponse(
-        url=build_settings_url(section, card_created=True),
-        status_code=HTTP_303_SEE_OTHER,
-    )
-
-
-@app.post("/web/payment-cards/{card_id}/delete")
-async def web_payment_cards_delete(
-    card_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if user.role not in (Role.admin, Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-    form = await request.form()
-    section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
-    card = db.get(PaymentCard, card_id)
-    if not card or card.company_id != user.company_id or card.owner_user_id != user.id:
-        return RedirectResponse(
-            url=build_settings_url(section, card_delete_error="not_found"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-
-    used_in_receipts = (
-        db.query(Receipt.id)
-        .filter(Receipt.company_id == user.company_id, Receipt.card_id == card_id)
-        .first()
-    )
-    used_in_user_defaults = (
-        db.query(User.id)
-        .filter(User.company_id == user.company_id, User.preferred_payment_card_id == card_id)
-        .first()
-    )
-    if used_in_receipts or used_in_user_defaults:
-        return RedirectResponse(
-            url=build_settings_url(section, card_delete_error="in_use"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    try:
-        db.delete(card)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(
-            url=build_settings_url(section, card_delete_error="save_failed"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    return RedirectResponse(
-        url=build_settings_url(section, card_deleted=True),
-        status_code=HTTP_303_SEE_OTHER,
     )
 
 
