@@ -39,6 +39,8 @@ class AuthRoutesTests(unittest.TestCase):
     def setUp(self):
         main.Base.metadata.drop_all(bind=main.engine)
         main.Base.metadata.create_all(bind=main.engine)
+        with main.RATE_LIMIT_LOCK:
+            main.RATE_LIMIT_BUCKETS.clear()
         self.client.cookies.clear()
 
     def test_auth_bootstrap_creates_platform_admin(self):

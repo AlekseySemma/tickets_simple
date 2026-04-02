@@ -41,6 +41,8 @@ class ReceiptActionRoutesTests(unittest.TestCase):
     def setUp(self):
         main.Base.metadata.drop_all(bind=main.engine)
         main.Base.metadata.create_all(bind=main.engine)
+        with main.RATE_LIMIT_LOCK:
+            main.RATE_LIMIT_BUCKETS.clear()
         self.client.cookies.clear()
 
     def login_web(self, email: str = "receipts@example.com", password: str = "secret123") -> None:

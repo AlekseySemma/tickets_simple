@@ -39,6 +39,8 @@ class EmailVerificationTests(unittest.TestCase):
     def setUp(self):
         main.Base.metadata.drop_all(bind=main.engine)
         main.Base.metadata.create_all(bind=main.engine)
+        with main.RATE_LIMIT_LOCK:
+            main.RATE_LIMIT_BUCKETS.clear()
 
     def seed_invite(self) -> str:
         with main.SessionLocal() as db:

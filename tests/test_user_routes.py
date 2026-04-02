@@ -24,7 +24,7 @@ main.push_is_configured = lambda: False
 main.run_archive_cleanup_forever = lambda: None
 
 
-class NotificationRoutesTests(unittest.TestCase):
+class UserRoutesTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         main.Base.metadata.drop_all(bind=main.engine)
@@ -43,34 +43,24 @@ class NotificationRoutesTests(unittest.TestCase):
             main.RATE_LIMIT_BUCKETS.clear()
         self.client.cookies.clear()
 
-    def seed_user_with_notification(self) -> dict[str, int]:
+    def seed_admin(self, email: str = "users@example.com") -> int:
         with main.SessionLocal() as db:
-            company = main.Company(name="Notify Co")
+            company = main.Company(name="Users Co")
             db.add(company)
             db.flush()
             user = main.User(
-                email="notify@example.com",
-                name="Notify User",
+                email=email,
+                name="Users Admin",
                 password_hash=main.hash_password("secret123"),
                 role=main.Role.admin,
                 company_id=company.id,
                 email_verified=True,
             )
             db.add(user)
-            db.flush()
-            notification = main.Notification(
-                company_id=company.id,
-                user_id=user.id,
-                title="Изменен статус заявки",
-                body="Тестовое уведомление",
-                url="/web/tickets/123",
-                is_read=False,
-            )
-            db.add(notification)
             db.commit()
-            return {"user_id": user.id, "notification_id": notification.id}
+            return user.id
 
-    def login_web(self, email: str = "notify@example.com", password: str = "secret123") -> None:
+    def login_web(self, email: str = "users@example.com", password: str = "secret123") -> None:
         response = self.client.post(
             "/web/login",
             data={"email": email, "password": password},
@@ -78,32 +68,33 @@ class NotificationRoutesTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 303)
 
-    def test_notifications_page_and_unread_counter_render(self):
-        self.seed_user_with_notification()
+    def test_users_page_renders_for_manager(self):
+        self.seed_admin()
         self.login_web()
 
-        page = self.client.get("/web/notifications")
-        counter = self.client.get("/web/notifications/unread-count")
+        response = self.client.get("/web/users")
 
-        self.assertEqual(page.status_code, 200)
-        self.assertIn("Тестовое уведомление", page.text)
-        self.assertEqual(counter.status_code, 200)
-        self.assertEqual(counter.json()["unread"], 1)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("users/templates/create", response.text)
+        self.assertIn("invite", response.text.lower())
 
-    def test_open_notification_marks_it_read_and_redirects(self):
-        ids = self.seed_user_with_notification()
+    def test_invite_create_redirects_and_persists(self):
+        user_id = self.seed_admin()
         self.login_web()
 
-        response = self.client.get(
-            f"/web/notifications/{ids['notification_id']}/open",
+        response = self.client.post(
+            "/web/users/invites/create",
+            data={"role": "EXECUTOR", "expires_days": "5"},
+            headers={"origin": "http://testserver"},
             follow_redirects=False,
         )
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/web/tickets/123")
+        self.assertEqual(response.headers["location"], "/web/users?ok=invite_created")
         with main.SessionLocal() as db:
-            item = db.get(main.Notification, ids["notification_id"])
-            self.assertTrue(item.is_read)
+            invite = db.query(main.RegistrationInvite).filter(main.RegistrationInvite.created_by == user_id).first()
+            self.assertIsNotNone(invite)
+            self.assertEqual(invite.role, main.Role.executor)
 
 
 if __name__ == "__main__":

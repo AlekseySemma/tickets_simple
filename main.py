@@ -38,7 +38,9 @@ from app_routes.payment_cards import register_payment_card_routes
 from app_routes.push_mobile import register_push_mobile_routes
 from app_routes.receipt_actions import register_receipt_action_routes
 from app_routes.receipt_exports import register_receipt_export_routes
+from app_routes.receipts import register_receipt_routes
 from app_routes.settings import register_settings_routes
+from app_routes.users import register_user_management_routes
 from app_routes.web_auth import register_web_auth_routes
 from app_support.access import (
     can_access_receipt,
@@ -80,6 +82,7 @@ from app_support.startup import (
     maybe_repair_text_on_start,
     start_background_threads,
 )
+from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
     append_query_params,
     first_header_value,
@@ -4523,6 +4526,92 @@ register_receipt_export_routes(
     role_enum=Role,
 )
 
+register_receipt_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    ensure_company_user=ensure_company_user,
+    is_manager=is_manager,
+    build_receipts_query=build_receipts_query,
+    parse_receipt_date=parse_receipt_date,
+    parse_receipt_amount=parse_receipt_amount,
+    make_safe_upload_name=make_safe_upload_name,
+    build_receipt_object_key=build_receipt_object_key,
+    store_upload_file_to_storage_async=store_upload_file_to_storage_async,
+    build_receipt_original_name=build_receipt_original_name,
+    notify_receipt_created=notify_receipt_created,
+    delete_stored_file=delete_stored_file,
+    templates=templates,
+    receipt_model=Receipt,
+    receipt_file_model=ReceiptFile,
+    project_model=Project,
+    payment_card_model=PaymentCard,
+    user_model=User,
+    receipt_status_enum=ReceiptStatus,
+    role_enum=Role,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
+register_user_management_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    is_manager=is_manager,
+    ensure_company_user=ensure_company_user,
+    manageable_roles_for_web_user_management=(
+        lambda actor: manageable_roles_for_web_user_management(actor, role_enum=Role)
+    ),
+    can_manage_company_user=(
+        lambda actor, target: can_manage_company_user(actor, target, manager_roles=MANAGER_ROLES, role_enum=Role)
+    ),
+    manageable_template_access_levels_for_actor=(lambda actor: manageable_template_access_levels_for_actor(actor)),
+    ensure_default_role_templates=(
+        lambda db, company_id, allowed_access_levels: ensure_default_role_templates(db, company_id, allowed_access_levels)
+    ),
+    get_manageable_role_template=(
+        lambda db, actor, template_id, allowed_access_levels=None: get_manageable_role_template(
+            db,
+            actor,
+            template_id,
+            allowed_access_levels=allowed_access_levels,
+        )
+    ),
+    role_template_payload=(lambda template: role_template_payload(template)),
+    normalize_role_template_name=normalize_role_template_name,
+    normalize_role_label=normalize_role_label,
+    parse_optional_int=(lambda raw_value: parse_optional_int(raw_value)),
+    parse_bool_text=(lambda raw, default=True: parse_bool_text(raw, default=default)),
+    normalize_capability_flags=normalize_capability_flags,
+    hash_password=hash_password,
+    prepare_user_email_verification=prepare_user_email_verification,
+    send_user_verification_email=send_user_verification_email,
+    bump_user_auth_token_version=bump_user_auth_token_version,
+    access_level_label_ru=access_level_label_ru,
+    templates=templates,
+    logger=logger,
+    func=func,
+    or_=or_,
+    user_model=User,
+    role_template_model=RoleTemplate,
+    registration_invite_model=RegistrationInvite,
+    ticket_model=Ticket,
+    comment_model=Comment,
+    attachment_model=Attachment,
+    ticket_log_model=TicketLog,
+    ticket_template_model=TicketTemplate,
+    unit_assignment_model=UnitAssignment,
+    ticket_watcher_model=TicketWatcher,
+    push_subscription_model=PushSubscription,
+    mobile_device_model=MobileDevice,
+    deadline_reminder_log_model=DeadlineReminderLog,
+    notification_model=Notification,
+    role_enum=Role,
+    email_delivery_error=EmailDeliveryError,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
 register_notification_routes(
     app,
     get_db=get_db,
@@ -6214,7 +6303,7 @@ def parse_optional_int(raw_value: str | int | None) -> int | None:
 
 
 def manageable_template_access_levels_for_actor(actor: "User") -> tuple[Role, ...]:
-    return manageable_roles_for_web_user_management(actor)
+    return manageable_roles_for_web_user_management(actor, role_enum=Role)
 
 
 def query_assignable_company_users(db: Session, company_id: int):
@@ -8843,265 +8932,6 @@ async def web_ticket_edit_save(
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
-# ====== WEB: Receipts ======
-@app.get("/web/receipts")
-def web_receipts(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    mode: str | None = None,
-    status_filter: str | None = None,
-    project_id: str | None = None,
-    card_id: str | None = None,
-    employee_id: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    q: str | None = None,
-    edit_id: str | None = None,
-):
-    if user.role not in (Role.admin, Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-
-    can_view_accounting_mode = bool(user.show_receipts_accounting_mode)
-    default_receipts_mode = "accounting" if user.role in (Role.admin, Role.curator) else "field"
-    mode_value = (mode or "").strip().lower()
-    if mode_value not in {"field", "accounting"}:
-        mode_value = default_receipts_mode
-    if not can_view_accounting_mode:
-        mode_value = "field"
-
-    def parse_int(raw: str | None) -> int | None:
-        value = (raw or "").strip()
-        if not value:
-            return None
-        try:
-            return int(value)
-        except ValueError:
-            return None
-
-    project_id_int = parse_int(project_id)
-    card_id_int = parse_int(card_id)
-    employee_id_int = parse_int(employee_id)
-    date_from_value = parse_receipt_date(date_from)
-    date_to_value = parse_receipt_date(date_to)
-    q_value = (q or "").strip()
-    edit_id_int = parse_int(edit_id)
-
-    projects = (
-        db.query(Project.id, Project.name)
-        .filter(Project.company_id == user.company_id)
-        .order_by(Project.name.asc())
-        .all()
-    )
-    cards = (
-        db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
-        .filter(PaymentCard.company_id == user.company_id, PaymentCard.owner_user_id == user.id)
-        .order_by(PaymentCard.name.asc())
-        .all()
-    )
-    preferred_card_id = None
-    if user.preferred_payment_card_id is not None:
-        for card in cards:
-            if int(card.id) == int(user.preferred_payment_card_id) and bool(card.is_active):
-                preferred_card_id = int(card.id)
-                break
-    employees = (
-        db.query(User.id, User.name)
-        .filter(User.company_id == user.company_id, User.role != Role.platform_admin)
-        .order_by(User.name.asc())
-        .all()
-    )
-
-    receipts = (
-        build_receipts_query(
-            db,
-            user,
-            status_filter=status_filter,
-            project_id=project_id_int,
-            card_id=card_id_int,
-            employee_id=employee_id_int,
-            date_from_value=date_from_value,
-            date_to_value=date_to_value,
-            q=q_value,
-        )
-        .limit(300)
-        .all()
-    )
-    receipt_ids = [r.id for r in receipts]
-    files = (
-        db.query(ReceiptFile)
-        .filter(ReceiptFile.receipt_id.in_(receipt_ids))
-        .order_by(ReceiptFile.id.asc())
-        .all()
-        if receipt_ids
-        else []
-    )
-    files_by_receipt: dict[int, list[ReceiptFile]] = {}
-    for file_row in files:
-        files_by_receipt.setdefault(file_row.receipt_id, []).append(file_row)
-
-    projects_by_id = {int(row[0]): row[1] for row in projects}
-    cards_by_id = {int(row[0]): row[1] for row in cards}
-    visible_card_ids = {int(r.card_id) for r in receipts if getattr(r, "card_id", None) is not None}
-    cards_for_display = list(cards)
-    if visible_card_ids:
-        cards_for_display = (
-            db.query(PaymentCard.id, PaymentCard.name, PaymentCard.is_active)
-            .filter(PaymentCard.company_id == user.company_id, PaymentCard.id.in_(visible_card_ids))
-            .all()
-        )
-    cards_last4_by_id: dict[int, str] = {}
-    for row in cards_for_display:
-        card_id_value = int(row[0])
-        card_name = str(row[1] or "")
-        only_digits = re.sub(r"\D+", "", card_name)
-        cards_last4_by_id[card_id_value] = only_digits[-4:] if len(only_digits) >= 4 else card_name or f"#{card_id_value}"
-    users_by_id = {int(row[0]): row[1] for row in employees}
-    status_options = [s.value for s in ReceiptStatus]
-
-    ok = (request.query_params.get("ok") or "").strip().lower()
-    err = (request.query_params.get("err") or "").strip().lower()
-    if ok not in {"created", "card_created", "status_updated", "bulk_updated", "updated", "deleted"}:
-        ok = ""
-    if err not in {"missing_required", "bad_links", "bad_amount", "missing_files", "save_failed", "card_exists", "bad_status"}:
-        err = ""
-
-    return templates.TemplateResponse(
-        "receipts.html",
-        {
-            "request": request,
-            "user": user,
-            "mode": mode_value,
-            "receipts": receipts,
-            "files_by_receipt": files_by_receipt,
-            "projects": projects,
-            "cards": cards,
-            "employees": employees,
-            "projects_by_id": projects_by_id,
-            "cards_by_id": cards_by_id,
-            "cards_last4_by_id": cards_last4_by_id,
-            "users_by_id": users_by_id,
-            "status_options": status_options,
-            "status_filter": status_filter or "",
-            "project_id_filter": project_id_int if project_id_int is not None else "",
-            "card_id_filter": card_id_int if card_id_int is not None else "",
-            "employee_id_filter": employee_id_int if employee_id_int is not None else "",
-            "date_from_filter": date_from_value.isoformat() if date_from_value else "",
-            "date_to_filter": date_to_value.isoformat() if date_to_value else "",
-            "q_filter": q_value,
-            "edit_id": edit_id_int if edit_id_int is not None else 0,
-            "ok": ok,
-            "err": err,
-            "can_manage_cards": is_manager(user),
-            "can_manage_status": is_manager(user),
-            "can_view_accounting_mode": can_view_accounting_mode,
-            "preferred_card_id": preferred_card_id,
-        },
-    )
-
-
-@app.post("/web/receipts/create")
-async def web_receipts_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role not in (Role.admin, Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-    form = await request.form()
-    project_id_raw = (form.get("project_id") or "").strip()
-    card_id_raw = (form.get("card_id") or "").strip()
-    comment = (form.get("comment") or "").strip()
-    category = (form.get("category") or "").strip() or None
-    supplier = (form.get("supplier") or "").strip() or None
-    amount = parse_receipt_amount(form.get("amount"))
-    receipt_date = parse_receipt_date(form.get("receipt_date"))
-    uploads = [
-        item
-        for item in form.getlist("files")
-        if hasattr(item, "filename") and ((getattr(item, "filename", "") or "").strip())
-    ]
-
-    if not project_id_raw or not card_id_raw:
-        return RedirectResponse(url="/web/receipts?err=missing_required", status_code=HTTP_303_SEE_OTHER)
-    if not uploads:
-        return RedirectResponse(url="/web/receipts?err=missing_files&mode=field", status_code=HTTP_303_SEE_OTHER)
-    if (form.get("amount") or "").strip() and amount is None:
-        return RedirectResponse(url="/web/receipts?err=bad_amount&mode=field", status_code=HTTP_303_SEE_OTHER)
-
-    try:
-        project_id = int(project_id_raw)
-        card_id = int(card_id_raw)
-    except ValueError:
-        return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
-
-    project_row = (
-        db.query(Project.id, Project.name)
-        .filter(Project.id == project_id, Project.company_id == user.company_id)
-        .first()
-    )
-    card_row = (
-        db.query(PaymentCard.id, PaymentCard.name)
-        .filter(
-            PaymentCard.id == card_id,
-            PaymentCard.company_id == user.company_id,
-            PaymentCard.owner_user_id == user.id,
-            PaymentCard.is_active.is_(True),
-        )
-        .first()
-    )
-    if not project_row or not card_row:
-        return RedirectResponse(url="/web/receipts?err=bad_links", status_code=HTTP_303_SEE_OTHER)
-    project_name = str(project_row[1] or "")
-    card_name = str(card_row[1] or "")
-
-    written_paths: list[str] = []
-    try:
-        receipt = Receipt(
-            company_id=user.company_id,
-            project_id=project_id,
-            card_id=card_id,
-            created_by=user.id,
-            status=ReceiptStatus.new,
-            comment=comment or "",
-            amount=amount,
-            receipt_date=receipt_date,
-            category=category,
-            supplier=supplier,
-        )
-        db.add(receipt)
-        db.flush()
-        for upload in uploads:
-            safe_name = make_safe_upload_name(upload.filename, ticket_id=receipt.id)
-            object_key = build_receipt_object_key(safe_name)
-            stored_path, file_hash, file_size = await store_upload_file_to_storage_async(upload, object_key)
-            written_paths.append(stored_path)
-            display_name = build_receipt_original_name(
-                receipt_date_value=receipt.receipt_date,
-                card_name=card_name,
-                project_name=project_name,
-                source_filename=upload.filename,
-                fallback_card_id=card_id,
-            )
-            db.add(
-                ReceiptFile(
-                    receipt_id=receipt.id,
-                    uploader_id=user.id,
-                    file_path=stored_path,
-                    original_name=display_name[:255] or None,
-                    file_size_bytes=file_size,
-                    file_sha256=file_hash,
-                )
-            )
-        notify_receipt_created(db=db, receipt=receipt, actor=user)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        for path in written_paths:
-            delete_stored_file(path)
-        return RedirectResponse(url="/web/receipts?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-
-    return RedirectResponse(url="/web/receipts?ok=created&mode=field", status_code=HTTP_303_SEE_OTHER)
-
-
 # ====== WEB: Projects (legacy redirects) ======
 @app.get("/web/projects")
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -9542,580 +9372,6 @@ async def web_ticket_templates_clear_keys(
         ),
         status_code=HTTP_303_SEE_OTHER,
     )
-
-# ====== WEB: Users ======
-def manageable_roles_for_web_user_management(actor: User) -> tuple[Role, ...]:
-    if actor.role == Role.admin:
-        return (Role.curator, Role.executor)
-    if actor.role == Role.curator:
-        return (Role.executor,)
-    return tuple()
-
-
-def can_manage_company_user(actor: User, target: User) -> bool:
-    if actor.company_id != target.company_id:
-        return False
-    if actor.id == target.id and actor.role in MANAGER_ROLES:
-        return True
-    return target.role in manageable_roles_for_web_user_management(actor)
-
-
-@app.get("/web/executors")
-def web_executors():
-    return RedirectResponse(url="/web/users", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.get("/web/users")
-def web_users(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    ok: str | None = None,
-    err: str | None = None,
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    allowed_roles = manageable_roles_for_web_user_management(user)
-    if not allowed_roles:
-        raise HTTPException(403, "Forbidden")
-    template_access_levels = manageable_template_access_levels_for_actor(user)
-    ensure_default_role_templates(db, user.company_id, template_access_levels)
-
-    users = (
-        db.query(
-            User.id,
-            User.name,
-            User.email,
-            User.role,
-            User.role_label,
-            User.is_assignable_executor,
-            User.show_receipts_accounting_mode,
-            User.can_view_all_tickets,
-            User.can_create_tickets,
-            User.can_close_tickets,
-        )
-        .filter(
-            User.company_id == user.company_id,
-            User.role != Role.platform_admin,
-        )
-        .order_by(User.id.desc())
-        .all()
-    )
-    visible_users = [u for u in users if u.id == user.id or u.role in allowed_roles]
-    role_templates = (
-        db.query(RoleTemplate)
-        .filter(
-            RoleTemplate.company_id == user.company_id,
-            RoleTemplate.access_level.in_(template_access_levels),
-        )
-        .order_by(RoleTemplate.access_level.asc(), RoleTemplate.name.asc(), RoleTemplate.id.asc())
-        .all()
-    )
-    invites = (
-        db.query(
-            RegistrationInvite.id,
-            RegistrationInvite.role,
-            RegistrationInvite.token,
-            RegistrationInvite.created_at,
-            RegistrationInvite.expires_at,
-            RegistrationInvite.used_by,
-        )
-        .filter(
-            RegistrationInvite.company_id == user.company_id,
-            RegistrationInvite.role.in_(allowed_roles),
-        )
-        .order_by(RegistrationInvite.id.desc())
-        .limit(30)
-        .all()
-    )
-    base_url = str(request.base_url).rstrip("/")
-    invite_links = []
-    for inv in invites:
-        invite_links.append(
-            {
-                "id": inv.id,
-                "role": inv.role.value,
-                "url": f"{base_url}/web/register?token={inv.token}",
-                "created_at": inv.created_at,
-                "expires_at": inv.expires_at,
-                "is_used": inv.used_by is not None,
-            }
-        )
-    ok_code = (ok or "").strip().lower()
-    err_code = (err or "").strip().lower()
-    ok_messages = {
-        "created": "Пользователь создан.",
-        "updated": "Данные пользователя обновлены.",
-        "deleted": "Пользователь удален.",
-        "invite_created": "Ссылка приглашения создана.",
-        "template_created": "Шаблон роли создан.",
-        "template_updated": "Шаблон роли обновлен.",
-        "template_deleted": "Шаблон роли удален.",
-    }
-    err_messages = {
-        "bad_input": "Заполните обязательные поля.",
-        "bad_role": "Недопустимый уровень доступа.",
-        "bad_template": "Шаблон роли не найден или недоступен.",
-        "bad_template_input": "Заполните название шаблона и проверьте параметры.",
-        "template_name_exists": "Шаблон с таким названием уже существует.",
-        "template_not_found": "Шаблон роли не найден.",
-        "email_exists": "Пользователь с таким email уже существует.",
-        "user_not_found": "Пользователь не найден или недоступен для управления.",
-        "save_failed": "Не удалось сохранить изменения.",
-        "delete_blocked": "Нельзя удалить пользователя: он уже участвует в заявках или шаблонах.",
-        "delete_failed": "Не удалось удалить пользователя.",
-        "delete_self": "Свой аккаунт удалить нельзя.",
-    }
-    return templates.TemplateResponse(
-        "users.html",
-        {
-            "request": request,
-            "user": user,
-            "managed_users": visible_users,
-            "role_templates": role_templates,
-            "access_level_options": [
-                {"value": role.value, "label": access_level_label_ru(role)}
-                for role in allowed_roles
-            ],
-            "invite_links": invite_links,
-            "ok_message": ok_messages.get(ok_code, ""),
-            "err_message": err_messages.get(err_code, ""),
-        },
-    )
-
-
-@app.post("/web/users/invites/create")
-async def web_users_invite_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    allowed_roles = manageable_roles_for_web_user_management(user)
-    if not allowed_roles:
-        raise HTTPException(403, "Forbidden")
-
-    form = await request.form()
-    role_raw = (form.get("role") or "").strip().upper()
-    expires_days_raw = (form.get("expires_days") or "").strip()
-    if user.role == Role.curator:
-        role_value = Role.executor
-    else:
-        if role_raw not in ("CURATOR", "EXECUTOR"):
-            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
-        role_value = Role(role_raw)
-        if role_value not in allowed_roles:
-            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
-
-    try:
-        expires_days = int(expires_days_raw) if expires_days_raw else 7
-    except ValueError:
-        expires_days = 7
-    expires_days = max(1, min(expires_days, 30))
-
-    invite = RegistrationInvite(
-        token=secrets.token_urlsafe(24),
-        role=role_value,
-        company_id=user.company_id,
-        created_by=user.id,
-        expires_at=datetime.utcnow() + timedelta(days=expires_days),
-    )
-    try:
-        db.add(invite)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/users?ok=invite_created", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/users/templates/create")
-async def web_user_role_templates_create(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    allowed_roles = manageable_template_access_levels_for_actor(user)
-    if not allowed_roles:
-        raise HTTPException(403, "Forbidden")
-
-    form = await request.form()
-    name = normalize_role_template_name(form.get("name"))
-    role_raw = (form.get("access_level") or "").strip().upper()
-    if user.role == Role.curator:
-        role_value = Role.executor
-    else:
-        if role_raw not in {role.value for role in allowed_roles}:
-            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
-        role_value = Role(role_raw)
-    if not name:
-        return RedirectResponse(url="/web/users?err=bad_template_input", status_code=HTTP_303_SEE_OTHER)
-    exists = (
-        db.query(RoleTemplate.id)
-        .filter(
-            RoleTemplate.company_id == user.company_id,
-            func.lower(RoleTemplate.name) == name.lower(),
-        )
-        .first()
-    )
-    if exists:
-        return RedirectResponse(url="/web/users?err=template_name_exists", status_code=HTTP_303_SEE_OTHER)
-
-    flags = normalize_capability_flags(
-        role_value,
-        show_receipts_accounting_mode=parse_bool_text(form.get("show_receipts_accounting_mode"), default=False),
-        is_assignable_executor=parse_bool_text(form.get("is_assignable_executor"), default=False),
-        can_view_all_tickets=parse_bool_text(form.get("can_view_all_tickets"), default=False),
-        can_create_tickets=parse_bool_text(form.get("can_create_tickets"), default=False),
-        can_close_tickets=parse_bool_text(form.get("can_close_tickets"), default=False),
-    )
-    try:
-        db.add(
-            RoleTemplate(
-                company_id=user.company_id,
-                name=name,
-                access_level=role_value,
-                **flags,
-            )
-        )
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/users?ok=template_created", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/users/templates/{template_id}/update")
-async def web_user_role_templates_update(
-    template_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    allowed_roles = manageable_template_access_levels_for_actor(user)
-    if not allowed_roles:
-        raise HTTPException(403, "Forbidden")
-
-    item = get_manageable_role_template(db, user, template_id, allowed_access_levels=allowed_roles)
-    if not item:
-        return RedirectResponse(url="/web/users?err=template_not_found", status_code=HTTP_303_SEE_OTHER)
-
-    form = await request.form()
-    name = normalize_role_template_name(form.get("name"))
-    role_raw = (form.get("access_level") or "").strip().upper()
-    if user.role == Role.curator:
-        role_value = Role.executor
-    else:
-        if role_raw not in {role.value for role in allowed_roles}:
-            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
-        role_value = Role(role_raw)
-    if not name:
-        return RedirectResponse(url="/web/users?err=bad_template_input", status_code=HTTP_303_SEE_OTHER)
-    duplicate = (
-        db.query(RoleTemplate.id)
-        .filter(
-            RoleTemplate.company_id == user.company_id,
-            func.lower(RoleTemplate.name) == name.lower(),
-            RoleTemplate.id != item.id,
-        )
-        .first()
-    )
-    if duplicate:
-        return RedirectResponse(url="/web/users?err=template_name_exists", status_code=HTTP_303_SEE_OTHER)
-
-    flags = normalize_capability_flags(
-        role_value,
-        show_receipts_accounting_mode=parse_bool_text(form.get("show_receipts_accounting_mode"), default=False),
-        is_assignable_executor=parse_bool_text(form.get("is_assignable_executor"), default=False),
-        can_view_all_tickets=parse_bool_text(form.get("can_view_all_tickets"), default=False),
-        can_create_tickets=parse_bool_text(form.get("can_create_tickets"), default=False),
-        can_close_tickets=parse_bool_text(form.get("can_close_tickets"), default=False),
-    )
-    item.name = name
-    item.access_level = role_value
-    item.show_receipts_accounting_mode = flags["show_receipts_accounting_mode"]
-    item.is_assignable_executor = flags["is_assignable_executor"]
-    item.can_view_all_tickets = flags["can_view_all_tickets"]
-    item.can_create_tickets = flags["can_create_tickets"]
-    item.can_close_tickets = flags["can_close_tickets"]
-    try:
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/users?ok=template_updated", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/users/templates/{template_id}/delete")
-async def web_user_role_templates_delete(
-    template_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    allowed_roles = manageable_template_access_levels_for_actor(user)
-    item = get_manageable_role_template(db, user, template_id, allowed_access_levels=allowed_roles)
-    if not item:
-        return RedirectResponse(url="/web/users?err=template_not_found", status_code=HTTP_303_SEE_OTHER)
-    try:
-        db.delete(item)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/users?ok=template_deleted", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/users/create")
-async def web_users_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    email = (form.get("email") or "").strip()
-    password = (form.get("password") or "").strip()
-    role_raw = (form.get("role") or "").strip().upper()
-    role_label = normalize_role_label(form.get("role_label"))
-    role_template_id = parse_optional_int(form.get("role_template_id"))
-    allowed_roles = manageable_roles_for_web_user_management(user)
-    if not allowed_roles:
-        raise HTTPException(403, "Forbidden")
-
-    if not (name and email and password):
-        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
-    if db.query(User.id).filter(User.email == email).first():
-        return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
-
-    template = get_manageable_role_template(db, user, role_template_id, allowed_access_levels=allowed_roles)
-    if role_template_id is not None and not template:
-        return RedirectResponse(url="/web/users?err=bad_template", status_code=HTTP_303_SEE_OTHER)
-    if template:
-        role_value = template.access_level
-        capability_flags = role_template_payload(template)
-    elif user.role == Role.curator:
-        role_value = Role.executor
-        capability_flags = normalize_capability_flags(
-            role_value,
-            show_receipts_accounting_mode=parse_bool_text(form.get("show_receipts_accounting_mode"), default=False),
-            is_assignable_executor=parse_bool_text(form.get("is_assignable_executor"), default=False),
-            can_view_all_tickets=parse_bool_text(form.get("can_view_all_tickets"), default=False),
-            can_create_tickets=parse_bool_text(form.get("can_create_tickets"), default=False),
-            can_close_tickets=parse_bool_text(form.get("can_close_tickets"), default=False),
-        )
-    else:
-        if role_raw not in {role.value for role in allowed_roles}:
-            return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
-        role_value = Role(role_raw)
-        capability_flags = normalize_capability_flags(
-            role_value,
-            show_receipts_accounting_mode=parse_bool_text(form.get("show_receipts_accounting_mode"), default=False),
-            is_assignable_executor=parse_bool_text(form.get("is_assignable_executor"), default=False),
-            can_view_all_tickets=parse_bool_text(form.get("can_view_all_tickets"), default=False),
-            can_create_tickets=parse_bool_text(form.get("can_create_tickets"), default=False),
-            can_close_tickets=parse_bool_text(form.get("can_close_tickets"), default=False),
-        )
-
-    u = User(
-        email=email,
-        name=name,
-        password_hash=hash_password(password),
-        role=role_value,
-        company_id=user.company_id,
-        role_label=role_label or (template.name if template else None),
-        **capability_flags,
-    )
-    prepare_user_email_verification(u, force_new_token=True)
-    try:
-        db.add(u)
-        db.commit()
-        db.refresh(u)
-        send_user_verification_email(request, db, u)
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    except EmailDeliveryError:
-        logger.exception("Could not send verification email to %s", u.email)
-    return RedirectResponse(url="/web/users?ok=created", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/users/{managed_user_id}/update")
-async def web_users_update(
-    managed_user_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    email = (form.get("email") or "").strip()
-    password = (form.get("password") or "").strip()
-    role_raw = (form.get("role") or "").strip().upper()
-    role_label = normalize_role_label(form.get("role_label"))
-    role_template_id = parse_optional_int(form.get("role_template_id"))
-    if not (name and email):
-        return RedirectResponse(url="/web/users?err=bad_input", status_code=HTTP_303_SEE_OTHER)
-
-    item = db.get(User, managed_user_id)
-    if not item or not can_manage_company_user(user, item):
-        return RedirectResponse(url="/web/users?err=user_not_found", status_code=HTTP_303_SEE_OTHER)
-
-    email_owner = db.query(User.id).filter(User.email == email, User.id != item.id).first()
-    if email_owner:
-        return RedirectResponse(url="/web/users?err=email_exists", status_code=HTTP_303_SEE_OTHER)
-
-    allowed_template_roles = (item.role,) if item.id == user.id else manageable_roles_for_web_user_management(user)
-    template = get_manageable_role_template(
-        db,
-        user,
-        role_template_id,
-        allowed_access_levels=allowed_template_roles,
-    )
-    if role_template_id is not None and not template:
-        return RedirectResponse(url="/web/users?err=bad_template", status_code=HTTP_303_SEE_OTHER)
-    if item.id == user.id:
-        next_role = item.role
-        if template and template.access_level != item.role:
-            return RedirectResponse(url="/web/users?err=bad_template", status_code=HTTP_303_SEE_OTHER)
-    elif user.role == Role.admin:
-        if template:
-            next_role = template.access_level
-        else:
-            allowed_roles = manageable_roles_for_web_user_management(user)
-            if role_raw not in {role.value for role in allowed_roles}:
-                return RedirectResponse(url="/web/users?err=bad_role", status_code=HTTP_303_SEE_OTHER)
-            next_role = Role(role_raw)
-    else:
-        next_role = item.role
-        if template and template.access_level != item.role:
-            return RedirectResponse(url="/web/users?err=bad_template", status_code=HTTP_303_SEE_OTHER)
-
-    capability_flags = (
-        role_template_payload(template)
-        if template
-        else normalize_capability_flags(
-            next_role,
-            show_receipts_accounting_mode=parse_bool_text(form.get("show_receipts_accounting_mode"), default=False),
-            is_assignable_executor=parse_bool_text(form.get("is_assignable_executor"), default=False),
-            can_view_all_tickets=parse_bool_text(form.get("can_view_all_tickets"), default=False),
-            can_create_tickets=parse_bool_text(form.get("can_create_tickets"), default=False),
-            can_close_tickets=parse_bool_text(form.get("can_close_tickets"), default=False),
-        )
-    )
-    email_changed = (item.email or "").strip() != email
-    item.name = name
-    item.email = email
-    item.role = next_role
-    item.role_label = role_label or (template.name if template else None)
-    item.show_receipts_accounting_mode = capability_flags["show_receipts_accounting_mode"]
-    item.is_assignable_executor = capability_flags["is_assignable_executor"]
-    item.can_view_all_tickets = capability_flags["can_view_all_tickets"]
-    item.can_create_tickets = capability_flags["can_create_tickets"]
-    item.can_close_tickets = capability_flags["can_close_tickets"]
-    if password:
-        item.password_hash = hash_password(password)
-        bump_user_auth_token_version(item)
-    if email_changed:
-        prepare_user_email_verification(item, force_new_token=True)
-    try:
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=save_failed", status_code=HTTP_303_SEE_OTHER)
-    if email_changed:
-        try:
-            send_user_verification_email(request, db, item)
-        except EmailDeliveryError:
-            logger.exception("Could not send verification email to %s", item.email)
-    return RedirectResponse(url="/web/users?ok=updated", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/users/{managed_user_id}/delete")
-async def web_users_delete(
-    managed_user_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    item = db.get(User, managed_user_id)
-    if not item or not can_manage_company_user(user, item):
-        return RedirectResponse(url="/web/users?err=user_not_found", status_code=HTTP_303_SEE_OTHER)
-    if item.id == user.id:
-        return RedirectResponse(url="/web/users?err=delete_self", status_code=HTTP_303_SEE_OTHER)
-
-    # Do not delete users that already have business history in the ticket system.
-    has_ticket_refs = db.query(Ticket.id).filter(
-        Ticket.company_id == user.company_id,
-        or_(Ticket.created_by == item.id, Ticket.executor_id == item.id, Ticket.archived_by == item.id),
-    ).first()
-    has_comment_refs = (
-        db.query(Comment.id)
-        .join(Ticket, Ticket.id == Comment.ticket_id)
-        .filter(Ticket.company_id == user.company_id, Comment.author_id == item.id)
-        .first()
-    )
-    has_attachment_refs = (
-        db.query(Attachment.id)
-        .join(Ticket, Ticket.id == Attachment.ticket_id)
-        .filter(Ticket.company_id == user.company_id, Attachment.uploader_id == item.id)
-        .first()
-    )
-    has_log_refs = (
-        db.query(TicketLog.id)
-        .join(Ticket, Ticket.id == TicketLog.ticket_id)
-        .filter(Ticket.company_id == user.company_id, TicketLog.actor_id == item.id)
-        .first()
-    )
-    has_template_refs = db.query(TicketTemplate.id).filter(
-        TicketTemplate.company_id == user.company_id,
-        TicketTemplate.default_executor_id == item.id,
-    ).first()
-    if has_ticket_refs or has_comment_refs or has_attachment_refs or has_log_refs or has_template_refs:
-        return RedirectResponse(url="/web/users?err=delete_blocked", status_code=HTTP_303_SEE_OTHER)
-
-    try:
-        db.query(UnitAssignment).filter(
-            UnitAssignment.company_id == user.company_id,
-            UnitAssignment.user_id == item.id,
-        ).delete(synchronize_session=False)
-        db.query(TicketWatcher).filter(TicketWatcher.user_id == item.id).delete(synchronize_session=False)
-        db.query(TicketWatcher).filter(TicketWatcher.added_by == item.id).update(
-            {TicketWatcher.added_by: None},
-            synchronize_session=False,
-        )
-        db.query(PushSubscription).filter(PushSubscription.user_id == item.id).delete(synchronize_session=False)
-        db.query(MobileDevice).filter(MobileDevice.user_id == item.id).delete(synchronize_session=False)
-        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id == item.id).delete(synchronize_session=False)
-        db.query(Notification).filter(Notification.user_id == item.id).delete(synchronize_session=False)
-        db.query(RegistrationInvite).filter(
-            RegistrationInvite.company_id == user.company_id,
-            RegistrationInvite.used_by == item.id,
-        ).update(
-            {RegistrationInvite.used_by: None, RegistrationInvite.used_at: None},
-            synchronize_session=False,
-        )
-        db.query(RegistrationInvite).filter(
-            RegistrationInvite.company_id == user.company_id,
-            RegistrationInvite.created_by == item.id,
-        ).delete(synchronize_session=False)
-        db.delete(item)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(url="/web/users?err=delete_failed", status_code=HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/web/users?ok=deleted", status_code=HTTP_303_SEE_OTHER)
 
 @app.get("/web/tickets/{ticket_id}")
 def web_ticket_detail(

@@ -39,6 +39,8 @@ class PaymentCardRoutesTests(unittest.TestCase):
     def setUp(self):
         main.Base.metadata.drop_all(bind=main.engine)
         main.Base.metadata.create_all(bind=main.engine)
+        with main.RATE_LIMIT_LOCK:
+            main.RATE_LIMIT_BUCKETS.clear()
         self.client.cookies.clear()
 
     def seed_user(self, email: str = "cards@example.com") -> int:

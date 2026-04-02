@@ -44,6 +44,8 @@ class CommentMediaTests(unittest.TestCase):
     def setUp(self):
         main.Base.metadata.drop_all(bind=main.engine)
         main.Base.metadata.create_all(bind=main.engine)
+        with main.RATE_LIMIT_LOCK:
+            main.RATE_LIMIT_BUCKETS.clear()
         self.upload_dir_ctx = tempfile.TemporaryDirectory()
         main.STORAGE_BACKEND = "local"
         main.UPLOAD_DIR = Path(self.upload_dir_ctx.name)
