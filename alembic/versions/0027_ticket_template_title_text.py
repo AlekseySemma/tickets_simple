@@ -1,7 +1,7 @@
 """Expand ticket template title storage to text.
 
-Revision ID: 0021_ticket_template_title_text
-Revises: 0020_template_department
+Revision ID: 0027_ticket_template_title_text
+Revises: 0026_user_role_templates
 Create Date: 2026-04-02
 """
 from __future__ import annotations
@@ -10,8 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0021_ticket_template_title_text"
-down_revision = "0020_template_department"
+revision = "0027_ticket_template_title_text"
+down_revision = "0026_user_role_templates"
 branch_labels = None
 depends_on = None
 
