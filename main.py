@@ -740,7 +740,7 @@ class TicketTemplate(Base):
     ticket_type_id: Mapped[int] = mapped_column(ForeignKey("ticket_types.id"), index=True)
     department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     name: Mapped[str] = mapped_column(String(255), index=True)
-    title_template: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    title_template: Mapped[Optional[str]] = mapped_column(Text, default=None)
     description_template: Mapped[Optional[str]] = mapped_column(Text, default=None)
     default_deadline_rule: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     default_executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
@@ -2233,7 +2233,10 @@ def create_tickets_from_template(
             continue
 
         unit_name = unit_names.get(leaf_unit_id, f"Unit #{leaf_unit_id}")
-        title = render_template_value(template.title_template, effective_period, unit_name) or f"{template.name} {effective_period}"
+        title = truncate_ticket_title(
+            render_template_value(template.title_template, effective_period, unit_name)
+            or f"{template.name} {effective_period}"
+        )
         description = render_template_value(template.description_template, effective_period, unit_name)
         project_id = get_or_create_project_for_org_unit(db, template.company_id, leaf_unit_id)
         resolved_executor_id = (
@@ -2333,6 +2336,13 @@ def normalize_ticket_title(raw_title: str | None) -> str:
 
 def is_ticket_title_too_long(title: str | None) -> bool:
     return len(title or "") > MAX_TICKET_TITLE_LEN
+
+
+def truncate_ticket_title(title: str | None) -> str:
+    normalized = normalize_ticket_title(title)
+    if len(normalized) <= MAX_TICKET_TITLE_LEN:
+        return normalized
+    return normalized[:MAX_TICKET_TITLE_LEN].rstrip()
 
 
 def write_upload_file(upload: UploadFile, destination: Path, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> None:

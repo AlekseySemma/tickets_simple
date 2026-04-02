@@ -222,6 +222,54 @@ class Stage6PlanTests(unittest.TestCase):
             self.assertEqual(created_2, 0)
             self.assertEqual(skipped_2, 1)
 
+    def test_template_generation_truncates_long_ticket_title(self):
+        ids = self.seed_companies_users()
+        with main.SessionLocal() as db:
+            tt = main.TicketType(company_id=ids["company1"], name="Plan", description=None, is_active=True)
+            ut = main.UnitType(company_id=ids["company1"], name="Node", code="node", is_active=True)
+            db.add_all([tt, ut])
+            db.flush()
+
+            root = main.OrgUnit(company_id=ids["company1"], name="Branch", unit_type_id=ut.id, parent_id=None, is_active=True)
+            store = main.OrgUnit(company_id=ids["company1"], name="Store 1", unit_type_id=ut.id, parent_id=None, is_active=True)
+            db.add_all([root, store])
+            db.flush()
+            store.parent_id = root.id
+
+            long_title_template = "TO " + ("X" * 400) + " {period} {unit_name}"
+            tmpl = main.TicketTemplate(
+                company_id=ids["company1"],
+                ticket_type_id=tt.id,
+                name="Long Title Plan",
+                title_template=long_title_template,
+                description_template="Plan for {period}",
+                default_deadline_rule="2026-02-28",
+                default_executor_id=ids["exec1"],
+                scope_unit_id=root.id,
+                is_active=True,
+            )
+            db.add(tmpl)
+            db.commit()
+
+            created, skipped, _ = main.create_tickets_from_template(
+                db=db,
+                template=tmpl,
+                actor_id=ids["admin1"],
+                period_key="2026-02",
+            )
+            db.commit()
+
+            created_ticket = (
+                db.query(main.Ticket)
+                .filter(main.Ticket.company_id == ids["company1"], main.Ticket.ticket_template_id == tmpl.id)
+                .first()
+            )
+
+            self.assertEqual(created, 1)
+            self.assertEqual(skipped, 0)
+            self.assertIsNotNone(created_ticket)
+            self.assertEqual(len(created_ticket.title), main.MAX_TICKET_TITLE_LEN)
+
     def test_ticket_visibility_company_and_executor_rules(self):
         ids = self.seed_companies_users()
         with main.SessionLocal() as db:

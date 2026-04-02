@@ -55,6 +55,10 @@ class TemplateHelpersTest(unittest.TestCase):
     def test_ticket_title_notification_preview_falls_back_to_ticket_id(self):
         self.assertEqual(main.ticket_title_notification_preview("", ticket_id=42), "заявка #42")
 
+    def test_truncate_ticket_title_limits_length(self):
+        title = main.truncate_ticket_title("  " + ("X" * 300) + "  ")
+        self.assertEqual(title, "X" * main.MAX_TICKET_TITLE_LEN)
+
 
 if __name__ == "__main__":
     unittest.main()
