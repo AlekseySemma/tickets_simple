@@ -40,6 +40,7 @@ from app_routes.receipt_actions import register_receipt_action_routes
 from app_routes.receipt_exports import register_receipt_export_routes
 from app_routes.receipts import register_receipt_routes
 from app_routes.settings import register_settings_routes
+from app_routes.ticket_create import register_ticket_create_routes
 from app_routes.ticket_detail import register_ticket_detail_routes
 from app_routes.ticket_templates import register_ticket_template_routes
 from app_routes.ticket_types import register_ticket_type_routes
@@ -4463,7 +4464,7 @@ register_settings_routes(
     payment_card_model=PaymentCard,
     role_enum=Role,
     settings_sections=SETTINGS_SECTIONS,
-    org_structure_v2_enabled=ORG_STRUCTURE_V2_ENABLED,
+    org_structure_v2_enabled=(lambda: ORG_STRUCTURE_V2_ENABLED),
     min_deadline_soon_warning_minutes=MIN_DEADLINE_SOON_WARNING_MINUTES,
     max_deadline_soon_warning_minutes=MAX_DEADLINE_SOON_WARNING_MINUTES,
     min_archive_retention_days=MIN_ARCHIVE_RETENTION_DAYS,
@@ -4781,8 +4782,40 @@ register_ticket_detail_routes(
     log_action_changed=LOG_ACTION_CHANGED,
     log_action_file_deleted=LOG_ACTION_FILE_DELETED,
     max_ticket_title_len=MAX_TICKET_TITLE_LEN,
-    org_structure_v2_enabled=ORG_STRUCTURE_V2_ENABLED,
+    org_structure_v2_enabled=(lambda: ORG_STRUCTURE_V2_ENABLED),
     http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
+register_ticket_create_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    ensure_company_user=ensure_company_user,
+    can_create_company_ticket=can_create_company_ticket,
+    normalize_ticket_title=normalize_ticket_title,
+    is_ticket_title_too_long=is_ticket_title_too_long,
+    parse_deadline_inputs=parse_deadline_inputs,
+    validate_ticket_links=validate_ticket_links,
+    resolve_ticket_department_id=resolve_ticket_department_id,
+    resolve_target_unit_id_from_form_input=resolve_target_unit_id_from_form_input,
+    resolve_scope_leaf_units=resolve_scope_leaf_units,
+    get_or_create_project_for_org_unit=get_or_create_project_for_org_unit,
+    get_preferred_executor_for_unit=get_preferred_executor_for_unit,
+    ensure_default_ticket_watchers=ensure_default_ticket_watchers,
+    add_ticket_watcher=add_ticket_watcher,
+    add_ticket_log=add_ticket_log,
+    notify_executor_new_ticket=notify_executor_new_ticket,
+    templates_logger=logger,
+    user_model=User,
+    ticket_model=Ticket,
+    role_enum=Role,
+    ticket_status_enum=TicketStatus,
+    org_structure_v2_enabled=(lambda: ORG_STRUCTURE_V2_ENABLED),
+    log_action_created=LOG_ACTION_CREATED,
+    max_ticket_title_len=MAX_TICKET_TITLE_LEN,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    operational_error=OperationalError,
     sqlalchemy_error=SQLAlchemyError,
 )
 
@@ -8009,238 +8042,6 @@ def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
             "user": user,
         },
     )
-
-
-@app.post("/web/tickets/create")
-async def web_create_ticket(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    def create_redirect(error_code: str | None = None) -> RedirectResponse:
-        url = "/web?open_create=1"
-        if error_code:
-            url = f"{url}&create_error={error_code}"
-        return RedirectResponse(url=url, status_code=HTTP_303_SEE_OTHER)
-
-    def is_schema_outdated_db_error(exc: Exception) -> bool:
-        message = str(exc).lower()
-        schema_markers = (
-            "no such table",
-            "no such column",
-            "has no column named",
-            "undefined table",
-            "undefined column",
-        )
-        return any(marker in message for marker in schema_markers)
-
-    # ?????????????? ?? ?????????????????????? ?????????? ??????????????????
-    if user.role not in (Role.admin, Role.curator, Role.executor):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-    if not can_create_company_ticket(user):
-        raise HTTPException(403, "Forbidden")
-
-    form = await request.form()
-
-    title = normalize_ticket_title(form.get("title"))
-    description = (form.get("description") or "").strip() or None
-
-    if is_ticket_title_too_long(title):
-        return create_redirect("title_too_long")
-
-    project_id_raw = (form.get("project_id") or "").strip()
-    if not title:
-        return create_redirect("missing_required")
-    project_id: int | None = None
-    if project_id_raw:
-        try:
-            project_id = int(project_id_raw)
-        except ValueError:
-            return create_redirect("bad_input")
-
-    if user.role == Role.executor and not getattr(user, "can_view_all_tickets", False):
-        executor_id = user.id
-    else:
-        executor_id_raw = (form.get("executor_id") or "").strip()
-        try:
-            executor_id = int(executor_id_raw) if executor_id_raw else None
-        except ValueError:
-            return create_redirect("bad_input")
-
-    ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
-    try:
-        ticket_type_id = int(ticket_type_id_raw) if ticket_type_id_raw else None
-    except ValueError:
-        return create_redirect("bad_input")
-    department_id_raw = (form.get("department_id") or "").strip()
-    try:
-        department_id = int(department_id_raw) if department_id_raw else None
-    except ValueError:
-        return create_redirect("bad_input")
-    target_unit_id_raw = (form.get("target_unit_id") or "").strip()
-    target_unit_label_raw = (form.get("target_unit_label") or "").strip()
-    try:
-        target_unit_id = int(target_unit_id_raw) if target_unit_id_raw else None
-    except ValueError:
-        return create_redirect("bad_input")
-    if ORG_STRUCTURE_V2_ENABLED and target_unit_id is None and target_unit_label_raw:
-        target_unit_id = resolve_target_unit_id_from_form_input(db, user.company_id, target_unit_label_raw)
-    if ORG_STRUCTURE_V2_ENABLED and target_unit_id is None:
-        return create_redirect("target_unit_required")
-    if not ORG_STRUCTURE_V2_ENABLED and project_id is None:
-        return create_redirect("missing_required")
-
-    watcher_id_values = form.getlist("watcher_user_ids")
-    selected_watcher_ids: list[int] = []
-    seen_watcher_ids: set[int] = set()
-    for raw_value in watcher_id_values:
-        value = (raw_value or "").strip()
-        if not value:
-            continue
-        try:
-            watcher_id = int(value)
-        except ValueError:
-            return create_redirect("bad_input")
-        if watcher_id in seen_watcher_ids:
-            continue
-        seen_watcher_ids.add(watcher_id)
-        selected_watcher_ids.append(watcher_id)
-    if selected_watcher_ids:
-        valid_watcher_ids = {
-            int(row[0])
-            for row in (
-                db.query(User.id)
-                .filter(
-                    User.company_id == user.company_id,
-                    User.role.in_([Role.admin, Role.curator, Role.executor]),
-                    User.role != Role.platform_admin,
-                    User.id.in_(selected_watcher_ids),
-                )
-                .all()
-            )
-        }
-        if len(valid_watcher_ids) != len(selected_watcher_ids):
-            return create_redirect("bad_input")
-
-    deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
-
-    try:
-        validate_ticket_links(
-            db,
-            user.company_id,
-            project_id,
-            executor_id,
-            ticket_type_id,
-            target_unit_id,
-            None,
-            department_id,
-        )
-        resolved_department_id = resolve_ticket_department_id(
-            db,
-            company_id=user.company_id,
-            ticket_type_id=ticket_type_id,
-            department_id=department_id,
-        )
-        created_tickets: list[Ticket] = []
-        if target_unit_id is not None:
-            leaf_unit_ids = resolve_scope_leaf_units(db, user.company_id, target_unit_id)
-            if not leaf_unit_ids:
-                return create_redirect("target_unit_required")
-            batch_id = uuid.uuid4().hex
-            for leaf_unit_id in leaf_unit_ids:
-                resolved_project_id = get_or_create_project_for_org_unit(db, user.company_id, leaf_unit_id)
-                resolved_executor_id = (
-                    executor_id
-                    if executor_id is not None
-                    else get_preferred_executor_for_unit(
-                        db,
-                        user.company_id,
-                        leaf_unit_id,
-                        department_id=resolved_department_id,
-                    )
-                )
-                t = Ticket(
-                    title=title,
-                    description=description,
-                    deadline=deadline,
-                    company_id=user.company_id,
-                    executor_id=resolved_executor_id,
-                    ticket_type_id=ticket_type_id,
-                    department_id=resolved_department_id,
-                    target_unit_id=leaf_unit_id,
-                    batch_id=batch_id,
-                    project_id=resolved_project_id,
-                    created_by=user.id,
-                )
-                db.add(t)
-                db.flush()
-                ensure_default_ticket_watchers(db, t)
-                for watcher_id in selected_watcher_ids:
-                    add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
-                add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CREATED)
-                created_tickets.append(t)
-        else:
-            # ??????????: ???????????? deadline=deadline
-            t = Ticket(
-                title=title,
-                description=description,
-                deadline=deadline,
-                company_id=user.company_id,
-                executor_id=executor_id,
-                ticket_type_id=ticket_type_id,
-                department_id=resolved_department_id,
-                project_id=project_id,
-                created_by=user.id,
-            )
-            db.add(t)
-            db.flush()
-            ensure_default_ticket_watchers(db, t)
-            for watcher_id in selected_watcher_ids:
-                add_ticket_watcher(db, t, watcher_user_id=watcher_id, added_by=user.id)
-            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CREATED)
-            created_tickets.append(t)
-        db.commit()
-    except HTTPException as exc:
-        db.rollback()
-        detail = str(exc.detail or "").lower()
-        if "target unit" in detail:
-            return create_redirect("target_unit_required")
-        if "title" in detail:
-            return create_redirect("title_too_long")
-        return create_redirect("bad_input")
-    except OperationalError as exc:
-        db.rollback()
-        logger.exception(
-            "Ticket create operational error: user_id=%s company_id=%s role=%s project_id=%s executor_id=%s ticket_type_id=%s target_unit_id=%s",
-            user.id,
-            user.company_id,
-            user.role,
-            project_id,
-            executor_id,
-            ticket_type_id,
-            target_unit_id,
-        )
-        if is_schema_outdated_db_error(exc):
-            return create_redirect("schema_outdated")
-        return create_redirect("save_failed")
-    except SQLAlchemyError:
-        db.rollback()
-        logger.exception(
-            "Ticket create SQLAlchemy error: user_id=%s company_id=%s role=%s project_id=%s executor_id=%s ticket_type_id=%s target_unit_id=%s",
-            user.id,
-            user.company_id,
-            user.role,
-            project_id,
-            executor_id,
-            ticket_type_id,
-            target_unit_id,
-        )
-        return create_redirect("save_failed")
-    for created_ticket in created_tickets:
-        notify_executor_new_ticket(db, created_ticket, user)
-    try:
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
 
 # ====== WEB: Projects (legacy redirects) ======
