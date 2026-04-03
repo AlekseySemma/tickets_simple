@@ -42,6 +42,7 @@ from app_routes.receipts import register_receipt_routes
 from app_routes.settings import register_settings_routes
 from app_routes.ticket_templates import register_ticket_template_routes
 from app_routes.ticket_types import register_ticket_type_routes
+from app_routes.ticket_actions import register_ticket_action_routes
 from app_routes.tickets_overview import register_ticket_overview_routes
 from app_routes.users import register_user_management_routes
 from app_routes.web_auth import register_web_auth_routes
@@ -4695,6 +4696,31 @@ register_ticket_overview_routes(
     sqlalchemy_error=SQLAlchemyError,
 )
 
+register_ticket_action_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    is_manager=is_manager,
+    can_access_ticket=can_access_ticket,
+    can_archive_ticket=can_archive_ticket,
+    can_delete_ticket=can_delete_ticket,
+    get_company_ticket_or_404=get_company_ticket_or_404,
+    safe_next=safe_next,
+    archive_ticket=archive_ticket,
+    restore_ticket_from_archive=restore_ticket_from_archive,
+    resolve_ticket_archive_retention_days=resolve_ticket_archive_retention_days,
+    local_now=local_now,
+    add_ticket_log=add_ticket_log,
+    delete_ticket_with_related_data=delete_ticket_with_related_data,
+    notify_curators_status_changed=notify_curators_status_changed,
+    get_company_deadline_soon_warning_minutes=get_company_deadline_soon_warning_minutes,
+    ticket_status_change_log_action=ticket_status_change_log_action,
+    ticket_status_enum=TicketStatus,
+    final_ticket_statuses=FINAL_TICKET_STATUSES,
+    company_model=Company,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+)
+
 register_notification_routes(
     app,
     get_db=get_db,
@@ -8150,157 +8176,6 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
         db.rollback()
 
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/delete")
-async def web_delete_ticket(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if not can_delete_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-
-    default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
-
-    # СѓРґР°Р»СЏРµРј СЃРІСЏР·Р°РЅРЅС‹Рµ Р·Р°РїРёСЃРё РґРѕ СѓРґР°Р»РµРЅРёСЏ Р·Р°СЏРІРєРё (FK РІ Postgres)
-    delete_ticket_with_related_data(db, t, remove_files=True)
-    db.commit()
-
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback=default_next)
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/status")
-async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-
-    # РїСЂР°РІР°: РєСѓСЂР°С‚РѕСЂ РІСЃРµРіРґР°, РёСЃРїРѕР»РЅРёС‚РµР»СЊ вЂ” РµСЃР»Рё Р·Р°СЏРІРєР° РµРіРѕ (СЃРѕР·РґР°Р» РёР»Рё РЅР°Р·РЅР°С‡РµРЅР°)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-
-    form = await request.form()
-    status_raw = (form.get("status") or "").strip()
-    if not status_raw:
-        raise HTTPException(400, "Missing status")
-    if status_raw == TicketStatus.archived.value:
-        raise HTTPException(400, "Use archive action")
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket must be restored first")
-
-    old_status = t.status
-    t.status = TicketStatus(status_raw)
-    if t.status != old_status:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
-    db.commit()
-    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
-    db.commit()
-
-    now = local_now()
-    is_overdue = bool(t.deadline and t.deadline < now and t.status not in FINAL_TICKET_STATUSES)
-    company = db.get(Company, user.company_id) if user.company_id is not None else None
-    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
-    is_deadline_soon = bool(
-        t.deadline
-        and not is_overdue
-        and t.status not in FINAL_TICKET_STATUSES
-        and t.deadline <= now + timedelta(minutes=deadline_soon_warning_minutes)
-    )
-
-    # РµСЃР»Рё Р·Р°РїСЂРѕСЃ РїСЂРёС€С‘Р» С‡РµСЂРµР· fetch (Accept: application/json) вЂ” РІРµСЂРЅС‘Рј JSON
-    accept = (request.headers.get("accept") or "").lower()
-    if "application/json" in accept:
-        return JSONResponse(
-            {
-                "ok": True,
-                "ticket_id": t.id,
-                "status": t.status.value,
-                "is_overdue": is_overdue,
-                "is_deadline_soon": is_deadline_soon,
-            }
-        )
-
-    # РёРЅР°С‡Рµ РѕР±С‹С‡РЅС‹Р№ СЃС†РµРЅР°СЂРёР№ (РїРµСЂРµР·Р°РіСЂСѓР·РєР°)
-    return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/archive")
-async def web_archive_ticket(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if not can_archive_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback="/web")
-    if t.status == TicketStatus.archived:
-        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-    company = db.get(Company, user.company_id) if user.company_id is not None else None
-    old_status = t.status
-    archive_ticket(db, t, actor_id=user.id, company=company)
-    db.commit()
-    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
-    db.commit()
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/restore")
-async def web_restore_ticket(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback="/web/archive")
-    old_status = t.status
-    restore_ticket_from_archive(db, t, actor_id=user.id)
-    db.commit()
-    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
-    db.commit()
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/legal-hold")
-async def web_ticket_legal_hold(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if t.status != TicketStatus.archived:
-        raise HTTPException(400, "Legal hold works only for archived tickets")
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback="/web/archive")
-    hold_enabled = (form.get("is_legal_hold") or "").strip() == "1"
-    t.is_legal_hold = hold_enabled
-    if not hold_enabled:
-        if t.retention_days is None:
-            company = db.get(Company, user.company_id) if user.company_id is not None else None
-            t.retention_days = resolve_ticket_archive_retention_days(db, t, company)
-        if t.archived_at is None:
-            t.archived_at = local_now()
-        t.delete_at = t.archived_at + timedelta(days=t.retention_days)
-    add_ticket_log(
-        db,
-        ticket_id=t.id,
-        actor_id=user.id,
-        action="установлен legal hold" if hold_enabled else "снят legal hold",
-    )
-    db.commit()
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/tickets/{ticket_id}/watchers/self")
