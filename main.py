@@ -42,6 +42,7 @@ from app_routes.receipts import register_receipt_routes
 from app_routes.settings import register_settings_routes
 from app_routes.ticket_templates import register_ticket_template_routes
 from app_routes.ticket_types import register_ticket_type_routes
+from app_routes.tickets_overview import register_ticket_overview_routes
 from app_routes.users import register_user_management_routes
 from app_routes.web_auth import register_web_auth_routes
 from app_support.access import (
@@ -4655,6 +4656,45 @@ register_ticket_type_routes(
     http_303_see_other=HTTP_303_SEE_OTHER,
 )
 
+register_ticket_overview_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    ensure_company_user=ensure_company_user,
+    is_platform_admin=is_platform_admin,
+    can_access_ticket=can_access_ticket,
+    can_archive_ticket=can_archive_ticket,
+    can_delete_ticket=can_delete_ticket,
+    can_restore_ticket=can_restore_ticket,
+    can_manage_ticket_legal_hold=can_manage_ticket_legal_hold,
+    can_take_ticket_in_work=can_take_ticket_in_work,
+    can_close_ticket=can_close_ticket,
+    get_company_ticket_or_404=get_company_ticket_or_404,
+    render_web_tickets_page=(
+        lambda **kwargs: _render_web_tickets_page(**kwargs)
+    ),
+    safe_next=safe_next,
+    append_query_params=append_query_params,
+    archive_ticket=archive_ticket,
+    delete_ticket_with_related_data=delete_ticket_with_related_data,
+    restore_ticket_from_archive=restore_ticket_from_archive,
+    resolve_ticket_archive_retention_days=resolve_ticket_archive_retention_days,
+    local_now=local_now,
+    add_ticket_log=add_ticket_log,
+    ensure_default_ticket_watchers=ensure_default_ticket_watchers,
+    notify_executor_reassigned=notify_executor_reassigned,
+    notify_curators_status_changed=notify_curators_status_changed,
+    ticket_field_change_log_action=ticket_field_change_log_action,
+    ticket_status_change_log_action=ticket_status_change_log_action,
+    ticket_user_name=_ticket_user_name,
+    bulk_action_labels=TICKET_BULK_ACTION_LABELS,
+    ticket_model=Ticket,
+    company_model=Company,
+    ticket_status_enum=TicketStatus,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
 register_notification_routes(
     app,
     get_db=get_db,
@@ -6194,92 +6234,6 @@ def _render_web_tickets_page(
         path="/",
     )
     return response
-
-
-@app.get("/web")
-def web_tickets(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    status_filter: str | None = None,
-    project_id: str | None = None,
-    ticket_type_id: str | None = None,
-    department_id: str | None = None,
-    executor_id: str | None = None,
-    target_unit_id: str | None = None,
-    unit_executor_id: str | None = None,
-    q: str | None = None,
-    only_overdue: str | None = None,
-    sort: str | None = None,
-    view_mode: str | None = None,
-    open_create: str | None = None,
-    create_error: str | None = None,
-    page: int = 1,
-    page_size: str | None = None,
-):
-    return _render_web_tickets_page(
-        request=request,
-        db=db,
-        user=user,
-        status_filter=status_filter,
-        project_id=project_id,
-        ticket_type_id=ticket_type_id,
-        department_id=department_id,
-        executor_id=executor_id,
-        target_unit_id=target_unit_id,
-        unit_executor_id=unit_executor_id,
-        q=q,
-        only_overdue=only_overdue,
-        sort=sort,
-        view_mode=view_mode,
-        open_create=open_create,
-        create_error=create_error,
-        page=page,
-        page_size=page_size,
-        archive_mode=False,
-    )
-
-
-@app.get("/web/archive")
-def web_archive_tickets(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    status_filter: str | None = None,
-    project_id: str | None = None,
-    ticket_type_id: str | None = None,
-    department_id: str | None = None,
-    executor_id: str | None = None,
-    target_unit_id: str | None = None,
-    unit_executor_id: str | None = None,
-    q: str | None = None,
-    only_overdue: str | None = None,
-    sort: str | None = None,
-    view_mode: str | None = None,
-    page: int = 1,
-    page_size: str | None = None,
-):
-    return _render_web_tickets_page(
-        request=request,
-        db=db,
-        user=user,
-        status_filter=status_filter,
-        project_id=project_id,
-        ticket_type_id=ticket_type_id,
-        department_id=department_id,
-        executor_id=executor_id,
-        target_unit_id=target_unit_id,
-        unit_executor_id=unit_executor_id,
-        q=q,
-        only_overdue=only_overdue,
-        sort=sort,
-        view_mode=view_mode,
-        open_create=None,
-        create_error=None,
-        page=page,
-        page_size=page_size,
-        archive_mode=True,
-    )
 
 
 def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
@@ -8220,139 +8174,6 @@ async def web_delete_ticket(
     return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
-@app.post("/web/tickets/bulk-action")
-async def web_tickets_bulk_action(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if is_platform_admin(user):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback="/web")
-    action = (form.get("action") or "").strip().lower()
-    if action not in TICKET_BULK_ACTION_LABELS:
-        return RedirectResponse(
-            url=append_query_params(next_url, bulk_error="bad_action"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-
-    ticket_ids: list[int] = []
-    for raw_ticket_id in form.getlist("ticket_ids"):
-        try:
-            ticket_id = int((raw_ticket_id or "").strip())
-        except (TypeError, ValueError):
-            continue
-        if ticket_id > 0 and ticket_id not in ticket_ids:
-            ticket_ids.append(ticket_id)
-    if not ticket_ids:
-        return RedirectResponse(
-            url=append_query_params(next_url, bulk_error="no_selection"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-
-    tickets = (
-        db.query(Ticket)
-        .filter(Ticket.company_id == user.company_id, Ticket.id.in_(ticket_ids))
-        .all()
-    )
-    tickets_by_id = {int(ticket.id): ticket for ticket in tickets}
-    company = db.get(Company, user.company_id) if user.company_id is not None else None
-    notifications: list[tuple[Ticket, TicketStatus]] = []
-    done_count = 0
-    skipped_count = 0
-
-    try:
-        for ticket_id in ticket_ids:
-            ticket = tickets_by_id.get(ticket_id)
-            if ticket is None or not can_access_ticket(user, ticket):
-                skipped_count += 1
-                continue
-
-            if action == "archive":
-                if not can_archive_ticket(user, ticket):
-                    skipped_count += 1
-                    continue
-                old_status = ticket.status
-                archive_ticket(db, ticket, actor_id=user.id, company=company)
-                notifications.append((ticket, old_status))
-                done_count += 1
-                continue
-
-            if action == "delete":
-                if not can_delete_ticket(user, ticket):
-                    skipped_count += 1
-                    continue
-                delete_ticket_with_related_data(db, ticket, remove_files=True)
-                done_count += 1
-                continue
-
-            if action == "restore":
-                if not can_restore_ticket(user, ticket):
-                    skipped_count += 1
-                    continue
-                old_status = ticket.status
-                restore_ticket_from_archive(db, ticket, actor_id=user.id)
-                notifications.append((ticket, old_status))
-                done_count += 1
-                continue
-
-            if action in {"legal_hold_on", "legal_hold_off"}:
-                if not can_manage_ticket_legal_hold(user, ticket):
-                    skipped_count += 1
-                    continue
-                hold_enabled = action == "legal_hold_on"
-                if bool(ticket.is_legal_hold) == hold_enabled:
-                    skipped_count += 1
-                    continue
-                ticket.is_legal_hold = hold_enabled
-                if not hold_enabled:
-                    if ticket.retention_days is None:
-                        ticket.retention_days = resolve_ticket_archive_retention_days(db, ticket, company)
-                    if ticket.archived_at is None:
-                        ticket.archived_at = local_now()
-                    ticket.delete_at = ticket.archived_at + timedelta(days=ticket.retention_days)
-                add_ticket_log(
-                    db,
-                    ticket_id=ticket.id,
-                    actor_id=user.id,
-                    action="установлен legal hold" if hold_enabled else "снят legal hold",
-                )
-                done_count += 1
-                continue
-
-            skipped_count += 1
-
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return RedirectResponse(
-            url=append_query_params(next_url, bulk_error="save_failed"),
-            status_code=HTTP_303_SEE_OTHER,
-        )
-
-    for ticket, old_status in notifications:
-        notify_curators_status_changed(db, ticket, actor=user, old_status=old_status)
-    if notifications:
-        try:
-            db.commit()
-        except SQLAlchemyError:
-            db.rollback()
-
-    return RedirectResponse(
-        url=append_query_params(
-            next_url,
-            bulk_ok=True,
-            bulk_action=action,
-            bulk_done=done_count,
-            bulk_skipped=skipped_count,
-        ),
-        status_code=HTTP_303_SEE_OTHER,
-    )
-
-
 @app.post("/web/tickets/{ticket_id}/status")
 async def web_update_status(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = get_company_ticket_or_404(db, user, ticket_id)
@@ -8404,72 +8225,6 @@ async def web_update_status(ticket_id: int, request: Request, db: Session = Depe
 
     # РёРЅР°С‡Рµ РѕР±С‹С‡РЅС‹Р№ СЃС†РµРЅР°СЂРёР№ (РїРµСЂРµР·Р°РіСЂСѓР·РєР°)
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/quick-action")
-async def web_ticket_quick_action(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-
-    form = await request.form()
-    action = (form.get("action") or "").strip()
-    default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
-    next_url = safe_next(form.get("next"), fallback=default_next)
-
-    old_status = t.status
-    old_executor_id = t.executor_id
-    changed = False
-
-    if action == "take_in_work":
-        if not can_take_ticket_in_work(user, t):
-            raise HTTPException(403, "Forbidden")
-        if t.executor_id != user.id:
-            t.executor_id = user.id
-            add_ticket_log(
-                db,
-                ticket_id=t.id,
-                actor_id=user.id,
-                action=ticket_field_change_log_action(
-                    "исполнителя",
-                    _ticket_user_name(db, old_executor_id),
-                    _ticket_user_name(db, t.executor_id),
-                ),
-            )
-            changed = True
-        if t.status != TicketStatus.in_progress:
-            t.status = TicketStatus.in_progress
-            add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
-            changed = True
-    elif action == "complete":
-        if not can_close_ticket(user, t):
-            raise HTTPException(403, "Forbidden")
-        if t.status != TicketStatus.in_progress:
-            return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-        t.status = TicketStatus.done
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
-        changed = True
-    else:
-        raise HTTPException(400, "Unknown quick action")
-
-    if not changed:
-        return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-    ensure_default_ticket_watchers(db, t)
-    db.commit()
-    db.refresh(t)
-
-    notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
-    if t.status != old_status:
-        notify_curators_status_changed(db, t, actor=user, old_status=old_status)
-    db.commit()
-
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
 
 
 @app.post("/web/tickets/{ticket_id}/archive")
