@@ -41,6 +41,7 @@ from app_routes.receipt_exports import register_receipt_export_routes
 from app_routes.receipts import register_receipt_routes
 from app_routes.settings import register_settings_routes
 from app_routes.ticket_templates import register_ticket_template_routes
+from app_routes.ticket_types import register_ticket_type_routes
 from app_routes.users import register_user_management_routes
 from app_routes.web_auth import register_web_auth_routes
 from app_support.access import (
@@ -4639,6 +4640,21 @@ register_ticket_template_routes(
     sqlalchemy_error=SQLAlchemyError,
 )
 
+register_ticket_type_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    is_manager=is_manager,
+    is_admin=is_admin,
+    ensure_company_user=ensure_company_user,
+    parse_archive_retention_days=parse_archive_retention_days,
+    templates=templates,
+    ticket_type_model=TicketType,
+    ticket_model=Ticket,
+    department_model=Department,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+)
+
 register_notification_routes(
     app,
     get_db=get_db,
@@ -8982,158 +8998,6 @@ async def web_projects_delete(project_id: int, db: Session = Depends(get_db), us
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
     return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
-
-# ====== WEB: Ticket Types ======
-@app.get("/web/ticket-types")
-def web_ticket_types(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    ticket_types = (
-        db.query(
-            TicketType.id,
-            TicketType.name,
-            TicketType.description,
-            TicketType.department_id,
-            TicketType.archive_retention_days,
-            TicketType.is_active,
-            Department.name.label("department_name"),
-        )
-        .outerjoin(Department, Department.id == TicketType.department_id)
-        .filter(TicketType.company_id == user.company_id)
-        .order_by(TicketType.id.desc())
-        .all()
-    )
-    departments = (
-        db.query(Department.id, Department.name, Department.is_active)
-        .filter(Department.company_id == user.company_id)
-        .order_by(Department.name.asc(), Department.id.asc())
-        .all()
-    )
-    return templates.TemplateResponse(
-        "ticket_types.html",
-        {
-            "request": request,
-            "user": user,
-            "ticket_types": ticket_types,
-            "departments": departments,
-            "can_manage_departments": is_admin(user),
-        },
-    )
-
-@app.post("/web/ticket-types/create")
-async def web_ticket_types_create(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    description = (form.get("description") or "").strip() or None
-    department_raw = (form.get("department_id") or "").strip()
-    archive_retention_days = parse_archive_retention_days(form.get("archive_retention_days"))
-    if (form.get("archive_retention_days") or "").strip() and archive_retention_days is None:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    is_active = (form.get("is_active") or "1").strip() == "1"
-    if not name:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    department_id = int(department_raw) if department_raw.isdigit() else None
-    if department_raw and department_id is None:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    if department_id is not None:
-        department = db.get(Department, department_id)
-        if not department or department.company_id != user.company_id:
-            return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    exists = (
-        db.query(TicketType)
-        .filter(TicketType.company_id == user.company_id, TicketType.name == name)
-        .first()
-    )
-    if exists:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    item = TicketType(
-        company_id=user.company_id,
-        name=name,
-        description=description,
-        department_id=department_id,
-        archive_retention_days=archive_retention_days,
-        is_active=is_active,
-    )
-    db.add(item)
-    db.commit()
-    return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-
-@app.post("/web/ticket-types/{ticket_type_id}/update")
-async def web_ticket_types_update(
-    ticket_type_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    item = db.get(TicketType, ticket_type_id)
-    if not item or item.company_id != user.company_id:
-        raise HTTPException(404, "Ticket type not found")
-
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    description = (form.get("description") or "").strip() or None
-    department_raw = (form.get("department_id") or "").strip()
-    archive_retention_days = parse_archive_retention_days(form.get("archive_retention_days"))
-    if (form.get("archive_retention_days") or "").strip() and archive_retention_days is None:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    is_active = (form.get("is_active") or "").strip() == "1"
-    if not name:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    department_id = int(department_raw) if department_raw.isdigit() else None
-    if department_raw and department_id is None:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    if department_id is not None:
-        department = db.get(Department, department_id)
-        if not department or department.company_id != user.company_id:
-            return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-
-    exists = (
-        db.query(TicketType)
-        .filter(
-            TicketType.company_id == user.company_id,
-            TicketType.name == name,
-            TicketType.id != item.id,
-        )
-        .first()
-    )
-    if exists:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-
-    item.name = name
-    item.description = description
-    item.department_id = department_id
-    item.archive_retention_days = archive_retention_days
-    item.is_active = is_active
-    db.commit()
-    return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-
-@app.post("/web/ticket-types/{ticket_type_id}/delete")
-async def web_ticket_types_delete(
-    ticket_type_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    if not is_manager(user):
-        raise HTTPException(403, "Only admin or curator")
-    ensure_company_user(user)
-    item = db.get(TicketType, ticket_type_id)
-    if not item or item.company_id != user.company_id:
-        raise HTTPException(404, "Ticket type not found")
-
-    in_use = db.query(Ticket.id).filter(Ticket.ticket_type_id == item.id).first() is not None
-    if in_use:
-        return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-    db.delete(item)
-    db.commit()
-    return RedirectResponse(url="/web/ticket-types", status_code=HTTP_303_SEE_OTHER)
-
 
 @app.get("/web/tickets/{ticket_id}")
 def web_ticket_detail(
