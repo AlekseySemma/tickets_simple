@@ -40,6 +40,7 @@ from app_routes.receipt_actions import register_receipt_action_routes
 from app_routes.receipt_exports import register_receipt_export_routes
 from app_routes.receipts import register_receipt_routes
 from app_routes.settings import register_settings_routes
+from app_routes.ticket_detail import register_ticket_detail_routes
 from app_routes.ticket_templates import register_ticket_template_routes
 from app_routes.ticket_types import register_ticket_type_routes
 from app_routes.ticket_actions import register_ticket_action_routes
@@ -4721,6 +4722,70 @@ register_ticket_action_routes(
     http_303_see_other=HTTP_303_SEE_OTHER,
 )
 
+register_ticket_detail_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    safe_next=safe_next,
+    get_company_ticket_or_404=get_company_ticket_or_404,
+    can_access_ticket=can_access_ticket,
+    add_ticket_watcher=add_ticket_watcher,
+    ensure_default_ticket_watchers=ensure_default_ticket_watchers,
+    normalize_optional_uploaded_files=normalize_optional_uploaded_files,
+    create_comment_with_media_async=create_comment_with_media_async,
+    delete_stored_file=delete_stored_file,
+    notify_comment_added=notify_comment_added,
+    can_delete_comment=can_delete_comment,
+    is_manager=is_manager,
+    normalize_uploaded_files=normalize_uploaded_files,
+    make_safe_upload_name=make_safe_upload_name,
+    build_attachment_object_key=build_attachment_object_key,
+    store_upload_file_to_storage_async=store_upload_file_to_storage_async,
+    create_ticket_attachment_record=create_ticket_attachment_record,
+    notify_curators_executor_act=notify_curators_executor_act,
+    add_ticket_log=add_ticket_log,
+    can_edit_ticket=can_edit_ticket,
+    query_assignable_company_users=(lambda db, company_id: query_assignable_company_users(db, company_id)),
+    validate_ticket_links=validate_ticket_links,
+    resolve_ticket_department_id=resolve_ticket_department_id,
+    parse_deadline_inputs=parse_deadline_inputs,
+    ticket_field_change_log_action=ticket_field_change_log_action,
+    ticket_status_change_log_action=ticket_status_change_log_action,
+    ticket_deadline_text=_ticket_deadline_text,
+    ticket_user_name=_ticket_user_name,
+    ticket_project_name=_ticket_project_name,
+    ticket_type_name=_ticket_type_name,
+    department_name=_department_name,
+    notify_executor_reassigned=notify_executor_reassigned,
+    notify_curators_status_changed=notify_curators_status_changed,
+    can_close_ticket=can_close_ticket,
+    can_archive_ticket=can_archive_ticket,
+    local_now=local_now,
+    get_company_deadline_soon_warning_minutes=get_company_deadline_soon_warning_minutes,
+    normalize_ticket_title=normalize_ticket_title,
+    is_ticket_title_too_long=is_ticket_title_too_long,
+    templates=templates,
+    comment_model=Comment,
+    comment_media_model=CommentMedia,
+    attachment_model=Attachment,
+    ticket_log_model=TicketLog,
+    project_model=Project,
+    ticket_type_model=TicketType,
+    department_model=Department,
+    user_model=User,
+    ticket_watcher_model=TicketWatcher,
+    company_model=Company,
+    role_enum=Role,
+    ticket_status_enum=TicketStatus,
+    final_ticket_statuses=FINAL_TICKET_STATUSES,
+    log_action_changed=LOG_ACTION_CHANGED,
+    log_action_file_deleted=LOG_ACTION_FILE_DELETED,
+    max_ticket_title_len=MAX_TICKET_TITLE_LEN,
+    org_structure_v2_enabled=ORG_STRUCTURE_V2_ENABLED,
+    http_303_see_other=HTTP_303_SEE_OTHER,
+    sqlalchemy_error=SQLAlchemyError,
+)
+
 register_notification_routes(
     app,
     get_db=get_db,
@@ -8178,433 +8243,6 @@ async def web_create_ticket(request: Request, db: Session = Depends(get_db), use
     return RedirectResponse(url="/web", status_code=HTTP_303_SEE_OTHER)
 
 
-@app.post("/web/tickets/{ticket_id}/watchers/self")
-async def web_add_self_watcher(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
-    add_ticket_watcher(db, t, watcher_user_id=user.id, added_by=user.id)
-    ensure_default_ticket_watchers(db, t)
-    db.commit()
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/comments")
-async def web_add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    form = await request.form()
-    text = (form.get("text") or "").strip()
-    photo_uploads = normalize_optional_uploaded_files(list(form.getlist("photos")))
-    voice_uploads = normalize_optional_uploaded_files(list(form.getlist("voice_messages")))
-    attachment_uploads = normalize_optional_uploaded_files(list(form.getlist("attachments")))
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}?tab=overview")
-
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    stored_paths: list[str] = []
-    try:
-        comment, media_items, stored_paths = await create_comment_with_media_async(
-            db=db,
-            ticket_id=ticket_id,
-            author_id=user.id,
-            text=text,
-            photos=photo_uploads,
-            voice_messages=voice_uploads,
-            attachments=attachment_uploads,
-        )
-        db.commit()
-        db.refresh(comment)
-        for item in media_items:
-            db.refresh(item)
-    except HTTPException as exc:
-        db.rollback()
-        for stored_path in stored_paths:
-            delete_stored_file(stored_path)
-        error_code = "too_large" if exc.status_code == 413 else "invalid"
-        return RedirectResponse(
-            url=f"/web/tickets/{ticket_id}?tab=overview&comment_error={error_code}",
-            status_code=HTTP_303_SEE_OTHER,
-        )
-    except SQLAlchemyError:
-        db.rollback()
-        for stored_path in stored_paths:
-            delete_stored_file(stored_path)
-        return RedirectResponse(
-            url=f"/web/tickets/{ticket_id}?tab=overview&comment_error=save_failed",
-            status_code=HTTP_303_SEE_OTHER,
-        )
-
-    try:
-        notify_comment_added(
-            db,
-            ticket=t,
-            author=user,
-            comment_text=text,
-            photo_count=sum(1 for item in media_items if item.media_kind == "photo"),
-            voice_count=sum(1 for item in media_items if item.media_kind == "voice"),
-            file_count=sum(1 for item in media_items if item.media_kind == "file"),
-        )
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/comments/{comment_id}/delete")
-async def web_delete_comment(
-    comment_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    comment = db.get(Comment, comment_id)
-    if not comment:
-        raise HTTPException(404, "Comment not found")
-    ticket = get_company_ticket_or_404(db, user, comment.ticket_id)
-    if not can_access_ticket(user, ticket):
-        raise HTTPException(403, "Forbidden")
-    if ticket.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-    if not can_delete_comment(user, comment):
-        raise HTTPException(403, "Forbidden")
-
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket.id}?tab=overview")
-    media_items = db.query(CommentMedia).filter(CommentMedia.comment_id == comment.id).all()
-    for item in media_items:
-        delete_stored_file(item.file_path)
-    db.query(CommentMedia).filter(CommentMedia.comment_id == comment.id).delete(synchronize_session=False)
-    db.delete(comment)
-    db.commit()
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/tickets/{ticket_id}/attachments")
-async def web_add_attachment(ticket_id: int, request: Request, files: list[UploadFile] = File(...),
-                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-
-    t = get_company_ticket_or_404(db, user, ticket_id)
-
-    # Access rules match comments and status updates.
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    saved_attachments: list[Attachment] = []
-    for upload in normalize_uploaded_files(files):
-        safe_name = make_safe_upload_name(upload.filename, ticket_id=ticket_id)
-        object_key = build_attachment_object_key(safe_name)
-        stored_path, file_hash, file_size = await store_upload_file_to_storage_async(upload, object_key)
-        attachment = create_ticket_attachment_record(
-            db=db,
-            ticket_id=ticket_id,
-            uploader_id=user.id,
-            upload=upload,
-            stored_path=stored_path,
-            file_hash=file_hash,
-            file_size=file_size,
-        )
-        saved_attachments.append(attachment)
-
-    db.commit()
-    for attachment in saved_attachments:
-        notify_curators_executor_act(db, ticket=t, uploader=user, original_name=attachment.original_name)
-    db.commit()
-
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.post("/web/attachments/{attachment_id}/delete")
-async def web_delete_attachment(
-    attachment_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    attachment = db.get(Attachment, attachment_id)
-    if not attachment:
-        raise HTTPException(404, "Attachment not found")
-    ticket = get_company_ticket_or_404(db, user, attachment.ticket_id)
-    if not can_access_ticket(user, ticket):
-        raise HTTPException(403, "Forbidden")
-    if ticket.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    can_delete_file = bool(is_manager(user) or (user.role == Role.executor and attachment.uploader_id == user.id))
-    if not can_delete_file:
-        raise HTTPException(403, "Forbidden")
-
-    delete_stored_file(attachment.file_path)
-
-    db.delete(attachment)
-    add_ticket_log(db, ticket_id=ticket.id, actor_id=user.id, action=LOG_ACTION_FILE_DELETED)
-    db.commit()
-
-    form = await request.form()
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket.id}")
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
-@app.get("/web/tickets/{ticket_id}/edit")
-def web_edit_ticket_page(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if t.status == TicketStatus.archived:
-        return RedirectResponse(url=f"/web/tickets/{ticket_id}", status_code=HTTP_303_SEE_OTHER)
-
-    if not can_edit_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    can_edit_full = can_edit_ticket(user, t)
-
-
-    projects = (
-        db.query(Project.id, Project.name)
-        .filter(Project.company_id == user.company_id)
-        .order_by(Project.id.desc())
-        .all()
-    )
-    executors = (
-        query_assignable_company_users(db, user.company_id)
-        .order_by(User.id.desc())
-        .all()
-    )
-    ticket_types = (
-        db.query(TicketType.id, TicketType.name, TicketType.is_active, TicketType.department_id)
-        .filter(TicketType.company_id == user.company_id)
-        .order_by(TicketType.id.desc())
-        .all()
-    )
-    departments = (
-        db.query(Department.id, Department.name, Department.is_active)
-        .filter(Department.company_id == user.company_id)
-        .order_by(Department.name.asc(), Department.id.asc())
-        .all()
-    )
-    next_url = request.query_params.get("next") or f"/web/tickets/{ticket_id}"
-    next_url = safe_next(next_url, fallback=f"/web/tickets/{ticket_id}")
-    error_code = (request.query_params.get("error") or "").strip().lower()
-    if error_code == "title_too_long":
-        error_message = f"РќР°Р·РІР°РЅРёРµ СЃР»РёС€РєРѕРј РґР»РёРЅРЅРѕРµ. РњР°РєСЃРёРјСѓРј: {MAX_TICKET_TITLE_LEN} СЃРёРјРІРѕР»РѕРІ."
-    else:
-        error_message = None
-
-
-    # РїРѕРґРіРѕС‚РѕРІРёРј РґР°С‚Сѓ/РІСЂРµРјСЏ РґР»СЏ С„РѕСЂРјС‹
-    deadline_date = None
-    deadline_time4 = None
-    if t.deadline:
-        # deadline С…СЂР°РЅРёС‚СЃСЏ РІ Р»РѕРєР°Р»СЊРЅРѕРј РІСЂРµРјРµРЅРё, Р±РµР· UTC-СЃРјРµС‰РµРЅРёСЏ
-        deadline_date = t.deadline.strftime("%Y-%m-%d")
-        deadline_time4 = t.deadline.strftime("%H%M")
-
-    return templates.TemplateResponse(
-        "ticket_edit.html",
-        {
-            "request": request,
-            "user": user,
-            "t": t,
-            "projects": projects,
-            "executors": executors,
-            "ticket_types": ticket_types,
-            "departments": departments,
-            "can_edit_full": can_edit_full,
-            "deadline_date": deadline_date,
-            "deadline_time4": deadline_time4,
-            "error": error_message,
-            "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
-            "next_url": next_url,
-            "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
-        },
-    )
-
-
-@app.post("/web/tickets/{ticket_id}/edit")
-async def web_ticket_edit_save(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-
-    if not can_edit_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    can_edit_full = is_manager(user)
-    can_change_status = can_close_ticket(user, t)
-    form = await request.form()
-    status_raw = (form.get("status") or "").strip()
-    if status_raw == TicketStatus.archived.value:
-        raise HTTPException(400, "Use archive action")
-    next_url = safe_next(form.get("next"), fallback=f"/web/tickets/{ticket_id}")
-
-    title = normalize_ticket_title(form.get("title"))
-    description = (form.get("description") or "").strip()
-    project_id_raw = (form.get("project_id") or "").strip()
-    executor_id_raw = (form.get("executor_id") or "").strip()
-    ticket_type_id_raw = (form.get("ticket_type_id") or "").strip()
-    department_id_raw = (form.get("department_id") or "").strip()
-
-    if is_ticket_title_too_long(title):
-        edit_url = f"/web/tickets/{ticket_id}/edit?error=title_too_long&next={quote(next_url, safe='')}"
-        return RedirectResponse(url=edit_url, status_code=HTTP_303_SEE_OTHER)
-
-    old_deadline = t.deadline
-    old_executor_id = t.executor_id
-    old_project_id = t.project_id
-    old_ticket_type_id = t.ticket_type_id
-    old_department_id = t.department_id
-    old_status = t.status
-
-    if status_raw and can_change_status:
-        try:
-            t.status = TicketStatus(status_raw)
-        except ValueError:
-            pass
-
-    if title:
-        t.title = title
-    t.description = description
-
-    if can_edit_full:
-        try:
-            project_id_candidate = int(project_id_raw)
-        except ValueError:
-            project_id_candidate = None
-
-        try:
-            executor_id_candidate = int(executor_id_raw) if executor_id_raw else None
-        except ValueError:
-            executor_id_candidate = None
-
-        try:
-            ticket_type_id_candidate = int(ticket_type_id_raw) if ticket_type_id_raw else None
-        except ValueError:
-            ticket_type_id_candidate = None
-        try:
-            department_id_candidate = int(department_id_raw) if department_id_raw else None
-        except ValueError:
-            department_id_candidate = None
-
-        validate_ticket_links(
-            db,
-            user.company_id,
-            project_id_candidate,
-            executor_id_candidate,
-            ticket_type_id_candidate,
-            None,
-            None,
-            department_id_candidate,
-        )
-        resolved_department_id = resolve_ticket_department_id(
-            db,
-            company_id=user.company_id,
-            ticket_type_id=ticket_type_id_candidate,
-            department_id=department_id_candidate,
-        )
-
-        if project_id_candidate is not None:
-            t.project_id = project_id_candidate
-        t.executor_id = executor_id_candidate
-        t.ticket_type_id = ticket_type_id_candidate
-        t.department_id = resolved_department_id
-
-    # Deadline (same parsing logic as create form)
-    t.deadline = parse_deadline_inputs(form.get("deadline_date"), form.get("deadline_time4"))
-
-    has_specific_log = False
-    if t.deadline != old_deadline:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u0441\u0440\u043e\u043a\u0430",
-                _ticket_deadline_text(old_deadline),
-                _ticket_deadline_text(t.deadline),
-            ),
-        )
-        has_specific_log = True
-    if t.executor_id != old_executor_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f",
-                _ticket_user_name(db, old_executor_id),
-                _ticket_user_name(db, t.executor_id),
-            ),
-        )
-        has_specific_log = True
-    if t.project_id != old_project_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u043f\u0440\u043e\u0435\u043a\u0442\u0430",
-                _ticket_project_name(db, old_project_id),
-                _ticket_project_name(db, t.project_id),
-            ),
-        )
-        has_specific_log = True
-
-    if t.ticket_type_id != old_ticket_type_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
-                _ticket_type_name(db, old_ticket_type_id),
-                _ticket_type_name(db, t.ticket_type_id),
-            ),
-        )
-        has_specific_log = True
-    if t.department_id != old_department_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u043e\u0442\u0434\u0435\u043b\u0430",
-                _department_name(db, old_department_id),
-                _department_name(db, t.department_id),
-            ),
-        )
-        has_specific_log = True
-    if t.status != old_status:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
-        has_specific_log = True
-
-    if not has_specific_log:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CHANGED)
-
-    ensure_default_ticket_watchers(db, t)
-    db.commit()          # вњ… Р±РµР· СЌС‚РѕРіРѕ РЅРµ СЃРѕС…СЂР°РЅРёС‚СЃСЏ
-    db.refresh(t)
-    notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
-    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
-    db.commit()
-
-    return RedirectResponse(url=next_url, status_code=HTTP_303_SEE_OTHER)
-
-
 # ====== WEB: Projects (legacy redirects) ======
 @app.get("/web/projects")
 def web_projects(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -8628,137 +8266,4 @@ async def web_projects_delete(project_id: int, db: Session = Depends(get_db), us
         raise HTTPException(403, "Only admin or curator")
     ensure_company_user(user)
     return RedirectResponse(url="/web/org-structure", status_code=HTTP_303_SEE_OTHER)
-
-@app.get("/web/tickets/{ticket_id}")
-def web_ticket_detail(
-    ticket_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = get_company_ticket_or_404(db, user, ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if ensure_default_ticket_watchers(db, t):
-        db.commit()
-
-    watcher_rows = (
-        db.query(TicketWatcher.user_id)
-        .filter(TicketWatcher.ticket_id == t.id)
-        .order_by(TicketWatcher.created_at.asc(), TicketWatcher.id.asc())
-        .all()
-    )
-    watcher_user_ids = [int(row[0]) for row in watcher_rows]
-    is_current_user_watcher = user.id in set(watcher_user_ids)
-    default_next = "/web/archive" if t.status == TicketStatus.archived else "/web"
-    next_url = safe_next(request.query_params.get("next"), fallback=default_next)
-    next_url_encoded = quote(next_url, safe="")
-    can_archive = can_archive_ticket(user, t)
-    can_restore = is_manager(user) and t.status == TicketStatus.archived
-
-    # РїСЂР°РІР°
-    comments = db.query(Comment).filter(Comment.ticket_id == t.id).order_by(Comment.id.asc()).all()
-    comment_media_by_comment: dict[int, list[CommentMedia]] = {}
-    if comments:
-        comment_ids = [comment.id for comment in comments]
-        comment_media_items = (
-            db.query(CommentMedia)
-            .filter(CommentMedia.comment_id.in_(comment_ids))
-            .order_by(CommentMedia.id.asc())
-            .all()
-        )
-        for item in comment_media_items:
-            comment_media_by_comment.setdefault(item.comment_id, []).append(item)
-    attachments = db.query(Attachment).filter(Attachment.ticket_id == t.id).order_by(Attachment.id.asc()).all()
-    ticket_logs = db.query(TicketLog).filter(TicketLog.ticket_id == t.id).order_by(TicketLog.id.desc()).all()
-
-    project_row = (
-        db.query(Project.id, Project.name)
-        .filter(Project.company_id == user.company_id, Project.id == t.project_id)
-        .first()
-    )
-    projects_by_id = {project_row[0]: project_row[1]} if project_row else {}
-
-    ticket_type_row = None
-    if t.ticket_type_id is not None:
-        ticket_type_row = (
-            db.query(TicketType.id, TicketType.name)
-            .filter(TicketType.company_id == user.company_id, TicketType.id == t.ticket_type_id)
-            .first()
-        )
-    ticket_types_by_id = {ticket_type_row[0]: ticket_type_row[1]} if ticket_type_row else {}
-    departments_by_id: dict[int, str] = {}
-    if t.department_id is not None:
-        department_row = (
-            db.query(Department.id, Department.name)
-            .filter(Department.company_id == user.company_id, Department.id == t.department_id)
-            .first()
-        )
-        if department_row:
-            departments_by_id = {department_row[0]: department_row[1]}
-
-    relevant_user_ids: set[int] = {t.created_by}
-    if t.executor_id is not None:
-        relevant_user_ids.add(t.executor_id)
-    relevant_user_ids.update(watcher_user_ids)
-    relevant_user_ids.update(c.author_id for c in comments if c.author_id is not None)
-    relevant_user_ids.update(a.uploader_id for a in attachments if a.uploader_id is not None)
-    relevant_user_ids.update(log.actor_id for log in ticket_logs if log.actor_id is not None)
-
-    users_by_id: dict[int, str] = {}
-    if relevant_user_ids:
-        users = (
-            db.query(User.id, User.name)
-            .filter(User.company_id == user.company_id, User.id.in_(relevant_user_ids))
-            .all()
-        )
-        users_by_id = {uid: uname for uid, uname in users}
-
-    company = db.get(Company, user.company_id) if user.company_id is not None else None
-    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
-    now = local_now()
-    is_overdue = bool(t.deadline and t.deadline < now and t.status not in FINAL_TICKET_STATUSES)
-    is_deadline_soon = bool(
-        t.deadline
-        and not is_overdue
-        and t.status not in FINAL_TICKET_STATUSES
-        and t.deadline <= now + timedelta(minutes=deadline_soon_warning_minutes)
-    )
-
-    status_labels = {
-        "NEW": "\u041d\u043e\u0432\u0430\u044f",
-        "IN_PROGRESS": "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
-        "DONE": "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
-        "CANCELED": "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
-        "ARCHIVED": "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435",
-    }
-
-    return templates.TemplateResponse(
-        "ticket_detail.html",
-        {
-            "request": request,
-            "user": user,
-            "t": t,
-            "projects_by_id": projects_by_id,
-            "ticket_types_by_id": ticket_types_by_id,
-            "departments_by_id": departments_by_id,
-            "users_by_id": users_by_id,
-            "comments": comments,
-            "comment_media_by_comment": comment_media_by_comment,
-            "attachments": attachments,
-            "ticket_logs": ticket_logs,
-            "now": now,
-            "is_overdue": is_overdue,
-            "is_deadline_soon": is_deadline_soon,
-            "status_labels": status_labels,
-            "next_url": next_url,
-            "next_url_encoded": next_url_encoded,
-            "can_archive": can_archive,
-            "can_restore": can_restore,
-            "can_close_ticket": can_close_ticket(user, t),
-            "watcher_user_ids": watcher_user_ids,
-            "is_current_user_watcher": is_current_user_watcher,
-        },
-    )
-
 
