@@ -94,6 +94,7 @@ from app_support.auth_core import (
     verify_password as core_verify_password,
 )
 from app_support.comment_service import CommentService
+from app_support.deadline_reminder_service import DeadlineReminderService
 from app_support.enums import (
     ARCHIVE_SOURCE_STATUSES,
     COMPANY_ACCESS_LEVELS,
@@ -2735,63 +2736,23 @@ resolve_company_actor_id = _ticket_runtime_service.resolve_company_actor_id
 run_template_autogen_once = _ticket_runtime_service.run_template_autogen_once
 run_template_autogen_forever = _ticket_runtime_service.run_template_autogen_forever
 
+_deadline_reminder_service = DeadlineReminderService(
+    session_factory=lambda: SessionLocal(),
+    local_now=local_now,
+    send_push_to_user_func=lambda **kwargs: send_push_to_user(**kwargs),
+    ticket_notification_title=ticket_notification_title,
+    push_reminder_minutes_getter=lambda: PUSH_REMINDER_MINUTES,
+    push_reminder_poll_seconds_getter=lambda: PUSH_REMINDER_POLL_SECONDS,
+    final_ticket_statuses_getter=lambda: FINAL_TICKET_STATUSES,
+    time_module=time,
+    timedelta_cls=timedelta,
+    ticket_model=Ticket,
+    deadline_reminder_log_model=DeadlineReminderLog,
+)
 
-def run_deadline_reminders_forever() -> None:
-    while True:
-        try:
-            with SessionLocal() as db:
-                now = local_now()
-                horizon = now + timedelta(seconds=PUSH_REMINDER_POLL_SECONDS)
-                deadline_from = now + timedelta(minutes=PUSH_REMINDER_MINUTES)
-                deadline_to = horizon + timedelta(minutes=PUSH_REMINDER_MINUTES)
-                candidates = (
-                    db.query(Ticket.id, Ticket.title, Ticket.executor_id, Ticket.deadline)
-                    .filter(
-                        Ticket.executor_id.is_not(None),
-                        Ticket.deadline.is_not(None),
-                        Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
-                        Ticket.deadline >= deadline_from,
-                        Ticket.deadline <= deadline_to,
-                    )
-                    .all()
-                )
-
-                reminder_keys = [
-                    f"{t.id}:{t.executor_id}:{int(t.deadline.timestamp())}:{PUSH_REMINDER_MINUTES}"
-                    for t in candidates
-                ]
-                existing_keys = set()
-                if reminder_keys:
-                    existing_rows = (
-                        db.query(DeadlineReminderLog.reminder_key)
-                        .filter(DeadlineReminderLog.reminder_key.in_(reminder_keys))
-                        .all()
-                    )
-                    existing_keys = {row[0] for row in existing_rows}
-
-                for t in candidates:
-                    reminder_key = f"{t.id}:{t.executor_id}:{int(t.deadline.timestamp())}:{PUSH_REMINDER_MINUTES}"
-                    if reminder_key in existing_keys:
-                        continue
-                    existing_keys.add(reminder_key)
-                    db.add(
-                        DeadlineReminderLog(
-                            ticket_id=t.id,
-                            user_id=t.executor_id,
-                            reminder_key=reminder_key,
-                        )
-                    )
-                    send_push_to_user(
-                        db=db,
-                        user_id=t.executor_id,
-                        title=ticket_notification_title("Срок заявки скоро истечет", t.title, ticket_id=t.id),
-                        body=f"\u0414\u043e \u0434\u0435\u0434\u043b\u0430\u0439\u043d\u0430 \u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c {PUSH_REMINDER_MINUTES} \u043c\u0438\u043d\u0443\u0442",
-                        url=f"/web/tickets/{t.id}",
-                    )
-                db.commit()
-        except Exception:
-            pass
-        time.sleep(max(5, PUSH_REMINDER_POLL_SECONDS))
+run_deadline_reminders_once = _deadline_reminder_service.run_deadline_reminders_once
+build_deadline_reminder_key = _deadline_reminder_service.build_reminder_key
+run_deadline_reminders_forever = _deadline_reminder_service.run_deadline_reminders_forever
 
 
 hash_password = partial(core_hash_password, pwd_context=pwd_context)
