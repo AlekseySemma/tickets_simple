@@ -117,6 +117,7 @@ from app_support.startup import (
     start_background_threads,
 )
 from app_support.storage import StorageService
+from app_support.ticket_runtime_service import TicketRuntimeService
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
     append_query_params,
@@ -1479,73 +1480,6 @@ def get_api_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
             raise HTTPException(403, "Forbidden")
     return ticket
 
-def resolve_ticket_archive_retention_days(db: Session, ticket: Ticket, company: Company | None) -> int:
-    if ticket.ticket_type_id is not None:
-        tt = db.get(TicketType, ticket.ticket_type_id)
-        if tt and tt.company_id == ticket.company_id and tt.archive_retention_days is not None:
-            return clamp_archive_retention_days(tt.archive_retention_days)
-    return get_company_archive_retention_days(company)
-
-
-def is_ticket_archived(ticket: Ticket) -> bool:
-    return ticket.status == TicketStatus.archived
-
-
-def archive_ticket(db: Session, ticket: Ticket, actor_id: int, company: Company | None) -> None:
-    if ticket.status not in ARCHIVE_SOURCE_STATUSES:
-        raise HTTPException(400, "Only done or canceled tickets can be archived")
-    if is_ticket_archived(ticket):
-        return
-    archived_at = local_now()
-    retention_days = resolve_ticket_archive_retention_days(db, ticket, company)
-    ticket.status = TicketStatus.archived
-    ticket.archived_at = archived_at
-    ticket.archived_by = actor_id
-    ticket.retention_days = retention_days
-    ticket.delete_at = archived_at + timedelta(days=retention_days)
-    ticket.is_legal_hold = False
-    attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
-    for attachment in attachments:
-        move_attachment_to_archive(attachment, ticket.id, archived_at)
-    comment_media_items = (
-        db.query(CommentMedia)
-        .join(Comment, Comment.id == CommentMedia.comment_id)
-        .filter(Comment.ticket_id == ticket.id)
-        .all()
-    )
-    for item in comment_media_items:
-        move_comment_media_to_archive(item, ticket.id, archived_at)
-    add_ticket_log(
-        db,
-        ticket_id=ticket.id,
-        actor_id=actor_id,
-        action=f"архивирование (удаление после {format_deadline(ticket.delete_at)})",
-    )
-
-
-def restore_ticket_from_archive(db: Session, ticket: Ticket, actor_id: int) -> None:
-    if not is_ticket_archived(ticket):
-        raise HTTPException(400, "Ticket is not archived")
-    ticket.status = TicketStatus.done
-    ticket.archived_at = None
-    ticket.archived_by = None
-    ticket.retention_days = None
-    ticket.delete_at = None
-    ticket.is_legal_hold = False
-    attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
-    for attachment in attachments:
-        move_attachment_to_active_storage(attachment, ticket.id)
-    comment_media_items = (
-        db.query(CommentMedia)
-        .join(Comment, Comment.id == CommentMedia.comment_id)
-        .filter(Comment.ticket_id == ticket.id)
-        .all()
-    )
-    for item in comment_media_items:
-        move_comment_media_to_active_storage(item, ticket.id)
-    add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action="восстановление из архива")
-
-
 def delete_ticket_with_related_data(
     db: Session,
     ticket: Ticket,
@@ -1575,49 +1509,6 @@ def delete_ticket_with_related_data(
         synchronize_session=False,
     )
     db.delete(ticket)
-
-
-def run_archive_cleanup_once() -> None:
-    with SessionLocal() as db:
-        candidates = (
-            db.query(Ticket)
-            .filter(
-                Ticket.status == TicketStatus.archived,
-                Ticket.delete_at.is_not(None),
-                Ticket.delete_at <= local_now(),
-                Ticket.is_legal_hold.is_(False),
-            )
-            .order_by(Ticket.delete_at.asc(), Ticket.id.asc())
-            .all()
-        )
-        for ticket in candidates:
-            try:
-                deleted_at = local_now()
-                db.add(
-                    ArchiveCleanupLog(
-                        company_id=ticket.company_id,
-                        ticket_id=ticket.id,
-                        archived_by=ticket.archived_by,
-                        ticket_title=(ticket.title or "")[:255] or None,
-                        archived_at=ticket.archived_at,
-                        retention_days=ticket.retention_days,
-                        delete_at=ticket.delete_at,
-                        deleted_at=deleted_at,
-                    )
-                )
-                delete_ticket_with_related_data(db, ticket, remove_files=True)
-                db.commit()
-            except Exception:
-                db.rollback()
-
-
-def run_archive_cleanup_forever() -> None:
-    while True:
-        try:
-            run_archive_cleanup_once()
-        except Exception:
-            pass
-        time.sleep(ARCHIVE_CLEANUP_POLL_SECONDS)
 
 
 def validate_ticket_links(
@@ -2061,163 +1952,6 @@ def parse_template_deadline_rule_from_form(form) -> str | None:
     except ValueError:
         return legacy_raw
 
-
-def render_template_value(raw_value: str | None, period_key: str, unit_name: str) -> str | None:
-    text = (raw_value or "").strip()
-    if not text:
-        return None
-    return (
-        text.replace("{period}", period_key)
-        .replace("{unit_name}", unit_name)
-        .replace("{month}", period_key)
-    )
-
-
-def ticket_exists_for_template_period(
-    db: Session,
-    company_id: int,
-    template_id: int,
-    target_unit_id: int,
-    period_key: str,
-) -> bool:
-    row = (
-        db.query(TicketGenerationKey.id)
-        .filter(
-            TicketGenerationKey.company_id == company_id,
-            TicketGenerationKey.ticket_template_id == template_id,
-            TicketGenerationKey.target_unit_id == target_unit_id,
-            TicketGenerationKey.period_key == period_key,
-        )
-        .first()
-    )
-    return row is not None
-
-
-def create_tickets_from_template(
-    db: Session,
-    *,
-    template: TicketTemplate,
-    actor_id: int,
-    period_key: str | None = None,
-) -> tuple[int, int, str]:
-    effective_period = (period_key or "").strip() or month_period_key()
-    if template.scope_unit_id is None:
-        return 0, 0, effective_period
-    template_department_id = resolve_ticket_department_id(
-        db,
-        company_id=template.company_id,
-        ticket_type_id=template.ticket_type_id,
-        department_id=template.department_id,
-    )
-
-    leaf_unit_ids = resolve_scope_leaf_units(db, template.company_id, template.scope_unit_id)
-    if not leaf_unit_ids:
-        return 0, 0, effective_period
-
-    unit_rows = (
-        db.query(OrgUnit.id, OrgUnit.name)
-        .filter(OrgUnit.id.in_(leaf_unit_ids))
-        .all()
-    )
-    unit_names = {int(unit_id): str(name or "").strip() for unit_id, name in unit_rows}
-
-    batch_id = uuid.uuid4().hex
-    created_count = 0
-    skipped_count = 0
-    for leaf_unit_id in leaf_unit_ids:
-        if ticket_exists_for_template_period(
-            db=db,
-            company_id=template.company_id,
-            template_id=template.id,
-            target_unit_id=leaf_unit_id,
-            period_key=effective_period,
-        ):
-            skipped_count += 1
-            continue
-
-        unit_name = unit_names.get(leaf_unit_id, f"Unit #{leaf_unit_id}")
-        title = truncate_ticket_title(
-            render_template_value(template.title_template, effective_period, unit_name)
-            or f"{template.name} {effective_period}"
-        )
-        description = render_template_value(template.description_template, effective_period, unit_name)
-        project_id = get_or_create_project_for_org_unit(db, template.company_id, leaf_unit_id)
-        resolved_executor_id = (
-            template.default_executor_id
-            if template.default_executor_id is not None
-            else get_preferred_executor_for_unit(
-                db,
-                template.company_id,
-                leaf_unit_id,
-                department_id=template_department_id,
-            )
-        )
-
-        try:
-            with db.begin_nested():
-                generation_key = TicketGenerationKey(
-                    company_id=template.company_id,
-                    ticket_template_id=template.id,
-                    target_unit_id=leaf_unit_id,
-                    period_key=effective_period,
-                )
-                db.add(generation_key)
-                db.flush()
-                ticket = Ticket(
-                    title=title,
-                    description=description,
-                    deadline=resolve_deadline_by_rule(template.default_deadline_rule),
-                    status=TicketStatus.new,
-                    company_id=template.company_id,
-                    project_id=project_id,
-                    executor_id=resolved_executor_id,
-                    ticket_type_id=template.ticket_type_id,
-                    department_id=template_department_id,
-                    target_unit_id=leaf_unit_id,
-                    ticket_template_id=template.id,
-                    period_key=effective_period,
-                    batch_id=batch_id,
-                    created_by=actor_id,
-                )
-                db.add(ticket)
-                db.flush()
-                ensure_default_ticket_watchers(db, ticket)
-                generation_key.ticket_id = ticket.id
-                add_ticket_log(db, ticket_id=ticket.id, actor_id=actor_id, action=LOG_ACTION_CREATED_FROM_TEMPLATE)
-                if ticket.executor_id and ticket.executor_id != actor_id:
-                    send_push_to_user(
-                        db=db,
-                        user_id=ticket.executor_id,
-                        title=ticket_notification_title("Новая заявка", ticket.title, ticket_id=ticket.id),
-                        body=ticket.title or "Вам назначена новая заявка",
-                        url=f"/web/tickets/{ticket.id}",
-                    )
-            created_count += 1
-        except SQLAlchemyError:
-            skipped_count += 1
-
-    return created_count, skipped_count, effective_period
-
-
-def resolve_company_actor_id(db: Session, company_id: int) -> int | None:
-    manager_row = (
-        db.query(User.id)
-        .filter(
-            User.company_id == company_id,
-            User.role.in_([Role.admin, Role.curator]),
-        )
-        .order_by(User.id.asc())
-        .first()
-    )
-    if manager_row:
-        return int(manager_row[0])
-    any_row = (
-        db.query(User.id)
-        .filter(User.company_id == company_id)
-        .order_by(User.id.asc())
-        .first()
-    )
-    return int(any_row[0]) if any_row else None
 
 def normalize_ticket_title(raw_title: str | None) -> str:
     return (raw_title or "").strip()
@@ -2943,6 +2677,64 @@ notify_comment_added = _notification_service.notify_comment_added
 notify_curators_executor_act = _notification_service.notify_curators_executor_act
 notify_receipt_created = _notification_service.notify_receipt_created
 
+_ticket_runtime_service = TicketRuntimeService(
+    clamp_archive_retention_days=clamp_archive_retention_days,
+    get_company_archive_retention_days=get_company_archive_retention_days,
+    local_now=local_now,
+    move_attachment_to_archive=move_attachment_to_archive,
+    move_comment_media_to_archive=move_comment_media_to_archive,
+    move_attachment_to_active_storage=move_attachment_to_active_storage,
+    move_comment_media_to_active_storage=move_comment_media_to_active_storage,
+    format_deadline=format_deadline,
+    add_ticket_log=add_ticket_log,
+    delete_ticket_with_related_data=delete_ticket_with_related_data,
+    resolve_ticket_department_id=resolve_ticket_department_id,
+    resolve_scope_leaf_units=resolve_scope_leaf_units,
+    truncate_ticket_title=truncate_ticket_title,
+    get_or_create_project_for_org_unit=get_or_create_project_for_org_unit,
+    get_preferred_executor_for_unit=get_preferred_executor_for_unit,
+    resolve_deadline_by_rule=resolve_deadline_by_rule,
+    month_period_key=month_period_key,
+    ensure_default_ticket_watchers=ensure_default_ticket_watchers,
+    send_push_to_user=send_push_to_user,
+    ticket_notification_title=ticket_notification_title,
+    session_factory=lambda: SessionLocal(),
+    archive_cleanup_poll_seconds=ARCHIVE_CLEANUP_POLL_SECONDS,
+    template_autogen_poll_seconds=TEMPLATE_AUTOGEN_POLL_SECONDS,
+    time_module=time,
+    timedelta_cls=timedelta,
+    uuid_module=uuid,
+    ticket_model=Ticket,
+    ticket_type_model=TicketType,
+    attachment_model=Attachment,
+    comment_model=Comment,
+    comment_media_model=CommentMedia,
+    archive_cleanup_log_model=ArchiveCleanupLog,
+    ticket_template_model=TicketTemplate,
+    ticket_generation_key_model=TicketGenerationKey,
+    user_model=User,
+    org_unit_model=OrgUnit,
+    role_enum=Role,
+    ticket_status_enum=TicketStatus,
+    archive_source_statuses=ARCHIVE_SOURCE_STATUSES,
+    created_from_template_log_action=LOG_ACTION_CREATED_FROM_TEMPLATE,
+    sqlalchemy_error_cls=SQLAlchemyError,
+    http_exception_cls=HTTPException,
+)
+
+resolve_ticket_archive_retention_days = _ticket_runtime_service.resolve_ticket_archive_retention_days
+is_ticket_archived = _ticket_runtime_service.is_ticket_archived
+archive_ticket = _ticket_runtime_service.archive_ticket
+restore_ticket_from_archive = _ticket_runtime_service.restore_ticket_from_archive
+run_archive_cleanup_once = _ticket_runtime_service.run_archive_cleanup_once
+run_archive_cleanup_forever = _ticket_runtime_service.run_archive_cleanup_forever
+render_template_value = _ticket_runtime_service.render_template_value
+ticket_exists_for_template_period = _ticket_runtime_service.ticket_exists_for_template_period
+create_tickets_from_template = _ticket_runtime_service.create_tickets_from_template
+resolve_company_actor_id = _ticket_runtime_service.resolve_company_actor_id
+run_template_autogen_once = _ticket_runtime_service.run_template_autogen_once
+run_template_autogen_forever = _ticket_runtime_service.run_template_autogen_forever
+
 
 def run_deadline_reminders_forever() -> None:
     while True:
@@ -3000,42 +2792,6 @@ def run_deadline_reminders_forever() -> None:
         except Exception:
             pass
         time.sleep(max(5, PUSH_REMINDER_POLL_SECONDS))
-
-
-def run_template_autogen_once() -> None:
-    with SessionLocal() as db:
-        templates_to_run = (
-            db.query(TicketTemplate)
-            .filter(TicketTemplate.is_active.is_(True), TicketTemplate.scope_unit_id.is_not(None))
-            .order_by(TicketTemplate.id.asc())
-            .all()
-        )
-        if not templates_to_run:
-            return
-
-        for item in templates_to_run:
-            actor_id = resolve_company_actor_id(db, item.company_id)
-            if actor_id is None:
-                continue
-            created_count, _, _ = create_tickets_from_template(
-                db=db,
-                template=item,
-                actor_id=actor_id,
-                period_key=month_period_key(),
-            )
-            if created_count > 0:
-                db.commit()
-            else:
-                db.rollback()
-
-
-def run_template_autogen_forever() -> None:
-    while True:
-        try:
-            run_template_autogen_once()
-        except Exception:
-            pass
-        time.sleep(TEMPLATE_AUTOGEN_POLL_SECONDS)
 
 
 hash_password = partial(core_hash_password, pwd_context=pwd_context)
