@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, date
 import csv
 from decimal import Decimal, InvalidOperation
 from email.message import EmailMessage
+from functools import partial
 import hashlib
 import io
 import json
@@ -10,7 +11,6 @@ import logging
 import os
 from pathlib import Path
 import re
-import secrets
 import shutil
 import smtplib
 import threading
@@ -73,6 +73,27 @@ from app_support.access import (
     is_assignable_executor_user,
     is_manager,
     is_platform_admin,
+)
+from app_support.auth_core import (
+    EmailDeliveryError,
+    build_email_verification_url as core_build_email_verification_url,
+    build_password_reset_url as core_build_password_reset_url,
+    bump_user_auth_token_version as core_bump_user_auth_token_version,
+    clear_password_reset_state,
+    create_access_token as core_create_access_token,
+    delete_auth_cookie as core_delete_auth_cookie,
+    ensure_user_can_authenticate as core_ensure_user_can_authenticate,
+    get_active_invite as core_get_active_invite,
+    get_auth_cookie_params as core_get_auth_cookie_params,
+    get_user_auth_token_version as core_get_user_auth_token_version,
+    hash_password as core_hash_password,
+    is_email_verification_required as core_is_email_verification_required,
+    is_user_email_verified as core_is_user_email_verified,
+    mark_user_email_verified as core_mark_user_email_verified,
+    prepare_user_email_verification as core_prepare_user_email_verification,
+    prepare_user_password_reset as core_prepare_user_password_reset,
+    resolve_current_user,
+    verify_password as core_verify_password,
 )
 from app_support.enums import (
     ARCHIVE_SOURCE_STATUSES,
@@ -3782,87 +3803,41 @@ def run_template_autogen_forever() -> None:
         time.sleep(TEMPLATE_AUTOGEN_POLL_SECONDS)
 
 
-def hash_password(p: str) -> str:
-    return pwd_context.hash(p)
-
-def verify_password(p: str, ph: str) -> bool:
-    return pwd_context.verify(p, ph)
-
-def get_user_auth_token_version(user: User | None) -> int:
-    if not user:
-        return 0
-    return int(getattr(user, "auth_token_version", 0) or 0)
-
-
-def bump_user_auth_token_version(user: User) -> int:
-    next_value = get_user_auth_token_version(user) + 1
-    user.auth_token_version = next_value
-    return next_value
-
-
-def create_access_token(subject: str, token_version: int = 0) -> str:
-    exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": subject, "exp": exp, "tv": int(token_version)}, JWT_SECRET, algorithm=ALGORITHM)
-
-
-class EmailDeliveryError(RuntimeError):
-    pass
-
-
-def is_email_verification_required(user: User | None) -> bool:
-    return bool(user and user.role != Role.platform_admin)
-
-
-def is_user_email_verified(user: User | None) -> bool:
-    if not user:
-        return False
-    if not is_email_verification_required(user):
-        return True
-    return bool(getattr(user, "email_verified", False))
-
-
-def ensure_user_can_authenticate(user: User) -> None:
-    if not is_user_email_verified(user):
-        raise HTTPException(status_code=403, detail="Email address is not verified")
-
-
-def mark_user_email_verified(user: User) -> None:
-    now = datetime.utcnow()
-    user.email_verified = True
-    user.email_verified_at = now
-    user.email_verification_token = None
-    user.email_verification_expires_at = None
-    user.email_verification_sent_at = None
-
-
-def prepare_user_email_verification(user: User, *, force_new_token: bool = False) -> str:
-    now = datetime.utcnow()
-    token_value = (user.email_verification_token or "").strip()
-    token_expired = bool(user.email_verification_expires_at and user.email_verification_expires_at <= now)
-    if force_new_token or not token_value or token_expired:
-        token_value = secrets.token_urlsafe(32)
-        user.email_verification_token = token_value
-        user.email_verification_expires_at = now + timedelta(hours=EMAIL_VERIFICATION_EXPIRE_HOURS)
-    user.email_verified = False
-    user.email_verified_at = None
-    return token_value
-
-
-def clear_password_reset_state(user: User) -> None:
-    user.password_reset_token = None
-    user.password_reset_expires_at = None
-    user.password_reset_sent_at = None
-
-
-def prepare_user_password_reset(user: User, *, force_new_token: bool = False) -> str:
-    now = datetime.utcnow()
-    token_value = (user.password_reset_token or "").strip()
-    token_expired = bool(user.password_reset_expires_at and user.password_reset_expires_at <= now)
-    if force_new_token or not token_value or token_expired:
-        token_value = secrets.token_urlsafe(32)
-        user.password_reset_token = token_value
-        user.password_reset_expires_at = now + timedelta(hours=PASSWORD_RESET_EXPIRE_HOURS)
-    return token_value
+hash_password = partial(core_hash_password, pwd_context=pwd_context)
+verify_password = partial(core_verify_password, pwd_context=pwd_context)
+get_user_auth_token_version = core_get_user_auth_token_version
+bump_user_auth_token_version = core_bump_user_auth_token_version
+create_access_token = partial(
+    core_create_access_token,
+    jwt_module=jwt,
+    jwt_secret=JWT_SECRET,
+    algorithm=ALGORITHM,
+    access_token_expire_minutes=ACCESS_TOKEN_EXPIRE_MINUTES,
+)
+is_email_verification_required = partial(
+    core_is_email_verification_required,
+    platform_admin_role=Role.platform_admin,
+)
+is_user_email_verified = partial(
+    core_is_user_email_verified,
+    platform_admin_role=Role.platform_admin,
+)
+ensure_user_can_authenticate = partial(
+    core_ensure_user_can_authenticate,
+    platform_admin_role=Role.platform_admin,
+    http_exception_cls=HTTPException,
+)
+mark_user_email_verified = core_mark_user_email_verified
+prepare_user_email_verification = partial(
+    core_prepare_user_email_verification,
+    email_verification_expire_hours=EMAIL_VERIFICATION_EXPIRE_HOURS,
+)
+prepare_user_password_reset = partial(
+    core_prepare_user_password_reset,
+    password_reset_expire_hours=PASSWORD_RESET_EXPIRE_HOURS,
+)
+build_email_verification_url = core_build_email_verification_url
+build_password_reset_url = core_build_password_reset_url
 
 
 def format_email_sender() -> str:
@@ -3907,14 +3882,6 @@ def send_email_message(recipient: str, subject: str, text_body: str, html_body: 
                 smtp.quit()
             except Exception:
                 pass
-
-
-def build_email_verification_url(request: Request, token: str) -> str:
-    return f"{str(request.base_url).rstrip('/')}/web/verify-email?token={quote(token)}"
-
-
-def build_password_reset_url(request: Request, token: str) -> str:
-    return f"{str(request.base_url).rstrip('/')}/web/password-reset/confirm?token={quote(token)}"
 
 
 def send_user_verification_email(
@@ -3983,54 +3950,34 @@ def send_user_password_reset_email(
     return reset_url
 
 
-def delete_auth_cookie(response: Response, request: Request) -> None:
-    cookie_params = get_auth_cookie_params(request)
-    response.delete_cookie(
-        "access_token",
-        domain=cookie_params.get("domain"),
-        path=str(cookie_params.get("path") or "/"),
+def get_auth_cookie_params(request: Request) -> dict[str, object]:
+    return core_get_auth_cookie_params(
+        request,
+        access_token_cookie_max_age=ACCESS_TOKEN_COOKIE_MAX_AGE,
     )
 
 
-def get_auth_cookie_params(request: Request) -> dict[str, object]:
-    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
-    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
-    scheme = forwarded_proto or request.url.scheme
-
-    cookie_domain = None
-    if host.endswith(".servora.ru") or host == "servora.ru":
-        cookie_domain = ".servora.ru"
-
-    return {
-        "httponly": True,
-        "samesite": "lax",
-        "secure": (scheme == "https"),
-        "domain": cookie_domain,
-        "path": "/",
-        "max_age": ACCESS_TOKEN_COOKIE_MAX_AGE,
-        "expires": ACCESS_TOKEN_COOKIE_MAX_AGE,
-    }
+def delete_auth_cookie(response: Response, request: Request) -> None:
+    core_delete_auth_cookie(
+        response,
+        request,
+        access_token_cookie_max_age=ACCESS_TOKEN_COOKIE_MAX_AGE,
+    )
 
 
 def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    final_token = (token or "") or (request.cookies.get("access_token") or "")
-    if not final_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    try:
-        payload = jwt.decode(final_token, JWT_SECRET, algorithms=[ALGORITHM])
-        user_id = int(payload.get("sub"))
-        token_version = int(payload.get("tv", 0) or 0)
-    except (JWTError, ValueError, TypeError):
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    if token_version != get_user_auth_token_version(user):
-        raise HTTPException(status_code=401, detail="Token is no longer valid")
-    ensure_user_can_authenticate(user)
-    return user
+    return resolve_current_user(
+        request,
+        token,
+        db,
+        user_model=User,
+        jwt_module=jwt,
+        jwt_secret=JWT_SECRET,
+        algorithm=ALGORITHM,
+        get_user_auth_token_version_func=get_user_auth_token_version,
+        ensure_user_can_authenticate_func=ensure_user_can_authenticate,
+        http_exception_cls=HTTPException,
+    )
 
 def require_role(*roles: Role):
     def checker(user: User = Depends(get_current_user)):
@@ -4233,19 +4180,11 @@ def delete_company_with_data(db: Session, company_id: int) -> None:
 
 
 def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | None:
-    token_value = (token or "").strip()
-    if not token_value:
-        return None
-    invite = db.query(RegistrationInvite).filter(RegistrationInvite.token == token_value).first()
-    if not invite:
-        return None
-    if invite.used_by is not None:
-        return None
-    if invite.expires_at and invite.expires_at < datetime.utcnow():
-        return None
-    if invite.company_id is None:
-        return None
-    return invite
+    return core_get_active_invite(
+        db,
+        token,
+        registration_invite_model=RegistrationInvite,
+    )
 
 # =========================
 # РџСЂРёР»РѕР¶РµРЅРёРµ
