@@ -50,6 +50,7 @@ from app_routes.ticket_types import register_ticket_type_routes
 from app_routes.ticket_actions import register_ticket_action_routes
 from app_routes.tickets_overview import register_ticket_overview_routes
 from app_routes.users import register_user_management_routes
+from app_routes.users_api import register_users_api_routes
 from app_routes.web_auth import register_web_auth_routes
 from app_support.access import (
     can_access_receipt,
@@ -5012,65 +5013,30 @@ register_reference_data_api_routes(
     unit_type_out_model=UnitTypeOut,
 )
 
+register_users_api_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    require_role=require_role,
+    ensure_company_user=ensure_company_user,
+    normalize_bk_last4=normalize_bk_last4,
+    normalize_role_label=normalize_role_label,
+    normalize_capability_flags=normalize_capability_flags,
+    hash_password=hash_password,
+    prepare_user_email_verification=prepare_user_email_verification,
+    send_user_verification_email=send_user_verification_email,
+    logger=logger,
+    user_model=User,
+    role_enum=Role,
+    user_create_model=UserCreate,
+    user_out_model=UserOut,
+    email_delivery_error=EmailDeliveryError,
+)
+
 
 # =========================
 # USERS API
 # =========================
-@app.get("/users/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)):
-    return user
-
-@app.post("/users", response_model=UserOut)
-def create_user(
-    payload: UserCreate,
-    request: Request,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_role(Role.admin)),
-):
-    ensure_company_user(_admin)
-    if db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(400, "Email already exists")
-    if payload.role not in (Role.curator, Role.executor):
-        raise HTTPException(400, "Only CURATOR or EXECUTOR can be created")
-    bk_last4 = normalize_bk_last4(payload.bk_last4)
-    if payload.bk_last4 and bk_last4 is None:
-        raise HTTPException(422, "bk_last4 must contain exactly 4 digits")
-    preferred_card_id = None
-    role_label = normalize_role_label(payload.role_label)
-    capability_flags = normalize_capability_flags(
-        payload.role,
-        show_receipts_accounting_mode=payload.show_receipts_accounting_mode,
-        is_assignable_executor=payload.is_assignable_executor,
-        can_view_all_tickets=payload.can_view_all_tickets,
-        can_create_tickets=payload.can_create_tickets,
-        can_close_tickets=payload.can_close_tickets,
-    )
-    u = User(
-        email=payload.email,
-        name=payload.name,
-        password_hash=hash_password(payload.password),
-        role=payload.role,
-        company_id=_admin.company_id,
-        bk_last4=bk_last4,
-        preferred_payment_card_id=preferred_card_id,
-        role_label=role_label,
-        notify_receipt_created=(
-            bool(payload.notify_receipt_created)
-            if payload.notify_receipt_created is not None
-            else True
-        ),
-        **capability_flags,
-    )
-    prepare_user_email_verification(u, force_new_token=True)
-    db.add(u)
-    db.commit()
-    db.refresh(u)
-    try:
-        send_user_verification_email(request, db, u)
-    except EmailDeliveryError:
-        logger.exception("Could not send verification email to %s", u.email)
-    return u
-
 # =========================
 # TICKET TYPES API
 # =========================
