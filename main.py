@@ -50,6 +50,7 @@ from app_routes.ticket_types import register_ticket_type_routes
 from app_routes.ticket_actions import register_ticket_action_routes
 from app_routes.ticket_catalog_api import register_ticket_catalog_api_routes
 from app_routes.tickets_overview import register_ticket_overview_routes
+from app_routes.tickets_api import register_tickets_api_routes
 from app_routes.users import register_user_management_routes
 from app_routes.users_api import register_users_api_routes
 from app_routes.web_auth import register_web_auth_routes
@@ -5063,351 +5064,65 @@ register_ticket_catalog_api_routes(
     sqlalchemy_error=SQLAlchemyError,
 )
 
+register_tickets_api_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    is_platform_admin=is_platform_admin,
+    ensure_company_user=ensure_company_user,
+    can_create_company_ticket=can_create_company_ticket,
+    can_access_ticket=can_access_ticket,
+    can_close_ticket=can_close_ticket,
+    normalize_ticket_title=normalize_ticket_title,
+    is_ticket_title_too_long=is_ticket_title_too_long,
+    validate_ticket_links=validate_ticket_links,
+    resolve_ticket_department_id=resolve_ticket_department_id,
+    ensure_default_ticket_watchers=ensure_default_ticket_watchers,
+    add_ticket_log=add_ticket_log,
+    notify_executor_new_ticket=notify_executor_new_ticket,
+    get_api_ticket_or_404=get_api_ticket_or_404,
+    ticket_field_change_log_action=ticket_field_change_log_action,
+    ticket_status_change_log_action=ticket_status_change_log_action,
+    ticket_deadline_text=_ticket_deadline_text,
+    ticket_user_name=_ticket_user_name,
+    ticket_project_name=_ticket_project_name,
+    ticket_type_name=_ticket_type_name,
+    department_name=_department_name,
+    notify_executor_reassigned=notify_executor_reassigned,
+    notify_curators_status_changed=notify_curators_status_changed,
+    normalize_optional_uploaded_files=normalize_optional_uploaded_files,
+    create_comment_with_media_async=create_comment_with_media_async,
+    delete_stored_file=delete_stored_file,
+    notify_comment_added=notify_comment_added,
+    serialize_comment_out=serialize_comment_out,
+    normalize_uploaded_files=normalize_uploaded_files,
+    make_safe_upload_name=make_safe_upload_name,
+    build_attachment_object_key=build_attachment_object_key,
+    store_upload_file_to_storage=store_upload_file_to_storage,
+    create_ticket_attachment_record=create_ticket_attachment_record,
+    notify_curators_executor_act=notify_curators_executor_act,
+    get_storage_basename=get_storage_basename,
+    serve_stored_file_response=serve_stored_file_response,
+    ticket_model=Ticket,
+    comment_model=Comment,
+    comment_media_model=CommentMedia,
+    attachment_model=Attachment,
+    role_enum=Role,
+    ticket_status_enum=TicketStatus,
+    ticket_create_model=TicketCreate,
+    ticket_update_model=TicketUpdate,
+    ticket_out_model=TicketOut,
+    comment_out_model=CommentOut,
+    attachment_out_model=AttachmentOut,
+    log_action_created=LOG_ACTION_CREATED,
+    log_action_changed=LOG_ACTION_CHANGED,
+    log_action_target_unit_changed=LOG_ACTION_TARGET_UNIT_CHANGED,
+    log_action_template_changed=LOG_ACTION_TEMPLATE_CHANGED,
+    log_action_template_period_changed=LOG_ACTION_TEMPLATE_PERIOD_CHANGED,
+    max_ticket_title_len=MAX_TICKET_TITLE_LEN,
+    sqlalchemy_error=SQLAlchemyError,
+)
 
-# =========================
-# TICKETS API
-# =========================
-@app.post("/tickets", response_model=TicketOut)
-def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if is_platform_admin(user):
-        raise HTTPException(403, "Forbidden")
-    ensure_company_user(user)
-    if not can_create_company_ticket(user):
-        raise HTTPException(403, "Forbidden")
-    title = normalize_ticket_title(payload.title)
-    if not title:
-        raise HTTPException(422, "Title is required")
-    if is_ticket_title_too_long(title):
-        raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
-
-    validate_ticket_links(
-        db,
-        user.company_id,
-        payload.project_id,
-        payload.executor_id,
-        payload.ticket_type_id,
-        payload.target_unit_id,
-        payload.ticket_template_id,
-        payload.department_id,
-    )
-    resolved_department_id = resolve_ticket_department_id(
-        db,
-        company_id=user.company_id,
-        ticket_type_id=payload.ticket_type_id,
-        department_id=payload.department_id,
-    )
-    t = Ticket(
-        title=title,
-        description=payload.description,
-        deadline=payload.deadline,
-        company_id=user.company_id,
-        executor_id=payload.executor_id,
-        ticket_type_id=payload.ticket_type_id,
-        department_id=resolved_department_id,
-        target_unit_id=payload.target_unit_id,
-        ticket_template_id=payload.ticket_template_id,
-        period_key=(payload.period_key or "").strip() or None,
-        project_id=payload.project_id,
-        created_by=user.id
-    )
-    try:
-        db.add(t)
-        db.flush()
-        ensure_default_ticket_watchers(db, t)
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CREATED)
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        raise HTTPException(400, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р·Р°СЏРІРєСѓ")
-    db.refresh(t)
-    notify_executor_new_ticket(db, t, user)
-    try:
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-    return t
-
-@app.get("/tickets", response_model=list[TicketOut])
-def list_tickets(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = db.query(Ticket).order_by(Ticket.id.desc())
-    if not is_platform_admin(user):
-        ensure_company_user(user)
-        q = q.filter(Ticket.company_id == user.company_id)
-    if user.role == Role.executor:
-        if not getattr(user, "can_view_all_tickets", False):
-            q = q.filter((Ticket.executor_id == user.id) | (Ticket.created_by == user.id))
-    return q.all()
-
-@app.patch("/tickets/{ticket_id}", response_model=TicketOut)
-def update_ticket(ticket_id: int, patch: TicketUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = get_api_ticket_or_404(db, user, ticket_id)
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    incoming = patch.model_dump(exclude_unset=True)
-    if incoming.get("status") == TicketStatus.archived:
-        raise HTTPException(400, "Use archive endpoint")
-
-    if user.role == Role.executor:
-        if not can_access_ticket(user, t):
-            raise HTTPException(403, "Forbidden")
-        allowed = {"description"}
-        if can_close_ticket(user, t):
-            allowed.add("status")
-        incoming = {k: v for k, v in incoming.items() if k in allowed}
-
-    if "title" in incoming:
-        incoming["title"] = normalize_ticket_title(incoming.get("title"))
-        if incoming["title"] and is_ticket_title_too_long(incoming["title"]):
-            raise HTTPException(422, f"Title is too long (max {MAX_TICKET_TITLE_LEN})")
-
-    validate_ticket_links(
-        db,
-        t.company_id,
-        incoming.get("project_id"),
-        incoming.get("executor_id"),
-        incoming.get("ticket_type_id"),
-        incoming.get("target_unit_id"),
-        incoming.get("ticket_template_id"),
-        incoming.get("department_id"),
-    )
-
-    old_deadline = t.deadline
-    old_executor_id = t.executor_id
-    old_project_id = t.project_id
-    old_ticket_type_id = t.ticket_type_id
-    old_department_id = t.department_id
-    old_target_unit_id = t.target_unit_id
-    old_template_id = t.ticket_template_id
-    old_period_key = t.period_key
-    old_status = t.status
-
-    for k, v in incoming.items():
-        setattr(t, k, v)
-    if "ticket_type_id" in incoming or "department_id" in incoming:
-        t.department_id = resolve_ticket_department_id(
-            db,
-            company_id=t.company_id,
-            ticket_type_id=t.ticket_type_id,
-            department_id=t.department_id,
-        )
-
-    has_specific_log = False
-    if t.deadline != old_deadline:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u0441\u0440\u043e\u043a\u0430",
-                _ticket_deadline_text(old_deadline),
-                _ticket_deadline_text(t.deadline),
-            ),
-        )
-        has_specific_log = True
-    if t.executor_id != old_executor_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f",
-                _ticket_user_name(db, old_executor_id),
-                _ticket_user_name(db, t.executor_id),
-            ),
-        )
-        has_specific_log = True
-    if t.project_id != old_project_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u043f\u0440\u043e\u0435\u043a\u0442\u0430",
-                _ticket_project_name(db, old_project_id),
-                _ticket_project_name(db, t.project_id),
-            ),
-        )
-        has_specific_log = True
-
-    if t.ticket_type_id != old_ticket_type_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "\u0442\u0438\u043f\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
-                _ticket_type_name(db, old_ticket_type_id),
-                _ticket_type_name(db, t.ticket_type_id),
-            ),
-        )
-        has_specific_log = True
-    if t.department_id != old_department_id:
-        add_ticket_log(
-            db,
-            ticket_id=t.id,
-            actor_id=user.id,
-            action=ticket_field_change_log_action(
-                "отдела",
-                _department_name(db, old_department_id),
-                _department_name(db, t.department_id),
-            ),
-        )
-        has_specific_log = True
-    if t.target_unit_id != old_target_unit_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TARGET_UNIT_CHANGED)
-        has_specific_log = True
-    if t.ticket_template_id != old_template_id:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TEMPLATE_CHANGED)
-        has_specific_log = True
-    if t.period_key != old_period_key:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_TEMPLATE_PERIOD_CHANGED)
-        has_specific_log = True
-
-    if t.status != old_status:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=ticket_status_change_log_action(old_status, t.status))
-        has_specific_log = True
-
-    if not has_specific_log:
-        add_ticket_log(db, ticket_id=t.id, actor_id=user.id, action=LOG_ACTION_CHANGED)
-
-    ensure_default_ticket_watchers(db, t)
-    db.commit(); db.refresh(t)
-    notify_executor_reassigned(db, t, old_executor_id=old_executor_id, actor=user)
-    notify_curators_status_changed(db, t, actor=user, old_status=old_status)
-    db.commit()
-    return t
-
-@app.post("/tickets/{ticket_id}/comments", response_model=CommentOut)
-async def add_comment(ticket_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = get_api_ticket_or_404(db, user, ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if not can_close_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    content_type = (request.headers.get("content-type") or "").lower()
-    text_value = ""
-    photo_uploads: list[UploadFile] = []
-    voice_uploads: list[UploadFile] = []
-    attachment_uploads: list[UploadFile] = []
-    if "application/json" in content_type:
-        try:
-            payload = await request.json()
-        except Exception as exc:
-            raise HTTPException(400, "Invalid JSON payload") from exc
-        if not isinstance(payload, dict):
-            raise HTTPException(400, "Invalid JSON payload")
-        text_value = (payload.get("text") or "").strip()
-    else:
-        form = await request.form()
-        text_value = (form.get("text") or "").strip()
-        photo_uploads = normalize_optional_uploaded_files(list(form.getlist("photos")))
-        voice_uploads = normalize_optional_uploaded_files(list(form.getlist("voice_messages")))
-        attachment_uploads = normalize_optional_uploaded_files(list(form.getlist("attachments")))
-
-    comment, media_items, stored_paths = await create_comment_with_media_async(
-        db=db,
-        ticket_id=ticket_id,
-        author_id=user.id,
-        text=text_value,
-        photos=photo_uploads,
-        voice_messages=voice_uploads,
-        attachments=attachment_uploads,
-    )
-    try:
-        db.commit()
-        db.refresh(comment)
-        for item in media_items:
-            db.refresh(item)
-    except Exception:
-        db.rollback()
-        for stored_path in stored_paths:
-            delete_stored_file(stored_path)
-        raise
-    try:
-        notify_comment_added(
-            db,
-            ticket=t,
-            author=user,
-            comment_text=text_value,
-            photo_count=sum(1 for item in media_items if item.media_kind == "photo"),
-            voice_count=sum(1 for item in media_items if item.media_kind == "voice"),
-            file_count=sum(1 for item in media_items if item.media_kind == "file"),
-        )
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-    return serialize_comment_out(comment, media_items)
-
-@app.post("/tickets/{ticket_id}/attachments", response_model=list[AttachmentOut])
-def upload_attachment(ticket_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = get_api_ticket_or_404(db, user, ticket_id)
-    if not can_access_ticket(user, t):
-        raise HTTPException(403, "Forbidden")
-    if t.status == TicketStatus.archived:
-        raise HTTPException(400, "Archived ticket is read-only")
-
-    saved_attachments: list[Attachment] = []
-    for upload in normalize_uploaded_files(files):
-        safe_name = make_safe_upload_name(upload.filename, ticket_id=ticket_id)
-        object_key = build_attachment_object_key(safe_name)
-        stored_path, file_hash, file_size = store_upload_file_to_storage(upload, object_key)
-        attachment = create_ticket_attachment_record(
-            db=db,
-            ticket_id=ticket_id,
-            uploader_id=user.id,
-            upload=upload,
-            stored_path=stored_path,
-            file_hash=file_hash,
-            file_size=file_size,
-        )
-        saved_attachments.append(attachment)
-
-    db.commit()
-    for attachment in saved_attachments:
-        db.refresh(attachment)
-    for attachment in saved_attachments:
-        notify_curators_executor_act(db, ticket=t, uploader=user, original_name=attachment.original_name)
-    db.commit()
-    return saved_attachments
-
-
-@app.get("/attachments/{attachment_id}")
-def download_attachment(
-    attachment_id: int,
-    download: int | None = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    a = db.get(Attachment, attachment_id)
-    if not a:
-        raise HTTPException(404, "Attachment not found")
-    t = get_api_ticket_or_404(db, user, a.ticket_id)
-    display_name = ((a.original_name or "").strip() or get_storage_basename(a.file_path) or "file")[:255]
-    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
-    return serve_stored_file_response(a.file_path, display_name, disposition, "Attachment file not found")
-
-
-@app.get("/comment-media/{media_id}")
-def download_comment_media(
-    media_id: int,
-    download: int | None = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    item = db.get(CommentMedia, media_id)
-    if not item:
-        raise HTTPException(404, "Comment media not found")
-    comment = db.get(Comment, item.comment_id)
-    if not comment:
-        raise HTTPException(404, "Comment not found")
-    _ = get_api_ticket_or_404(db, user, comment.ticket_id)
-    display_name = ((item.original_name or "").strip() or get_storage_basename(item.file_path) or "file")[:255]
-    disposition = "attachment" if str(download or "").strip() == "1" else "inline"
-    return serve_stored_file_response(item.file_path, display_name, disposition, "Comment media file not found")
 
 # =========================
 # WEB UI
