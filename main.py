@@ -38,6 +38,7 @@ from app_routes.notifications import register_notification_routes
 from app_routes.org_structure import register_org_structure_routes
 from app_routes.payment_cards import register_payment_card_routes
 from app_routes.push_mobile import register_push_mobile_routes
+from app_routes.reference_data_api import register_reference_data_api_routes
 from app_routes.receipt_actions import register_receipt_action_routes
 from app_routes.receipt_exports import register_receipt_export_routes
 from app_routes.receipts import register_receipt_routes
@@ -4983,6 +4984,35 @@ def service_worker():
     )
 
 
+register_reference_data_api_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    require_role=require_role,
+    ensure_company_user=ensure_company_user,
+    is_platform_admin=is_platform_admin,
+    normalize_department_name=normalize_department_name,
+    func=func,
+    project_model=Project,
+    department_model=Department,
+    unit_type_model=UnitType,
+    ticket_type_model=TicketType,
+    ticket_template_model=TicketTemplate,
+    unit_assignment_model=UnitAssignment,
+    ticket_model=Ticket,
+    org_unit_model=OrgUnit,
+    role_enum=Role,
+    project_create_model=ProjectCreate,
+    project_out_model=ProjectOut,
+    department_create_model=DepartmentCreate,
+    department_update_model=DepartmentUpdate,
+    department_out_model=DepartmentOut,
+    unit_type_create_model=UnitTypeCreate,
+    unit_type_update_model=UnitTypeUpdate,
+    unit_type_out_model=UnitTypeOut,
+)
+
+
 # =========================
 # USERS API
 # =========================
@@ -5040,245 +5070,6 @@ def create_user(
     except EmailDeliveryError:
         logger.exception("Could not send verification email to %s", u.email)
     return u
-
-# =========================
-# PROJECTS API
-# =========================
-@app.post("/projects", response_model=ProjectOut)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db), _manager: User = Depends(require_role(Role.admin, Role.curator))):
-    ensure_company_user(_manager)
-    if db.query(Project).filter(Project.name == payload.name, Project.company_id == _manager.company_id).first():
-        raise HTTPException(400, "Project already exists")
-    p = Project(name=payload.name, description=payload.description, company_id=_manager.company_id)
-    db.add(p); db.commit(); db.refresh(p)
-    return p
-
-@app.get("/projects", response_model=list[ProjectOut])
-def list_projects(db: Session = Depends(get_db), _u: User = Depends(get_current_user)):
-    if is_platform_admin(_u):
-        return db.query(Project).order_by(Project.id.desc()).all()
-    ensure_company_user(_u)
-    return db.query(Project).filter(Project.company_id == _u.company_id).order_by(Project.id.desc()).all()
-
-
-@app.post("/departments", response_model=DepartmentOut)
-def create_department(
-    payload: DepartmentCreate,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_role(Role.admin)),
-):
-    ensure_company_user(_admin)
-    name = normalize_department_name(payload.name)
-    if not name:
-        raise HTTPException(422, "Name is required")
-    exists = (
-        db.query(Department.id)
-        .filter(Department.company_id == _admin.company_id, func.lower(Department.name) == name.lower())
-        .first()
-    )
-    if exists:
-        raise HTTPException(400, "Department already exists")
-    item = Department(
-        company_id=_admin.company_id,
-        name=name,
-        is_active=bool(payload.is_active),
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@app.get("/departments", response_model=list[DepartmentOut])
-def list_departments(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if is_platform_admin(user):
-        return db.query(Department).order_by(Department.id.desc()).all()
-    ensure_company_user(user)
-    return (
-        db.query(Department)
-        .filter(Department.company_id == user.company_id)
-        .order_by(Department.name.asc(), Department.id.asc())
-        .all()
-    )
-
-
-@app.patch("/departments/{department_id}", response_model=DepartmentOut)
-def update_department(
-    department_id: int,
-    patch: DepartmentUpdate,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_role(Role.admin)),
-):
-    ensure_company_user(_admin)
-    item = db.get(Department, department_id)
-    if not item or item.company_id != _admin.company_id:
-        raise HTTPException(404, "Department not found")
-    incoming = patch.model_dump(exclude_unset=True)
-    if "name" in incoming:
-        next_name = normalize_department_name(incoming.get("name"))
-        if not next_name:
-            raise HTTPException(422, "Name is required")
-        exists = (
-            db.query(Department.id)
-            .filter(
-                Department.company_id == _admin.company_id,
-                func.lower(Department.name) == next_name.lower(),
-                Department.id != item.id,
-            )
-            .first()
-        )
-        if exists:
-            raise HTTPException(400, "Department already exists")
-        item.name = next_name
-    if "is_active" in incoming:
-        item.is_active = bool(incoming.get("is_active"))
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@app.delete("/departments/{department_id}")
-def delete_department(
-    department_id: int,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_role(Role.admin)),
-):
-    ensure_company_user(_admin)
-    item = db.get(Department, department_id)
-    if not item or item.company_id != _admin.company_id:
-        raise HTTPException(404, "Department not found")
-    in_use = any(
-        (
-            db.query(TicketType.id).filter(TicketType.department_id == item.id).first() is not None,
-            db.query(TicketTemplate.id).filter(TicketTemplate.department_id == item.id).first() is not None,
-            db.query(UnitAssignment.id).filter(UnitAssignment.department_id == item.id).first() is not None,
-            db.query(Ticket.id).filter(Ticket.department_id == item.id).first() is not None,
-        )
-    )
-    if in_use:
-        raise HTTPException(400, "Department is in use")
-    db.delete(item)
-    db.commit()
-    return {"ok": True}
-
-# =========================
-# UNIT TYPES API
-# =========================
-@app.post("/unit-types", response_model=UnitTypeOut)
-def create_unit_type(
-    payload: UnitTypeCreate,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    name = (payload.name or "").strip()
-    code = (payload.code or "").strip() or None
-    if not name:
-        raise HTTPException(422, "Name is required")
-    if (
-        db.query(UnitType.id)
-        .filter(UnitType.company_id == _manager.company_id, func.lower(UnitType.name) == name.lower())
-        .first()
-    ):
-        raise HTTPException(400, "Unit type already exists")
-    if code and (
-        db.query(UnitType.id)
-        .filter(UnitType.company_id == _manager.company_id, func.lower(UnitType.code) == code.lower())
-        .first()
-    ):
-        raise HTTPException(400, "Unit type code already exists")
-    item = UnitType(
-        company_id=_manager.company_id,
-        name=name,
-        code=code,
-        is_active=bool(payload.is_active),
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@app.get("/unit-types", response_model=list[UnitTypeOut])
-def list_unit_types(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if is_platform_admin(user):
-        return db.query(UnitType).order_by(UnitType.id.desc()).all()
-    ensure_company_user(user)
-    return (
-        db.query(UnitType)
-        .filter(UnitType.company_id == user.company_id)
-        .order_by(UnitType.id.desc())
-        .all()
-    )
-
-
-@app.patch("/unit-types/{unit_type_id}", response_model=UnitTypeOut)
-def update_unit_type(
-    unit_type_id: int,
-    patch: UnitTypeUpdate,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    item = db.get(UnitType, unit_type_id)
-    if not item or item.company_id != _manager.company_id:
-        raise HTTPException(404, "Unit type not found")
-    incoming = patch.model_dump(exclude_unset=True)
-    if "name" in incoming:
-        next_name = (incoming.get("name") or "").strip()
-        if not next_name:
-            raise HTTPException(422, "Name is required")
-        exists = (
-            db.query(UnitType.id)
-            .filter(
-                UnitType.company_id == _manager.company_id,
-                func.lower(UnitType.name) == next_name.lower(),
-                UnitType.id != item.id,
-            )
-            .first()
-        )
-        if exists:
-            raise HTTPException(400, "Unit type already exists")
-        item.name = next_name
-    if "code" in incoming:
-        next_code = (incoming.get("code") or "").strip() or None
-        if next_code:
-            exists = (
-                db.query(UnitType.id)
-                .filter(
-                    UnitType.company_id == _manager.company_id,
-                    func.lower(UnitType.code) == next_code.lower(),
-                    UnitType.id != item.id,
-                )
-                .first()
-            )
-            if exists:
-                raise HTTPException(400, "Unit type code already exists")
-        item.code = next_code
-    if "is_active" in incoming:
-        item.is_active = bool(incoming.get("is_active"))
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@app.delete("/unit-types/{unit_type_id}")
-def delete_unit_type(
-    unit_type_id: int,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    item = db.get(UnitType, unit_type_id)
-    if not item or item.company_id != _manager.company_id:
-        raise HTTPException(404, "Unit type not found")
-    in_use = db.query(OrgUnit.id).filter(OrgUnit.unit_type_id == item.id).first() is not None
-    if in_use:
-        raise HTTPException(400, "Unit type is in use")
-    db.delete(item)
-    db.commit()
-    return {"ok": True}
-
 
 # =========================
 # TICKET TYPES API
