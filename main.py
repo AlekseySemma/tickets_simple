@@ -116,6 +116,7 @@ from app_support.startup import (
     maybe_repair_text_on_start,
     start_background_threads,
 )
+from app_support.storage import StorageService
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
     append_query_params,
@@ -2934,6 +2935,77 @@ def move_comment_media_to_active_storage(item: CommentMedia, ticket_id: int) -> 
         return
     item.file_path = target_path
     item.archived_at = None
+
+
+_storage_service = StorageService(
+    upload_dir=UPLOAD_DIR,
+    upload_dir_getter=lambda: UPLOAD_DIR,
+    archive_upload_subdir=ARCHIVE_UPLOAD_SUBDIR,
+    storage_backend=STORAGE_BACKEND,
+    storage_backend_getter=lambda: STORAGE_BACKEND,
+    s3_bucket=S3_BUCKET,
+    s3_endpoint_url=S3_ENDPOINT_URL,
+    s3_access_key=S3_ACCESS_KEY,
+    s3_secret_key=S3_SECRET_KEY,
+    s3_region=S3_REGION,
+    s3_addressing_style=S3_ADDRESSING_STYLE,
+    s3_presigned_ttl_seconds=S3_PRESIGNED_TTL_SECONDS,
+    attachments_storage_prefix=ATTACHMENTS_STORAGE_PREFIX,
+    comment_media_storage_prefix=COMMENT_MEDIA_STORAGE_PREFIX,
+    receipts_storage_prefix=RECEIPTS_STORAGE_PREFIX,
+    allowed_upload_extensions=ALLOWED_UPLOAD_EXTENSIONS,
+    comment_image_extensions=COMMENT_IMAGE_EXTENSIONS,
+    comment_audio_extensions=COMMENT_AUDIO_EXTENSIONS,
+    comment_media_extensions=COMMENT_MEDIA_EXTENSIONS,
+    max_upload_size_bytes=MAX_UPLOAD_SIZE_BYTES,
+    http_exception_cls=HTTPException,
+    redirect_response_cls=RedirectResponse,
+    file_response_cls=FileResponse,
+    status_module=status,
+    boto3_available=BOTO3_AVAILABLE,
+    boto3_module=boto3,
+    boto_config_cls=BotoConfig,
+    boto_core_error_cls=BotoCoreError,
+    client_error_cls=ClientError,
+)
+
+get_s3_client = _storage_service.get_s3_client
+build_storage_key = _storage_service.build_storage_key
+parse_s3_storage_path = _storage_service.parse_s3_storage_path
+build_s3_storage_path = _storage_service.build_s3_storage_path
+build_attachment_object_key = _storage_service.build_attachment_object_key
+build_comment_media_object_key = _storage_service.build_comment_media_object_key
+build_receipt_object_key = _storage_service.build_receipt_object_key
+get_storage_basename = _storage_service.get_storage_basename
+build_download_content_disposition = _storage_service.build_download_content_disposition
+get_upload_extension = _storage_service.get_upload_extension
+detect_comment_media_kind = _storage_service.detect_comment_media_kind
+resolve_attachment_disk_path = _storage_service.resolve_attachment_disk_path
+make_safe_upload_name = _storage_service.make_safe_upload_name
+write_upload_file = _storage_service.write_upload_file
+write_upload_file_async = _storage_service.write_upload_file_async
+read_upload_bytes = _storage_service.read_upload_bytes
+read_upload_bytes_async = _storage_service.read_upload_bytes_async
+build_upload_url_from_disk_path = _storage_service.build_upload_url_from_disk_path
+compute_bytes_sha256_and_size = _storage_service.compute_bytes_sha256_and_size
+store_bytes_in_storage = _storage_service.store_bytes_in_storage
+store_upload_file_to_storage = _storage_service.store_upload_file_to_storage
+store_upload_file_to_storage_async = _storage_service.store_upload_file_to_storage_async
+read_stored_file_bytes = _storage_service.read_stored_file_bytes
+delete_stored_file = _storage_service.delete_stored_file
+build_presigned_storage_download_url = _storage_service.build_presigned_storage_download_url
+serve_stored_file_response = _storage_service.serve_stored_file_response
+move_stored_file_to_key = _storage_service.move_stored_file_to_key
+compute_file_sha256_and_size = _storage_service.compute_file_sha256_and_size
+enrich_attachment_metadata = _storage_service.enrich_attachment_metadata
+normalize_uploaded_files = _storage_service.normalize_uploaded_files
+normalize_optional_uploaded_files = _storage_service.normalize_optional_uploaded_files
+choose_attachment_storage_name = _storage_service.choose_attachment_storage_name
+choose_comment_media_storage_name = _storage_service.choose_comment_media_storage_name
+move_attachment_to_archive = _storage_service.move_attachment_to_archive
+move_attachment_to_active_storage = _storage_service.move_attachment_to_active_storage
+move_comment_media_to_archive = _storage_service.move_comment_media_to_archive
+move_comment_media_to_active_storage = _storage_service.move_comment_media_to_active_storage
 
 
 def to_local_dt(dt: datetime | None) -> datetime | None:
