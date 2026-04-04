@@ -109,6 +109,7 @@ from app_support.enums import (
     status_label_ru,
     ticket_status_change_log_action,
 )
+from app_support.notification_service import NotificationService
 from app_support.startup import (
     ensure_platform_admin_user,
     maybe_repair_text_on_start,
@@ -3066,186 +3067,29 @@ def send_mobile_push_to_user_report(db: Session, user_id: int, title: str, body:
     return results
 
 
-def create_inapp_notification(db: Session, user_id: int, title: str, body: str, url: str) -> None:
-    user = db.get(User, user_id)
-    if not user:
-        return
-    n = Notification(
-        company_id=user.company_id,
-        user_id=user_id,
-        title=fix_mojibake_text((title or "").strip())[:255] or "Уведомление",
-        body=(fix_mojibake_text((body or "").strip())[:2000] or None),
-        url=(url or "").strip()[:500] or "/web",
-        is_read=False,
-    )
-    db.add(n)
+_notification_service = NotificationService(
+    fix_mojibake_text=fix_mojibake_text,
+    ticket_notification_title=ticket_notification_title,
+    summarize_comment_media=summarize_comment_media,
+    status_label_ru=status_label_ru,
+    send_push_to_user_report_func=lambda **kwargs: send_push_to_user_report(**kwargs),
+    send_mobile_push_to_user_report_func=lambda **kwargs: send_mobile_push_to_user_report(**kwargs),
+    user_model=User,
+    notification_model=Notification,
+    role_enum=Role,
+    ticket_watcher_model=TicketWatcher,
+    project_model=Project,
+    payment_card_model=PaymentCard,
+)
 
-
-def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str) -> None:
-    safe_title = fix_mojibake_text((title or "").strip()) or "\u0423\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435"
-    safe_body = fix_mojibake_text((body or "").strip())
-    safe_url = (url or "").strip() or "/web"
-    create_inapp_notification(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
-    _ = send_push_to_user_report(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
-    _ = send_mobile_push_to_user_report(db=db, user_id=user_id, title=safe_title, body=safe_body, url=safe_url)
-
-
-def notify_executor_new_ticket(db: Session, ticket: Ticket, actor: User) -> None:
-    if not ticket.executor_id:
-        return
-    if ticket.executor_id == actor.id:
-        return
-    send_push_to_user(
-        db=db,
-        user_id=ticket.executor_id,
-        title=ticket_notification_title("Новая заявка", ticket.title, ticket_id=ticket.id),
-        body=ticket.title or "\u0412\u0430\u043c \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u043e\u0432\u0430\u044f \u0437\u0430\u044f\u0432\u043a\u0430",
-        url=f"/web/tickets/{ticket.id}",
-    )
-
-
-def notify_executor_reassigned(db: Session, ticket: Ticket, old_executor_id: Optional[int], actor: User) -> None:
-    if not ticket.executor_id or ticket.executor_id == old_executor_id:
-        return
-    if ticket.executor_id == actor.id:
-        return
-    send_push_to_user(
-        db=db,
-        user_id=ticket.executor_id,
-        title=ticket_notification_title("Вам назначена заявка", ticket.title, ticket_id=ticket.id),
-        body=ticket.title or "\u0417\u0430\u044f\u0432\u043a\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441",
-        url=f"/web/tickets/{ticket.id}",
-    )
-
-
-def notify_curators_status_changed(db: Session, ticket: Ticket, actor: User, old_status: TicketStatus) -> None:
-    if old_status == ticket.status:
-        return
-    curator_ids = [
-        u.id
-        for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
-        if u.id != actor.id
-    ]
-    for curator_id in curator_ids:
-        send_push_to_user(
-            db=db,
-            user_id=curator_id,
-            title=ticket_notification_title("Изменен статус заявки", ticket.title, ticket_id=ticket.id),
-            body=f"{actor.name}: {status_label_ru(old_status)} -> {status_label_ru(ticket.status)}",
-            url=f"/web/tickets/{ticket.id}",
-        )
-
-
-def notify_comment_added(
-    db: Session,
-    ticket: Ticket,
-    author: User,
-    comment_text: str,
-    photo_count: int = 0,
-    voice_count: int = 0,
-    file_count: int = 0,
-) -> None:
-    short_text = (comment_text or "").strip()
-    if len(short_text) > 80:
-        short_text = short_text[:77] + "..."
-
-    recipient_ids: set[int] = set()
-    if ticket.executor_id:
-        recipient_ids.add(int(ticket.executor_id))
-
-    curator_ids = [
-        u.id for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
-    ]
-    recipient_ids.update(int(curator_id) for curator_id in curator_ids)
-
-    watcher_rows = (
-        db.query(TicketWatcher.user_id)
-        .join(User, User.id == TicketWatcher.user_id)
-        .filter(
-            TicketWatcher.ticket_id == ticket.id,
-            User.notify_comments_as_watcher.is_(True),
-        )
-        .all()
-    )
-    recipient_ids.update(int(row[0]) for row in watcher_rows if row and row[0] is not None)
-
-    recipient_ids.discard(author.id)
-
-    for recipient_id in recipient_ids:
-        send_push_to_user(
-            db=db,
-            user_id=recipient_id,
-            title=ticket_notification_title("Новый комментарий", ticket.title, ticket_id=ticket.id),
-            body=short_text or summarize_comment_media(photo_count, voice_count, file_count, author.name),
-            url=f"/web/tickets/{ticket.id}",
-        )
-
-
-def notify_curators_executor_act(db: Session, ticket: Ticket, uploader: User, original_name: str | None) -> None:
-    if uploader.role != Role.executor:
-        return
-    file_name = fix_mojibake_text((original_name or "").lower())
-    if "\u0430\u043a\u0442" not in file_name and "act" not in file_name:
-        return
-    curator_ids = [
-        u.id
-        for u in db.query(User).filter(User.role == Role.curator, User.company_id == ticket.company_id).all()
-        if u.id != uploader.id
-    ]
-    for curator_id in curator_ids:
-        send_push_to_user(
-            db=db,
-            user_id=curator_id,
-            title=ticket_notification_title("Исполнитель прикрепил акт", ticket.title, ticket_id=ticket.id),
-            body=original_name or "\u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d \u0444\u0430\u0439\u043b \u0430\u043a\u0442\u0430",
-            url=f"/web/tickets/{ticket.id}",
-        )
-
-
-def notify_receipt_created(db: Session, receipt: Receipt, actor: User) -> None:
-    recipient_rows = (
-        db.query(User.id)
-        .filter(
-            User.company_id == receipt.company_id,
-            User.id != actor.id,
-            User.show_receipts_accounting_mode.is_(True),
-            User.notify_receipt_created.is_(True),
-            User.role != Role.platform_admin,
-        )
-        .all()
-    )
-    if not recipient_rows:
-        return
-
-    project_name = (
-        db.query(Project.name)
-        .filter(Project.id == receipt.project_id, Project.company_id == receipt.company_id)
-        .scalar()
-    )
-    card_name = (
-        db.query(PaymentCard.name)
-        .filter(PaymentCard.id == receipt.card_id, PaymentCard.company_id == receipt.company_id)
-        .scalar()
-    )
-    body_parts: list[str] = []
-    if project_name:
-        body_parts.append(str(project_name))
-    if card_name:
-        body_parts.append(str(card_name))
-    if receipt.comment:
-        body_parts.append(str(receipt.comment))
-    body = " | ".join(part for part in body_parts if part)[:400] or f"Добавлен чек #{receipt.id}"
-    url = f"/web/receipts?mode=accounting"
-    title = f"Новый чек #{receipt.id}"
-    for row in recipient_rows:
-        recipient_id = int(row[0])
-        send_push_to_user(
-            db=db,
-            user_id=recipient_id,
-            title=title,
-            body=body,
-            url=url,
-        )
+create_inapp_notification = _notification_service.create_inapp_notification
+send_push_to_user = _notification_service.send_push_to_user
+notify_executor_new_ticket = _notification_service.notify_executor_new_ticket
+notify_executor_reassigned = _notification_service.notify_executor_reassigned
+notify_curators_status_changed = _notification_service.notify_curators_status_changed
+notify_comment_added = _notification_service.notify_comment_added
+notify_curators_executor_act = _notification_service.notify_curators_executor_act
+notify_receipt_created = _notification_service.notify_receipt_created
 
 
 def run_deadline_reminders_forever() -> None:
