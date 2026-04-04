@@ -48,6 +48,7 @@ from app_routes.ticket_detail import register_ticket_detail_routes
 from app_routes.ticket_templates import register_ticket_template_routes
 from app_routes.ticket_types import register_ticket_type_routes
 from app_routes.ticket_actions import register_ticket_action_routes
+from app_routes.ticket_catalog_api import register_ticket_catalog_api_routes
 from app_routes.tickets_overview import register_ticket_overview_routes
 from app_routes.users import register_user_management_routes
 from app_routes.users_api import register_users_api_routes
@@ -5033,352 +5034,35 @@ register_users_api_routes(
     email_delivery_error=EmailDeliveryError,
 )
 
+register_ticket_catalog_api_routes(
+    app,
+    get_db=get_db,
+    get_current_user=get_current_user,
+    require_role=require_role,
+    ensure_company_user=ensure_company_user,
+    is_platform_admin=is_platform_admin,
+    validate_ticket_links=validate_ticket_links,
+    normalize_ticket_type_archive_retention_days=normalize_ticket_type_archive_retention_days,
+    validate_template_links=validate_template_links,
+    resolve_ticket_department_id=resolve_ticket_department_id,
+    normalize_period_key=normalize_period_key,
+    month_period_key=month_period_key,
+    create_tickets_from_template=create_tickets_from_template,
+    ticket_type_model=TicketType,
+    ticket_template_model=TicketTemplate,
+    ticket_model=Ticket,
+    ticket_generation_key_model=TicketGenerationKey,
+    role_enum=Role,
+    ticket_type_create_model=TicketTypeCreate,
+    ticket_type_update_model=TicketTypeUpdate,
+    ticket_type_out_model=TicketTypeOut,
+    ticket_template_create_model=TicketTemplateCreate,
+    ticket_template_update_model=TicketTemplateUpdate,
+    ticket_template_out_model=TicketTemplateOut,
+    ticket_template_run_in_model=TicketTemplateRunIn,
+    sqlalchemy_error=SQLAlchemyError,
+)
 
-# =========================
-# USERS API
-# =========================
-# =========================
-# TICKET TYPES API
-# =========================
-@app.post("/ticket-types", response_model=TicketTypeOut)
-def create_ticket_type(
-    payload: TicketTypeCreate,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    name = (payload.name or "").strip()
-    if not name:
-        raise HTTPException(422, "Name is required")
-    exists = (
-        db.query(TicketType)
-        .filter(TicketType.company_id == _manager.company_id, TicketType.name == name)
-        .first()
-    )
-    if exists:
-        raise HTTPException(400, "Ticket type already exists")
-    validate_ticket_links(
-        db,
-        _manager.company_id,
-        None,
-        None,
-        None,
-        None,
-        None,
-        payload.department_id,
-    )
-    item = TicketType(
-        company_id=_manager.company_id,
-        name=name,
-        description=(payload.description or "").strip() or None,
-        department_id=payload.department_id,
-        archive_retention_days=normalize_ticket_type_archive_retention_days(payload.archive_retention_days),
-        is_active=bool(payload.is_active),
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return item
-
-@app.get("/ticket-types", response_model=list[TicketTypeOut])
-def list_ticket_types(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if is_platform_admin(user):
-        return db.query(TicketType).order_by(TicketType.id.desc()).all()
-    ensure_company_user(user)
-    return (
-        db.query(TicketType)
-        .filter(TicketType.company_id == user.company_id)
-        .order_by(TicketType.id.desc())
-        .all()
-    )
-
-@app.patch("/ticket-types/{ticket_type_id}", response_model=TicketTypeOut)
-def update_ticket_type(
-    ticket_type_id: int,
-    patch: TicketTypeUpdate,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    item = db.get(TicketType, ticket_type_id)
-    if not item or item.company_id != _manager.company_id:
-        raise HTTPException(404, "Ticket type not found")
-
-    incoming = patch.model_dump(exclude_unset=True)
-    if "name" in incoming:
-        next_name = (incoming.get("name") or "").strip()
-        if not next_name:
-            raise HTTPException(422, "Name is required")
-        exists = (
-            db.query(TicketType)
-            .filter(
-                TicketType.company_id == _manager.company_id,
-                TicketType.name == next_name,
-                TicketType.id != item.id,
-            )
-            .first()
-        )
-        if exists:
-            raise HTTPException(400, "Ticket type already exists")
-        item.name = next_name
-    if "description" in incoming:
-        item.description = (incoming.get("description") or "").strip() or None
-    if "department_id" in incoming:
-        validate_ticket_links(
-            db,
-            _manager.company_id,
-            None,
-            None,
-            None,
-            None,
-            None,
-            incoming.get("department_id"),
-        )
-        item.department_id = incoming.get("department_id")
-    if "is_active" in incoming:
-        item.is_active = bool(incoming.get("is_active"))
-    if "archive_retention_days" in incoming:
-        item.archive_retention_days = normalize_ticket_type_archive_retention_days(incoming.get("archive_retention_days"))
-    db.commit()
-    db.refresh(item)
-    return item
-
-@app.delete("/ticket-types/{ticket_type_id}")
-def delete_ticket_type(
-    ticket_type_id: int,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    item = db.get(TicketType, ticket_type_id)
-    if not item or item.company_id != _manager.company_id:
-        raise HTTPException(404, "Ticket type not found")
-
-    has_tickets = db.query(Ticket.id).filter(Ticket.ticket_type_id == item.id).first() is not None
-    has_templates = db.query(TicketTemplate.id).filter(TicketTemplate.ticket_type_id == item.id).first() is not None
-    if has_tickets or has_templates:
-        raise HTTPException(400, "Ticket type is in use")
-
-    db.delete(item)
-    db.commit()
-    return {"ok": True}
-
-
-# =========================
-# TICKET TEMPLATES API
-# =========================
-@app.post("/ticket-templates", response_model=TicketTemplateOut)
-def create_ticket_template(
-    payload: TicketTemplateCreate,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    name = (payload.name or "").strip()
-    if not name:
-        raise HTTPException(422, "Name is required")
-    validate_template_links(
-        db,
-        _manager.company_id,
-        payload.ticket_type_id,
-        payload.department_id,
-        payload.default_executor_id,
-        payload.scope_unit_id,
-    )
-    resolved_department_id = resolve_ticket_department_id(
-        db,
-        company_id=_manager.company_id,
-        ticket_type_id=payload.ticket_type_id,
-        department_id=payload.department_id,
-    )
-    exists = (
-        db.query(TicketTemplate.id)
-        .filter(TicketTemplate.company_id == _manager.company_id, TicketTemplate.name == name)
-        .first()
-    )
-    if exists:
-        raise HTTPException(400, "Ticket template already exists")
-    item = TicketTemplate(
-        company_id=_manager.company_id,
-        ticket_type_id=payload.ticket_type_id,
-        department_id=resolved_department_id,
-        name=name,
-        title_template=(payload.title_template or "").strip() or None,
-        description_template=(payload.description_template or "").strip() or None,
-        default_deadline_rule=(payload.default_deadline_rule or "").strip() or None,
-        default_executor_id=payload.default_executor_id,
-        scope_unit_id=payload.scope_unit_id,
-        is_active=bool(payload.is_active),
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@app.get("/ticket-templates", response_model=list[TicketTemplateOut])
-def list_ticket_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if is_platform_admin(user):
-        return db.query(TicketTemplate).order_by(TicketTemplate.id.desc()).all()
-    ensure_company_user(user)
-    return (
-        db.query(TicketTemplate)
-        .filter(TicketTemplate.company_id == user.company_id)
-        .order_by(TicketTemplate.id.desc())
-        .all()
-    )
-
-
-@app.patch("/ticket-templates/{template_id}", response_model=TicketTemplateOut)
-def update_ticket_template(
-    template_id: int,
-    patch: TicketTemplateUpdate,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    item = db.get(TicketTemplate, template_id)
-    if not item or item.company_id != _manager.company_id:
-        raise HTTPException(404, "Ticket template not found")
-    incoming = patch.model_dump(exclude_unset=True)
-    if "name" in incoming:
-        next_name = (incoming.get("name") or "").strip()
-        if not next_name:
-            raise HTTPException(422, "Name is required")
-        exists = (
-            db.query(TicketTemplate.id)
-            .filter(
-                TicketTemplate.company_id == _manager.company_id,
-                TicketTemplate.name == next_name,
-                TicketTemplate.id != item.id,
-            )
-            .first()
-        )
-        if exists:
-            raise HTTPException(400, "Ticket template already exists")
-        item.name = next_name
-
-    next_ticket_type_id = incoming.get("ticket_type_id", item.ticket_type_id)
-    next_department_id = incoming.get("department_id", item.department_id)
-    next_default_executor_id = incoming.get("default_executor_id", item.default_executor_id)
-    next_scope_unit_id = incoming.get("scope_unit_id", item.scope_unit_id)
-    validate_template_links(
-        db,
-        _manager.company_id,
-        next_ticket_type_id,
-        next_department_id,
-        next_default_executor_id,
-        next_scope_unit_id,
-    )
-    resolved_department_id = resolve_ticket_department_id(
-        db,
-        company_id=_manager.company_id,
-        ticket_type_id=next_ticket_type_id,
-        department_id=next_department_id,
-    )
-
-    if "ticket_type_id" in incoming:
-        item.ticket_type_id = incoming.get("ticket_type_id")
-    if "department_id" in incoming or "ticket_type_id" in incoming:
-        item.department_id = resolved_department_id
-    if "title_template" in incoming:
-        item.title_template = (incoming.get("title_template") or "").strip() or None
-    if "description_template" in incoming:
-        item.description_template = (incoming.get("description_template") or "").strip() or None
-    if "default_deadline_rule" in incoming:
-        item.default_deadline_rule = (incoming.get("default_deadline_rule") or "").strip() or None
-    if "default_executor_id" in incoming:
-        item.default_executor_id = incoming.get("default_executor_id")
-    if "scope_unit_id" in incoming:
-        item.scope_unit_id = incoming.get("scope_unit_id")
-    if "is_active" in incoming:
-        item.is_active = bool(incoming.get("is_active"))
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@app.delete("/ticket-templates/{template_id}")
-def delete_ticket_template(
-    template_id: int,
-    db: Session = Depends(get_db),
-    _manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(_manager)
-    item = db.get(TicketTemplate, template_id)
-    if not item or item.company_id != _manager.company_id:
-        raise HTTPException(404, "Ticket template not found")
-    try:
-        db.query(Ticket).filter(
-            Ticket.company_id == _manager.company_id,
-            Ticket.ticket_template_id == item.id,
-        ).update({"ticket_template_id": None}, synchronize_session=False)
-        db.query(TicketGenerationKey).filter(
-            TicketGenerationKey.company_id == _manager.company_id,
-            TicketGenerationKey.ticket_template_id == item.id,
-        ).delete(synchronize_session=False)
-        db.delete(item)
-        db.commit()
-        return {"ok": True}
-    except SQLAlchemyError:
-        db.rollback()
-        raise HTTPException(400, "Cannot delete ticket template")
-
-
-@app.post("/ticket-templates/{template_id}/run")
-def run_ticket_template(
-    template_id: int,
-    payload: TicketTemplateRunIn,
-    db: Session = Depends(get_db),
-    manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(manager)
-    item = db.get(TicketTemplate, template_id)
-    if not item or item.company_id != manager.company_id:
-        raise HTTPException(404, "Ticket template not found")
-    normalized_period = normalize_period_key(payload.period_key)
-    if payload.period_key and normalized_period is None:
-        raise HTTPException(422, "Invalid period_key format, expected YYYY-MM")
-
-    created_count, skipped_count, effective_period = create_tickets_from_template(
-        db=db,
-        template=item,
-        actor_id=manager.id,
-        period_key=normalized_period,
-    )
-    db.commit()
-    return {
-        "ok": True,
-        "created_count": created_count,
-        "skipped_count": skipped_count,
-        "period_key": effective_period,
-    }
-
-
-@app.post("/ticket-templates/{template_id}/clear-keys")
-def clear_ticket_template_keys(
-    template_id: int,
-    payload: TicketTemplateRunIn,
-    db: Session = Depends(get_db),
-    manager: User = Depends(require_role(Role.admin, Role.curator)),
-):
-    ensure_company_user(manager)
-    item = db.get(TicketTemplate, template_id)
-    if not item or item.company_id != manager.company_id:
-        raise HTTPException(404, "Ticket template not found")
-
-    normalized_period = normalize_period_key(payload.period_key) or month_period_key()
-    deleted_count = (
-        db.query(TicketGenerationKey)
-        .filter(
-            TicketGenerationKey.company_id == manager.company_id,
-            TicketGenerationKey.ticket_template_id == item.id,
-            TicketGenerationKey.period_key == normalized_period,
-        )
-        .delete(synchronize_session=False)
-    )
-    db.commit()
-    return {"ok": True, "period_key": normalized_period, "deleted_count": int(deleted_count or 0)}
 
 # =========================
 # TICKETS API
