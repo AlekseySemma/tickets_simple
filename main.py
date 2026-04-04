@@ -37,6 +37,7 @@ from app_routes.auth import register_auth_routes, register_company_owner
 from app_routes.notifications import register_notification_routes
 from app_routes.org_structure import register_org_structure_routes
 from app_routes.payment_cards import register_payment_card_routes
+from app_routes.public import register_public_routes
 from app_routes.push_mobile import register_push_mobile_routes
 from app_routes.reference_data_api import register_reference_data_api_routes
 from app_routes.receipt_actions import register_receipt_action_routes
@@ -103,6 +104,7 @@ from app_support.web import (
     request_origin,
     safe_next,
 )
+from app_support.web_tickets import render_web_tickets_page
 try:
     from pywebpush import webpush, WebPushException
     PYWEBPUSH_AVAILABLE = True
@@ -4250,10 +4252,6 @@ def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | No
 # =========================
 app = FastAPI(title="Tickets Simple + Web UI")
 
-@app.get("/")
-def root(request: Request):
-    return templates.TemplateResponse("landing.html", {"request": request})
-
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
     if request.url.path.startswith("/web") and request.method in {"POST", "PATCH", "PUT", "DELETE"}:
@@ -4680,7 +4678,37 @@ register_ticket_overview_routes(
     can_close_ticket=can_close_ticket,
     get_company_ticket_or_404=get_company_ticket_or_404,
     render_web_tickets_page=(
-        lambda **kwargs: _render_web_tickets_page(**kwargs)
+        lambda **kwargs: render_web_tickets_page(
+            **kwargs,
+            is_platform_admin=is_platform_admin,
+            ensure_company_user=ensure_company_user,
+            get_company_deadline_soon_warning_minutes=get_company_deadline_soon_warning_minutes,
+            can_create_company_ticket=can_create_company_ticket,
+            query_assignable_company_users=(lambda db, company_id: query_assignable_company_users(db, company_id)),
+            resolve_scope_descendant_units=(lambda db, company_id, root_unit_id: resolve_scope_descendant_units(db, company_id, root_unit_id)),
+            local_now=local_now,
+            is_manager=is_manager,
+            templates=templates,
+            or_=or_,
+            func=func,
+            cast=cast,
+            string_type=String,
+            company_model=Company,
+            ticket_model=Ticket,
+            project_model=Project,
+            user_model=User,
+            role_enum=Role,
+            ticket_type_model=TicketType,
+            department_model=Department,
+            org_unit_model=OrgUnit,
+            unit_assignment_model=UnitAssignment,
+            ticket_status_enum=TicketStatus,
+            final_ticket_statuses=FINAL_TICKET_STATUSES,
+            bulk_action_labels=TICKET_BULK_ACTION_LABELS,
+            max_ticket_title_len=MAX_TICKET_TITLE_LEN,
+            org_structure_v2_enabled=ORG_STRUCTURE_V2_ENABLED,
+            http_303_see_other=HTTP_303_SEE_OTHER,
+        )
     ),
     safe_next=safe_next,
     append_query_params=append_query_params,
@@ -4955,37 +4983,12 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         return RedirectResponse(url="/web/login", status_code=HTTP_303_SEE_OTHER)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
-@app.get("/manifest.webmanifest")
-def pwa_manifest():
-    return FileResponse(
-        PWA_STATIC_DIR / "manifest.webmanifest",
-        media_type="application/manifest+json",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
-
-
-@app.get("/favicon.ico")
-def favicon():
-    return FileResponse(
-        PWA_STATIC_DIR / "favicon.ico",
-        media_type="image/x-icon",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
-
-
-@app.get("/sw.js")
-def service_worker():
-    return FileResponse(
-        PWA_STATIC_DIR / "sw.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
-
+register_public_routes(
+    app,
+    templates=templates,
+    pwa_static_dir=PWA_STATIC_DIR,
+    get_current_user=get_current_user,
+)
 
 register_reference_data_api_routes(
     app,
@@ -5127,484 +5130,6 @@ register_tickets_api_routes(
 # =========================
 # WEB UI
 # =========================
-def _render_web_tickets_page(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    status_filter: str | None = None,
-    project_id: str | None = None,
-    ticket_type_id: str | None = None,
-    department_id: str | None = None,
-    executor_id: str | None = None,   # <-- Р”РћР‘РђР’РР›Р
-    target_unit_id: str | None = None,
-    unit_executor_id: str | None = None,
-    q: str | None = None,
-    only_overdue: str | None = None,
-    sort: str | None = None,
-    view_mode: str | None = None,
-    open_create: str | None = None,
-    create_error: str | None = None,
-    page: int = 1,
-    page_size: str | None = None,
-    archive_mode: bool = False,
-):
-    if is_platform_admin(user):
-        return RedirectResponse(url="/web/admin/companies", status_code=HTTP_303_SEE_OTHER)
-    ensure_company_user(user)
-    company = db.get(Company, user.company_id) if user.company_id is not None else None
-    deadline_soon_warning_minutes = get_company_deadline_soon_warning_minutes(company)
-    list_path = "/web/archive" if archive_mode else "/web"
-    page_title = "Архив заявок" if archive_mode else "Заявки"
-    empty_text = "В архиве пока нет заявок." if archive_mode else "Заявок пока нет."
-    status_filter_options = ["ARCHIVED"] if archive_mode else ["NEW", "IN_PROGRESS", "DONE", "CANCELED"]
-    create_enabled = (not archive_mode) and can_create_company_ticket(user)
-    view_mode_storage_key = "tickets_view_mode_archive" if archive_mode else "tickets_view_mode"
-    # 1) tickets СЃ СѓС‡РµС‚РѕРј СЂРѕР»Рё
-    base_query = db.query(Ticket).filter(Ticket.company_id == user.company_id)
-    if user.role == Role.executor and not getattr(user, "can_view_all_tickets", False):
-        base_query = base_query.filter(or_(Ticket.executor_id == user.id, Ticket.created_by == user.id))
-    if archive_mode:
-        base_query = base_query.filter(Ticket.status == TicketStatus.archived)
-    else:
-        base_query = base_query.filter(Ticket.status != TicketStatus.archived)
-
-    # 2) РґР°РЅРЅС‹Рµ РґР»СЏ UI
-    projects = (
-        db.query(Project.id, Project.name)
-        .filter(Project.company_id == user.company_id)
-        .order_by(Project.id.desc())
-        .all()
-    )
-    users = (
-        db.query(User.id, User.name, User.email)
-        .filter(
-            User.company_id == user.company_id,
-            User.role.in_([Role.admin, Role.curator, Role.executor]),
-            User.role != Role.platform_admin,
-        )
-        .order_by(User.id.desc())
-        .all()
-    )
-    executors = (
-        query_assignable_company_users(db, user.company_id)
-        .order_by(User.id.desc())
-        .all()
-    )
-    ticket_types = (
-        db.query(TicketType.id, TicketType.name, TicketType.is_active, TicketType.department_id)
-        .filter(TicketType.company_id == user.company_id)
-        .order_by(TicketType.id.desc())
-        .all()
-    )
-    departments = (
-        db.query(Department.id, Department.name, Department.is_active)
-        .filter(Department.company_id == user.company_id)
-        .order_by(Department.name.asc(), Department.id.asc())
-        .all()
-    )
-    org_unit_rows = (
-        db.query(OrgUnit.id, OrgUnit.name, OrgUnit.parent_id)
-        .filter(OrgUnit.company_id == user.company_id, OrgUnit.is_active.is_(True))
-        .order_by(OrgUnit.id.asc())
-        .all()
-    )
-    by_parent: dict[int | None, list[tuple[int, str]]] = {}
-    for unit_id, unit_name, parent_id in org_unit_rows:
-        by_parent.setdefault(parent_id, []).append((int(unit_id), str(unit_name or "").strip()))
-    for siblings in by_parent.values():
-        siblings.sort(key=lambda x: (x[1].lower(), x[0]))
-
-    org_units: list[dict[str, int | str]] = []
-    stack: list[tuple[int, str, int, list[bool], bool]] = []
-    roots = by_parent.get(None, [])
-    for idx in range(len(roots) - 1, -1, -1):
-        root_id, root_name = roots[idx]
-        stack.append((root_id, root_name, 0, [], idx == len(roots) - 1))
-    while stack:
-        current_id, current_name, depth, ancestor_has_next, is_last = stack.pop()
-        if depth > 0:
-            tree_name = f"{'- ' * depth}{current_name}"
-            short_name = f"{'- ' * depth}{current_name}"
-        else:
-            tree_name = current_name
-            short_name = current_name
-        org_units.append(
-            {
-                "id": current_id,
-                "name": tree_name,
-                "tree_name": tree_name,
-                "short_name": short_name,
-            }
-        )
-        children = by_parent.get(current_id, [])
-        if depth == 0:
-            child_ancestor_has_next: list[bool] = []
-        else:
-            child_ancestor_has_next = ancestor_has_next + [not is_last]
-        for idx in range(len(children) - 1, -1, -1):
-            child_id, child_name = children[idx]
-            child_is_last = (idx == len(children) - 1)
-            stack.append((child_id, child_name, depth + 1, child_ancestor_has_next, child_is_last))
-
-    users_by_id = {u.id: f"{u.name}" for u in users}
-    projects_by_id = {p.id: p.name for p in projects}
-    ticket_types_by_id = {tt.id: tt.name for tt in ticket_types}
-    departments_by_id = {d.id: d.name for d in departments}
-
-    # 3) С„РёР»СЊС‚СЂС‹
-    project_id_int: int | None = None
-    if project_id is not None and str(project_id).strip() != "":
-        try:
-            project_id_int = int(project_id)
-        except ValueError:
-            project_id_int = None
-
-    ticket_type_id_int: int | None = None
-    if ticket_type_id is not None and str(ticket_type_id).strip() != "":
-        try:
-            ticket_type_id_int = int(ticket_type_id)
-        except ValueError:
-            ticket_type_id_int = None
-
-    department_id_int: int | None = None
-    if department_id is not None and str(department_id).strip() != "":
-        try:
-            department_id_int = int(department_id)
-        except ValueError:
-            department_id_int = None
-
-    target_unit_id_int: int | None = None
-    if target_unit_id is not None and str(target_unit_id).strip() != "":
-        try:
-            target_unit_id_int = int(target_unit_id)
-        except ValueError:
-            target_unit_id_int = None
-
-    unit_executor_id_int: int | None = None
-    if unit_executor_id is not None and str(unit_executor_id).strip() != "":
-        try:
-            unit_executor_id_int = int(unit_executor_id)
-        except ValueError:
-            unit_executor_id_int = None
-
-    executor_id_int: int | None = None
-    executor_none = False
-    if executor_id is not None and str(executor_id).strip() != "":
-        if str(executor_id).strip() == "__none__":
-            executor_none = True
-        else:
-            try:
-                executor_id_int = int(executor_id)
-            except ValueError:
-                executor_id_int = None
-
-    filtered_query = base_query
-    if status_filter:
-        try:
-            status_enum = TicketStatus(status_filter)
-            if archive_mode and status_enum != TicketStatus.archived:
-                filtered_query = filtered_query.filter(Ticket.id == -1)
-            else:
-                filtered_query = filtered_query.filter(Ticket.status == status_enum)
-        except ValueError:
-            filtered_query = filtered_query.filter(Ticket.id == -1)
-
-    if project_id_int is not None:
-        filtered_query = filtered_query.filter(Ticket.project_id == project_id_int)
-    if ticket_type_id_int is not None:
-        filtered_query = filtered_query.filter(Ticket.ticket_type_id == ticket_type_id_int)
-    if department_id_int is not None:
-        filtered_query = filtered_query.filter(Ticket.department_id == department_id_int)
-    if target_unit_id_int is not None:
-        subtree_unit_ids = resolve_scope_descendant_units(db, user.company_id, target_unit_id_int)
-        if subtree_unit_ids:
-            filtered_query = filtered_query.filter(Ticket.target_unit_id.in_(subtree_unit_ids))
-        else:
-            filtered_query = filtered_query.filter(Ticket.id == -1)
-    if unit_executor_id_int is not None:
-        assignment_query = (
-            db.query(UnitAssignment.unit_id)
-            .filter(
-                UnitAssignment.company_id == user.company_id,
-                UnitAssignment.user_id == unit_executor_id_int,
-                UnitAssignment.role_code == "EXECUTOR",
-            )
-        )
-        if department_id_int is not None:
-            assignment_query = assignment_query.filter(UnitAssignment.department_id == department_id_int)
-        assigned_unit_ids = [int(row[0]) for row in assignment_query.all()]
-        if assigned_unit_ids:
-            filtered_query = filtered_query.filter(Ticket.target_unit_id.in_(assigned_unit_ids))
-        else:
-            filtered_query = filtered_query.filter(Ticket.id == -1)
-
-    # Р¤РёР»СЊС‚СЂ РїРѕ РёСЃРїРѕР»РЅРёС‚РµР»СЋ вЂ” С‚РѕР»СЊРєРѕ РєСѓСЂР°С‚РѕСЂ
-    if is_manager(user):
-        if executor_none:
-            filtered_query = filtered_query.filter(Ticket.executor_id.is_(None))
-        elif executor_id_int is not None:
-            filtered_query = filtered_query.filter(Ticket.executor_id == executor_id_int)
-
-    if q:
-        q_value = q.strip()
-        if q_value:
-            pattern = f"%{q_value}%"
-            filtered_query = filtered_query.filter(
-                or_(
-                    Ticket.title.ilike(pattern),
-                    Ticket.description.ilike(pattern),
-                    cast(Ticket.id, String).ilike(pattern),
-                )
-            )
-
-    now = local_now()
-    now_plus_deadline_warning = now + timedelta(minutes=deadline_soon_warning_minutes)
-
-        # С‚РѕР»СЊРєРѕ РїСЂРѕСЃСЂРѕС‡РµРЅРЅС‹Рµ
-    overdue_enabled = (only_overdue == "1")
-    if archive_mode:
-        overdue_enabled = False
-    if overdue_enabled:
-        filtered_query = filtered_query.filter(
-            Ticket.deadline.is_not(None),
-            Ticket.deadline < now,
-            Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
-        )
-
-        # СЃРѕСЂС‚РёСЂРѕРІРєР°
-    sort_value = (sort or "").strip() or "id_desc"
-    raw_view_mode = (view_mode or "").strip().lower()
-    can_switch_view_mode = user.role in (Role.admin, Role.curator, Role.executor)
-    if can_switch_view_mode:
-        if user.role == Role.executor:
-            view_mode_value = "table" if raw_view_mode == "table" else "cards"
-        else:
-            view_mode_value = "cards" if raw_view_mode == "cards" else "table"
-    else:
-        view_mode_value = "cards"
-
-    total_count = filtered_query.count()
-    legal_hold_count = filtered_query.filter(Ticket.is_legal_hold.is_(True)).count()
-
-    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0, "ARCHIVED": 0}
-    status_counts = (
-        filtered_query.with_entities(Ticket.status, func.count(Ticket.id))
-        .group_by(Ticket.status)
-        .all()
-    )
-    for status_value, count_value in status_counts:
-        status_code = status_value.value if isinstance(status_value, TicketStatus) else str(status_value)
-        if status_code in counts_by_status:
-            counts_by_status[status_code] = int(count_value)
-
-    overdue_count = (
-        filtered_query.filter(
-            Ticket.deadline.is_not(None),
-            Ticket.deadline < now,
-            Ticket.status.notin_(list(FINAL_TICKET_STATUSES)),
-        ).count()
-    )
-
-    tickets_query = filtered_query
-    if sort_value == "deadline_asc":
-        tickets_query = tickets_query.order_by(
-            Ticket.deadline.is_(None).asc(),
-            Ticket.deadline.asc(),
-            Ticket.id.desc(),
-        )
-    elif sort_value == "deadline_desc":
-        tickets_query = tickets_query.order_by(
-            Ticket.deadline.is_(None).desc(),
-            Ticket.deadline.desc(),
-            Ticket.id.desc(),
-        )
-    elif sort_value == "status":
-        tickets_query = tickets_query.order_by(
-            Ticket.status.asc(),
-            Ticket.deadline.is_(None).desc(),
-            Ticket.deadline.desc(),
-            Ticket.id.desc(),
-        )
-    elif sort_value == "id_asc":
-        tickets_query = tickets_query.order_by(Ticket.id.asc())
-    else:  # id_desc
-        tickets_query = tickets_query.order_by(Ticket.id.desc())
-
-    status_labels = {
-        "NEW": "\u041d\u043e\u0432\u0430\u044f",
-        "IN_PROGRESS": "\u0412 \u0440\u0430\u0431\u043e\u0442\u0435",
-        "DONE": "\u0412\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0430",
-        "CANCELED": "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u0430",
-        "ARCHIVED": "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435",
-    }
-
-    # Р”Р°С€Р±РѕСЂРґ РїРѕ С‚РµРєСѓС‰РµРјСѓ СЃРїРёСЃРєСѓ tickets (РїРѕСЃР»Рµ С„РёР»СЊС‚СЂРѕРІ)
-    filters_form_open = bool(
-        (status_filter or "").strip()
-        or project_id_int is not None
-        or ticket_type_id_int is not None
-        or department_id_int is not None
-        or target_unit_id_int is not None
-        or unit_executor_id_int is not None
-        or (executor_id or "").strip()
-        or (q or "").strip()
-        or overdue_enabled
-        or sort_value != "id_desc"
-    )
-    create_form_open = create_enabled and (open_create == "1")
-    create_error_value = (create_error or "") if create_enabled else ""
-    bulk_action_value = (request.query_params.get("bulk_action") or "").strip().lower()
-    if bulk_action_value not in TICKET_BULK_ACTION_LABELS:
-        bulk_action_value = ""
-    bulk_error_value = (request.query_params.get("bulk_error") or "").strip().lower()
-    if bulk_error_value not in {"no_selection", "bad_action", "save_failed"}:
-        bulk_error_value = ""
-
-    def parse_non_negative_int(raw: str | None) -> int:
-        try:
-            parsed = int((raw or "").strip())
-        except (TypeError, ValueError):
-            return 0
-        return max(0, parsed)
-
-    bulk_done_count = parse_non_negative_int(request.query_params.get("bulk_done"))
-    bulk_skipped_count = parse_non_negative_int(request.query_params.get("bulk_skipped"))
-    bulk_notice = ""
-    bulk_notice_level = "success"
-    if (request.query_params.get("bulk_ok") or "").strip() == "1" and bulk_action_value:
-        bulk_notice = (
-            f"Массовое действие «{TICKET_BULK_ACTION_LABELS[bulk_action_value]}»: "
-            f"выполнено {bulk_done_count}"
-        )
-        if bulk_skipped_count:
-            bulk_notice += f", пропущено {bulk_skipped_count}"
-            bulk_notice_level = "warning" if bulk_done_count else "danger"
-    elif bulk_error_value == "no_selection":
-        bulk_notice = "Выберите хотя бы одну заявку."
-        bulk_notice_level = "warning"
-    elif bulk_error_value == "bad_action":
-        bulk_notice = "Выберите корректное действие для отмеченных заявок."
-        bulk_notice_level = "warning"
-    elif bulk_error_value == "save_failed":
-        bulk_notice = "Не удалось выполнить массовое действие. Попробуйте еще раз."
-        bulk_notice_level = "danger"
-
-    if archive_mode:
-        bulk_actions = []
-        if is_manager(user):
-            bulk_actions = [
-                {"id": "restore", "label": "Восстановить"},
-                {"id": "legal_hold_on", "label": "Включить Legal hold"},
-                {"id": "legal_hold_off", "label": "Снять Legal hold"},
-                {"id": "delete", "label": "Удалить навсегда"},
-            ]
-    else:
-        bulk_actions = [
-            {"id": "archive", "label": "В архив"},
-            {"id": "delete", "label": "Удалить"},
-        ]
-    page_size_options = (10, 20, 30, 50, 100)
-    page_size_raw = (page_size or "").strip() if page_size is not None else ""
-    if not page_size_raw:
-        page_size_raw = (request.cookies.get("tickets_page_size") or "").strip()
-    try:
-        per_page = int(page_size_raw) if page_size_raw else 10
-    except ValueError:
-        per_page = 10
-    if per_page not in page_size_options:
-        per_page = 10
-    reset_filters_url = list_path
-    if can_switch_view_mode:
-        reset_filters_url = f"{list_path}?view_mode={view_mode_value}&page_size={per_page}"
-    current_list_url = request.url.path
-    if request.url.query:
-        current_list_url = f"{current_list_url}?{request.url.query}"
-    current_list_url_encoded = quote(current_list_url, safe="")
-
-    # РџР°РіРёРЅР°С†РёСЏ
-    total_pages = max(1, (total_count + per_page - 1) // per_page)
-    page = max(1, min(page, total_pages))
-    start = (page - 1) * per_page
-    tickets = tickets_query.offset(start).limit(per_page).all()
-
-    response = templates.TemplateResponse(
-        "tickets.html",
-        {
-            "request": request,
-            "user": user,
-            "tickets": tickets,
-            "list_path": list_path,
-            "page_title": page_title,
-            "empty_text": empty_text,
-            "is_archive_page": archive_mode,
-            "create_enabled": create_enabled,
-            "status_filter_options": status_filter_options,
-            "reset_filters_url": reset_filters_url,
-            "active_list_path": "/web",
-            "archive_list_path": "/web/archive",
-            "view_mode_storage_key": view_mode_storage_key,
-            "can_switch_view_mode": can_switch_view_mode,
-            "projects": projects,
-            "executors": executors,
-            "watcher_candidates": users,
-            "ticket_types": ticket_types,
-            "departments": departments,
-            "org_units": org_units,
-            "users_by_id": users_by_id,
-            "projects_by_id": projects_by_id,
-            "ticket_types_by_id": ticket_types_by_id,
-            "departments_by_id": departments_by_id,
-            "now": now,
-            "now_plus_deadline_warning": now_plus_deadline_warning,
-            "deadline_soon_warning_minutes": deadline_soon_warning_minutes,
-            "status_filter": status_filter or "",
-            "project_id_filter": project_id_int if project_id_int is not None else "",
-            "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
-            "department_id_filter": department_id_int if department_id_int is not None else "",
-            "target_unit_id_filter": target_unit_id_int if target_unit_id_int is not None else "",
-            "unit_executor_id_filter": unit_executor_id_int if unit_executor_id_int is not None else "",
-            "executor_id_filter": executor_id or "",  # <-- Р”РћР‘РђР’РР›Р (СЃС‚СЂРѕРєР°!)
-            "q": q or "",
-            "only_overdue": "1" if overdue_enabled else "",
-            "sort": sort_value,
-            "view_mode": view_mode_value,
-            "page_size": per_page,
-            "page_size_options": page_size_options,
-            "status_labels": status_labels,
-            "total_count": total_count,
-            "legal_hold_count": legal_hold_count,
-            "counts_by_status": counts_by_status,
-            "overdue_count": overdue_count,
-            "filters_form_open": filters_form_open,
-            "create_form_open": create_form_open,
-            "create_error": create_error_value,
-            "bulk_actions": bulk_actions,
-            "bulk_notice": bulk_notice,
-            "bulk_notice_level": bulk_notice_level,
-            "max_ticket_title_len": MAX_TICKET_TITLE_LEN,
-            "current_list_url": current_list_url,
-            "current_list_url_encoded": current_list_url_encoded,
-            "page": page,
-            "total_pages": total_pages,
-            "has_prev": page > 1,
-            "has_next": page < total_pages,
-            "prev_page": page - 1,
-            "next_page": page + 1,
-            "org_v2_enabled": ORG_STRUCTURE_V2_ENABLED,
-
-        },
-    )
-    response.set_cookie(
-        "tickets_page_size",
-        str(per_page),
-        max_age=60 * 60 * 24 * 365,
-        httponly=False,
-        samesite="lax",
-        path="/",
-    )
-    return response
-
-
 def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
     normalized = (type_name or "").strip() or "Узел"
     existing = (
@@ -5775,14 +5300,3 @@ def would_create_unit_cycle(parent_map: dict[int, int | None], unit_id: int, new
         visited.add(current)
         current = parent_map.get(current)
     return False
-@app.get("/web/pwa-check")
-def web_pwa_check(request: Request, user: User = Depends(get_current_user)):
-    return templates.TemplateResponse(
-        "pwa_check.html",
-        {
-            "request": request,
-            "user": user,
-        },
-    )
-
-
