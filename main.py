@@ -94,6 +94,7 @@ from app_support.auth_core import (
     verify_password as core_verify_password,
 )
 from app_support.comment_service import CommentService
+from app_support.company_cleanup import CompanyCleanupService
 from app_support.deadline_reminder_service import DeadlineReminderService
 from app_support.enums import (
     ARCHIVE_SOURCE_STATUSES,
@@ -112,6 +113,7 @@ from app_support.enums import (
     ticket_status_change_log_action,
 )
 from app_support.notification_service import NotificationService
+from app_support.receipt_support import ReceiptSupport
 from app_support.startup import (
     ensure_platform_admin_user,
     maybe_repair_text_on_start,
@@ -2959,176 +2961,59 @@ def get_company_receipt_or_404(db: Session, user: User, receipt_id: int) -> Rece
     return receipt
 
 
-def parse_receipt_date(raw: str | None) -> date | None:
-    value = (raw or "").strip()
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
-        return None
+_receipt_support = ReceiptSupport(
+    datetime_cls=datetime,
+    decimal_cls=Decimal,
+    invalid_operation_cls=InvalidOperation,
+    path_cls=Path,
+    re_module=re,
+    cast_fn=cast,
+    date_type=Date,
+    or_fn=or_,
+    receipt_model=Receipt,
+    receipt_status_enum=ReceiptStatus,
+    role_enum=Role,
+)
+
+parse_receipt_date = _receipt_support.parse_receipt_date
+parse_receipt_amount = _receipt_support.parse_receipt_amount
+normalize_bk_last4 = _receipt_support.normalize_bk_last4
+sanitize_export_token = _receipt_support.sanitize_export_token
+sanitize_filename_part = _receipt_support.sanitize_filename_part
+build_receipt_original_name = _receipt_support.build_receipt_original_name
+build_receipts_query = _receipt_support.build_receipts_query
+resolve_preferred_card_id = _receipt_support.resolve_preferred_card_id
 
 
-def parse_receipt_amount(raw: str | None) -> Decimal | None:
-    value = (raw or "").strip().replace(",", ".")
-    if not value:
-        return None
-    try:
-        amount = Decimal(value)
-    except InvalidOperation:
-        return None
-    if amount < 0:
-        return None
-    return amount.quantize(Decimal("0.01"))
+_company_cleanup_service = CompanyCleanupService(
+    delete_stored_file_func=lambda stored_path: delete_stored_file(stored_path),
+    ticket_model=Ticket,
+    receipt_model=Receipt,
+    user_model=User,
+    attachment_model=Attachment,
+    comment_model=Comment,
+    ticket_log_model=TicketLog,
+    ticket_watcher_model=TicketWatcher,
+    deadline_reminder_log_model=DeadlineReminderLog,
+    receipt_file_model=ReceiptFile,
+    ticket_generation_key_model=TicketGenerationKey,
+    unit_assignment_model=UnitAssignment,
+    ticket_template_model=TicketTemplate,
+    ticket_type_model=TicketType,
+    org_unit_model=OrgUnit,
+    unit_type_model=UnitType,
+    department_model=Department,
+    payment_card_model=PaymentCard,
+    project_model=Project,
+    registration_invite_model=RegistrationInvite,
+    notification_model=Notification,
+    archive_cleanup_log_model=ArchiveCleanupLog,
+    push_subscription_model=PushSubscription,
+    mobile_device_model=MobileDevice,
+    company_model=Company,
+)
 
-
-def normalize_bk_last4(raw: str | None) -> str | None:
-    digits = re.sub(r"\D+", "", (raw or "").strip())
-    if not digits:
-        return None
-    if len(digits) != 4:
-        return None
-    return digits
-
-
-def sanitize_export_token(raw: str | None, max_len: int = 40) -> str:
-    value = re.sub(r"[^0-9A-Za-z._-]+", "_", (raw or "").strip())
-    value = value.strip("._-")
-    if not value:
-        return "item"
-    return value[:max_len]
-
-
-def sanitize_filename_part(raw: str | None, max_len: int = 80) -> str:
-    value = (raw or "").strip()
-    value = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", value)
-    value = re.sub(r"\s+", " ", value).strip(" ._-")
-    if not value:
-        return "Объект"
-    return value[:max_len]
-
-
-def build_receipt_original_name(
-    *,
-    receipt_date_value: date | None,
-    card_name: str | None,
-    project_name: str | None,
-    source_filename: str | None,
-    fallback_card_id: int,
-) -> str:
-    ext = Path(source_filename or "").suffix.lower()[:10] or ".bin"
-    dt_token = (receipt_date_value or datetime.utcnow().date()).isoformat()
-    digits = re.sub(r"\D+", "", (card_name or "").strip())
-    card_last4 = digits[-4:] if len(digits) >= 4 else f"{int(fallback_card_id):04d}"[-4:]
-    project_token = sanitize_filename_part(project_name, max_len=80)
-    return f"{dt_token}_БК{card_last4}_{project_token}{ext}"
-
-
-def build_receipts_query(
-    db: Session,
-    user: User,
-    *,
-    status_filter: str | None = None,
-    project_id: int | None = None,
-    card_id: int | None = None,
-    employee_id: int | None = None,
-    date_from_value: date | None = None,
-    date_to_value: date | None = None,
-    q: str | None = None,
-):
-    query = db.query(Receipt).filter(Receipt.company_id == user.company_id)
-    if user.role == Role.executor:
-        query = query.filter(Receipt.created_by == user.id)
-
-    if status_filter:
-        try:
-            query = query.filter(Receipt.status == ReceiptStatus(status_filter))
-        except ValueError:
-            pass
-    if project_id is not None:
-        query = query.filter(Receipt.project_id == project_id)
-    if card_id is not None:
-        query = query.filter(Receipt.card_id == card_id)
-    if employee_id is not None:
-        query = query.filter(Receipt.created_by == employee_id)
-    if date_from_value is not None:
-        query = query.filter(cast(Receipt.created_at, Date) >= date_from_value)
-    if date_to_value is not None:
-        query = query.filter(cast(Receipt.created_at, Date) <= date_to_value)
-    if q:
-        like = f"%{q}%"
-        query = query.filter(
-            or_(
-                Receipt.comment.ilike(like),
-                Receipt.category.ilike(like),
-                Receipt.supplier.ilike(like),
-            )
-        )
-
-    return query.order_by(Receipt.id.desc())
-
-
-def resolve_preferred_card_id(cards, bk_last4: str | None) -> int | None:
-    digits = normalize_bk_last4(bk_last4)
-    if not digits:
-        return None
-    fallback_match_id: int | None = None
-    for card in cards:
-        if not getattr(card, "is_active", True):
-            continue
-        card_name_digits = re.sub(r"\D+", "", str(getattr(card, "name", "")))
-        if not card_name_digits:
-            continue
-        # Primary match: the card name ends with the configured 4 digits.
-        if card_name_digits.endswith(digits):
-            return int(getattr(card, "id"))
-        # Fallback: card name contains these 4 digits somewhere in the number.
-        if fallback_match_id is None and digits in card_name_digits:
-            fallback_match_id = int(getattr(card, "id"))
-    return fallback_match_id
-
-
-def delete_company_with_data(db: Session, company_id: int) -> None:
-    ticket_ids = [row[0] for row in db.query(Ticket.id).filter(Ticket.company_id == company_id).all()]
-    receipt_ids = [row[0] for row in db.query(Receipt.id).filter(Receipt.company_id == company_id).all()]
-    user_ids = [row[0] for row in db.query(User.id).filter(User.company_id == company_id).all()]
-
-    if ticket_ids:
-        attachments = db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).all()
-        for a in attachments:
-            delete_stored_file(a.file_path)
-
-        db.query(Comment).filter(Comment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
-        db.query(Attachment).filter(Attachment.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
-        db.query(TicketLog).filter(TicketLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
-        db.query(TicketWatcher).filter(TicketWatcher.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
-        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id.in_(ticket_ids)).delete(synchronize_session=False)
-    if receipt_ids:
-        receipt_files = db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).all()
-        for file_row in receipt_files:
-            delete_stored_file(file_row.file_path)
-        db.query(ReceiptFile).filter(ReceiptFile.receipt_id.in_(receipt_ids)).delete(synchronize_session=False)
-        db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).delete(synchronize_session=False)
-
-    db.query(TicketGenerationKey).filter(TicketGenerationKey.company_id == company_id).delete(synchronize_session=False)
-    db.query(UnitAssignment).filter(UnitAssignment.company_id == company_id).delete(synchronize_session=False)
-    db.query(TicketTemplate).filter(TicketTemplate.company_id == company_id).delete(synchronize_session=False)
-    db.query(Ticket).filter(Ticket.company_id == company_id).delete(synchronize_session=False)
-    db.query(TicketType).filter(TicketType.company_id == company_id).delete(synchronize_session=False)
-    db.query(OrgUnit).filter(OrgUnit.company_id == company_id).delete(synchronize_session=False)
-    db.query(UnitType).filter(UnitType.company_id == company_id).delete(synchronize_session=False)
-    db.query(Department).filter(Department.company_id == company_id).delete(synchronize_session=False)
-    db.query(PaymentCard).filter(PaymentCard.company_id == company_id).delete(synchronize_session=False)
-    db.query(Project).filter(Project.company_id == company_id).delete(synchronize_session=False)
-    db.query(RegistrationInvite).filter(RegistrationInvite.company_id == company_id).delete(synchronize_session=False)
-    db.query(Notification).filter(Notification.company_id == company_id).delete(synchronize_session=False)
-    db.query(ArchiveCleanupLog).filter(ArchiveCleanupLog.company_id == company_id).delete(synchronize_session=False)
-    if user_ids:
-        db.query(PushSubscription).filter(PushSubscription.user_id.in_(user_ids)).delete(synchronize_session=False)
-        db.query(MobileDevice).filter(MobileDevice.user_id.in_(user_ids)).delete(synchronize_session=False)
-        db.query(DeadlineReminderLog).filter(DeadlineReminderLog.user_id.in_(user_ids)).delete(synchronize_session=False)
-    db.query(User).filter(User.company_id == company_id).delete(synchronize_session=False)
-    db.query(Company).filter(Company.id == company_id).delete(synchronize_session=False)
+delete_company_with_data = _company_cleanup_service.delete_company_with_data
 
 
 def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | None:
