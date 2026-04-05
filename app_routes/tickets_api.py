@@ -1,6 +1,24 @@
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 
 
+def list_tickets_for_user(
+    db,
+    user,
+    *,
+    ticket_model,
+    is_platform_admin,
+    ensure_company_user,
+    role_enum,
+):
+    query = db.query(ticket_model).order_by(ticket_model.id.desc())
+    if not is_platform_admin(user):
+        ensure_company_user(user)
+        query = query.filter(ticket_model.company_id == user.company_id)
+    if user.role == role_enum.executor and not getattr(user, "can_view_all_tickets", False):
+        query = query.filter((ticket_model.executor_id == user.id) | (ticket_model.created_by == user.id))
+    return query.all()
+
+
 def register_tickets_api_routes(
     app,
     *,
@@ -129,13 +147,14 @@ def register_tickets_api_routes(
         db=Depends(get_db),
         user=Depends(get_current_user),
     ):
-        query = db.query(ticket_model).order_by(ticket_model.id.desc())
-        if not is_platform_admin(user):
-            ensure_company_user(user)
-            query = query.filter(ticket_model.company_id == user.company_id)
-        if user.role == role_enum.executor and not getattr(user, "can_view_all_tickets", False):
-            query = query.filter((ticket_model.executor_id == user.id) | (ticket_model.created_by == user.id))
-        return query.all()
+        return list_tickets_for_user(
+            db,
+            user,
+            ticket_model=ticket_model,
+            is_platform_admin=is_platform_admin,
+            ensure_company_user=ensure_company_user,
+            role_enum=role_enum,
+        )
 
     @app.patch("/tickets/{ticket_id}", response_model=ticket_out_model)
     def update_ticket(

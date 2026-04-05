@@ -49,7 +49,7 @@ from app_routes.ticket_types import register_ticket_type_routes
 from app_routes.ticket_actions import register_ticket_action_routes
 from app_routes.ticket_catalog_api import register_ticket_catalog_api_routes
 from app_routes.tickets_overview import register_ticket_overview_routes
-from app_routes.tickets_api import register_tickets_api_routes
+from app_routes.tickets_api import list_tickets_for_user, register_tickets_api_routes
 from app_routes.users import register_user_management_routes
 from app_routes.users_api import register_users_api_routes
 from app_routes.web_auth import register_web_auth_routes
@@ -114,7 +114,9 @@ from app_support.enums import (
     ticket_status_change_log_action,
 )
 from app_support.notification_service import NotificationService
+from app_support.org_structure_support import OrgStructureSupport
 from app_support.receipt_support import ReceiptSupport
+from app_support.role_template_support import RoleTemplateSupport
 from app_support.startup import (
     ensure_platform_admin_user,
     maybe_repair_text_on_start,
@@ -2871,6 +2873,17 @@ def get_company_receipt_or_404(db: Session, user: User, receipt_id: int) -> Rece
     return receipt
 
 
+def list_tickets(db: Session, user: User):
+    return list_tickets_for_user(
+        db,
+        user,
+        ticket_model=Ticket,
+        is_platform_admin=is_platform_admin,
+        ensure_company_user=ensure_company_user,
+        role_enum=Role,
+    )
+
+
 _receipt_support = ReceiptSupport(
     datetime_cls=datetime,
     decimal_cls=Decimal,
@@ -2924,6 +2937,35 @@ _company_cleanup_service = CompanyCleanupService(
 )
 
 delete_company_with_data = _company_cleanup_service.delete_company_with_data
+
+_role_template_support = RoleTemplateSupport(
+    manageable_roles_for_web_user_management_func=manageable_roles_for_web_user_management,
+    role_enum=Role,
+    normalize_capability_flags_func=normalize_capability_flags,
+    default_role_template_presets=DEFAULT_ROLE_TEMPLATE_PRESETS,
+    role_template_model=RoleTemplate,
+)
+
+manageable_template_access_levels_for_actor = _role_template_support.manageable_template_access_levels_for_actor
+role_template_payload = _role_template_support.role_template_payload
+ensure_default_role_templates = _role_template_support.ensure_default_role_templates
+get_manageable_role_template = _role_template_support.get_manageable_role_template
+
+_org_structure_support = OrgStructureSupport(
+    func_module=func,
+    user_model=User,
+    role_enum=Role,
+    unit_type_model=UnitType,
+    org_unit_model=OrgUnit,
+)
+
+get_or_create_unit_type = _org_structure_support.get_or_create_unit_type
+parse_bool_text = _org_structure_support.parse_bool_text
+parse_optional_int = _org_structure_support.parse_optional_int
+query_assignable_company_users = _org_structure_support.query_assignable_company_users
+get_assignable_company_user_ids = _org_structure_support.get_assignable_company_user_ids
+build_unit_parent_map = _org_structure_support.build_unit_parent_map
+would_create_unit_cycle = _org_structure_support.would_create_unit_cycle
 
 
 def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | None:
@@ -3816,173 +3858,3 @@ register_tickets_api_routes(
 # =========================
 # WEB UI
 # =========================
-def get_or_create_unit_type(db: Session, company_id: int, type_name: str) -> UnitType:
-    normalized = (type_name or "").strip() or "Узел"
-    existing = (
-        db.query(UnitType)
-        .filter(
-            UnitType.company_id == company_id,
-            func.lower(UnitType.name) == normalized.lower(),
-        )
-        .first()
-    )
-    if existing:
-        if not existing.is_active:
-            existing.is_active = True
-        return existing
-
-    base_code = normalized.lower().replace(" ", "_")[:40] or "unit"
-    code = base_code
-    suffix = 2
-    while (
-        db.query(UnitType.id)
-        .filter(UnitType.company_id == company_id, UnitType.code == code)
-        .first()
-        is not None
-    ):
-        code = f"{base_code}_{suffix}"
-        suffix += 1
-
-    item = UnitType(
-        company_id=company_id,
-        name=normalized,
-        code=code,
-        is_active=True,
-    )
-    db.add(item)
-    db.flush()
-    return item
-
-
-def parse_bool_text(raw: str | None, default: bool = True) -> bool:
-    value = (raw or "").strip().lower()
-    if not value:
-        return default
-    if value in {"1", "true", "yes", "y", "on", "да"}:
-        return True
-    if value in {"0", "false", "no", "n", "off", "нет"}:
-        return False
-    return default
-
-
-def parse_optional_int(raw_value: str | int | None) -> int | None:
-    if raw_value is None:
-        return None
-    if isinstance(raw_value, int):
-        return raw_value
-    value = str(raw_value).strip()
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-def manageable_template_access_levels_for_actor(actor: "User") -> tuple[Role, ...]:
-    return manageable_roles_for_web_user_management(actor, role_enum=Role)
-
-
-def query_assignable_company_users(db: Session, company_id: int):
-    return (
-        db.query(User.id, User.name, User.email, User.role, User.role_label)
-        .filter(
-            User.company_id == company_id,
-            User.role != Role.platform_admin,
-            User.is_assignable_executor.is_(True),
-        )
-    )
-
-
-def get_assignable_company_user_ids(db: Session, company_id: int) -> set[int]:
-    return {int(row[0]) for row in query_assignable_company_users(db, company_id).with_entities(User.id).all()}
-
-
-def role_template_payload(template: "RoleTemplate") -> dict[str, bool]:
-    return normalize_capability_flags(
-        template.access_level,
-        show_receipts_accounting_mode=template.show_receipts_accounting_mode,
-        is_assignable_executor=template.is_assignable_executor,
-        can_view_all_tickets=template.can_view_all_tickets,
-        can_create_tickets=template.can_create_tickets,
-        can_close_tickets=template.can_close_tickets,
-    )
-
-
-def ensure_default_role_templates(
-    db: Session,
-    company_id: int,
-    allowed_access_levels: tuple[Role, ...],
-) -> None:
-    if not allowed_access_levels:
-        return
-    existing_names = {
-        str(row[0]).strip().casefold()
-        for row in (
-            db.query(RoleTemplate.name)
-            .filter(RoleTemplate.company_id == company_id)
-            .all()
-        )
-    }
-    created = False
-    for preset in DEFAULT_ROLE_TEMPLATE_PRESETS:
-        access_level = preset["access_level"]
-        if access_level not in allowed_access_levels:
-            continue
-        preset_name = str(preset["name"]).strip()
-        if preset_name.casefold() in existing_names:
-            continue
-        flags = normalize_capability_flags(
-            access_level,
-            show_receipts_accounting_mode=bool(preset["show_receipts_accounting_mode"]),
-            is_assignable_executor=bool(preset["is_assignable_executor"]),
-            can_view_all_tickets=bool(preset["can_view_all_tickets"]),
-            can_create_tickets=bool(preset["can_create_tickets"]),
-            can_close_tickets=bool(preset["can_close_tickets"]),
-        )
-        db.add(
-            RoleTemplate(
-                company_id=company_id,
-                name=preset_name,
-                access_level=access_level,
-                **flags,
-            )
-        )
-        existing_names.add(preset_name.casefold())
-        created = True
-    if created:
-        db.commit()
-
-
-def get_manageable_role_template(
-    db: Session,
-    actor: "User",
-    template_id: int | None,
-    *,
-    allowed_access_levels: tuple[Role, ...] | None = None,
-) -> Optional["RoleTemplate"]:
-    if template_id is None:
-        return None
-    template = db.get(RoleTemplate, template_id)
-    if not template or template.company_id != actor.company_id:
-        return None
-    access_levels = allowed_access_levels or manageable_template_access_levels_for_actor(actor)
-    if template.access_level not in access_levels:
-        return None
-    return template
-
-
-def build_unit_parent_map(db: Session, company_id: int) -> dict[int, int | None]:
-    rows = db.query(OrgUnit.id, OrgUnit.parent_id).filter(OrgUnit.company_id == company_id).all()
-    return {int(r[0]): (int(r[1]) if r[1] is not None else None) for r in rows}
-
-
-def would_create_unit_cycle(parent_map: dict[int, int | None], unit_id: int, new_parent_id: int | None) -> bool:
-    current = new_parent_id
-    visited: set[int] = set()
-    while current is not None and current not in visited:
-        if current == unit_id:
-            return True
-        visited.add(current)
-        current = parent_map.get(current)
-    return False
