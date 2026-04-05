@@ -123,6 +123,7 @@ from app_support.startup import (
     start_background_threads,
 )
 from app_support.storage import StorageService
+from app_support.ticket_support import TicketSupport
 from app_support.ticket_runtime_service import TicketRuntimeService
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
@@ -1422,556 +1423,6 @@ def audit_security_event(
         db.close()
 
 
-def department_match_filter(column, department_id: int | None):
-    if department_id is None:
-        return column.is_(None)
-    return column == department_id
-
-
-def add_ticket_watcher(
-    db: Session,
-    ticket: Ticket,
-    *,
-    watcher_user_id: int | None,
-    added_by: int | None = None,
-) -> bool:
-    if watcher_user_id is None or ticket.id is None:
-        return False
-    watcher_user = db.get(User, watcher_user_id)
-    if not watcher_user:
-        return False
-    if ticket.company_id is not None and watcher_user.company_id != ticket.company_id:
-        return False
-    exists = (
-        db.query(TicketWatcher.id)
-        .filter(TicketWatcher.ticket_id == ticket.id, TicketWatcher.user_id == watcher_user_id)
-        .first()
-    )
-    if exists is not None:
-        return False
-    db.add(
-        TicketWatcher(
-            ticket_id=ticket.id,
-            user_id=watcher_user_id,
-            added_by=added_by,
-        )
-    )
-    return True
-
-
-def ensure_default_ticket_watchers(db: Session, ticket: Ticket) -> bool:
-    changed = False
-    default_watcher_ids: list[int] = []
-    for watcher_user_id in (ticket.created_by, ticket.executor_id):
-        if watcher_user_id is None or watcher_user_id in default_watcher_ids:
-            continue
-        default_watcher_ids.append(watcher_user_id)
-    for watcher_user_id in default_watcher_ids:
-        changed = add_ticket_watcher(
-            db,
-            ticket,
-            watcher_user_id=watcher_user_id,
-            added_by=ticket.created_by,
-        ) or changed
-    return changed
-
-
-def get_api_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
-    ticket = db.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    if not is_platform_admin(user):
-        ensure_company_user(user)
-        if ticket.company_id != user.company_id:
-            raise HTTPException(403, "Forbidden")
-    return ticket
-
-def delete_ticket_with_related_data(
-    db: Session,
-    ticket: Ticket,
-    remove_files: bool = True,
-) -> None:
-    attachments = db.query(Attachment).filter(Attachment.ticket_id == ticket.id).all()
-    comment_media_items = (
-        db.query(CommentMedia)
-        .join(Comment, Comment.id == CommentMedia.comment_id)
-        .filter(Comment.ticket_id == ticket.id)
-        .all()
-    )
-    if remove_files:
-        for attachment in attachments:
-            delete_stored_file(attachment.file_path)
-        for item in comment_media_items:
-            delete_stored_file(item.file_path)
-    comment_ids_subquery = db.query(Comment.id).filter(Comment.ticket_id == ticket.id)
-    db.query(CommentMedia).filter(CommentMedia.comment_id.in_(comment_ids_subquery)).delete(synchronize_session=False)
-    db.query(Comment).filter(Comment.ticket_id == ticket.id).delete(synchronize_session=False)
-    db.query(Attachment).filter(Attachment.ticket_id == ticket.id).delete(synchronize_session=False)
-    db.query(TicketLog).filter(TicketLog.ticket_id == ticket.id).delete(synchronize_session=False)
-    db.query(TicketWatcher).filter(TicketWatcher.ticket_id == ticket.id).delete(synchronize_session=False)
-    db.query(DeadlineReminderLog).filter(DeadlineReminderLog.ticket_id == ticket.id).delete(synchronize_session=False)
-    db.query(TicketGenerationKey).filter(TicketGenerationKey.ticket_id == ticket.id).update(
-        {"ticket_id": None},
-        synchronize_session=False,
-    )
-    db.delete(ticket)
-
-
-def validate_ticket_links(
-    db: Session,
-    company_id: int | None,
-    project_id: int | None,
-    executor_id: int | None,
-    ticket_type_id: int | None = None,
-    target_unit_id: int | None = None,
-    ticket_template_id: int | None = None,
-    department_id: int | None = None,
-) -> None:
-    if project_id is not None:
-        project = db.get(Project, project_id)
-        if not project or (company_id is not None and project.company_id != company_id):
-            raise HTTPException(400, "Project not found")
-
-    if executor_id is not None:
-        executor = db.get(User, executor_id)
-        if not executor or not is_assignable_executor_user(executor):
-            raise HTTPException(400, "Executor not found")
-        if company_id is not None and executor.company_id != company_id:
-            raise HTTPException(400, "Executor not found")
-
-    if ticket_type_id is not None:
-        ticket_type = db.get(TicketType, ticket_type_id)
-        if not ticket_type or (company_id is not None and ticket_type.company_id != company_id):
-            raise HTTPException(400, "Ticket type not found")
-        if not ticket_type.is_active:
-            raise HTTPException(400, "Ticket type is inactive")
-
-    if department_id is not None:
-        department = db.get(Department, department_id)
-        if not department or (company_id is not None and department.company_id != company_id):
-            raise HTTPException(400, "Department not found")
-        if not department.is_active:
-            raise HTTPException(400, "Department is inactive")
-
-    if target_unit_id is not None:
-        target_unit = db.get(OrgUnit, target_unit_id)
-        if not target_unit or (company_id is not None and target_unit.company_id != company_id):
-            raise HTTPException(400, "Target unit not found")
-        if not target_unit.is_active:
-            raise HTTPException(400, "Target unit is inactive")
-
-    if ticket_template_id is not None:
-        template = db.get(TicketTemplate, ticket_template_id)
-        if not template or (company_id is not None and template.company_id != company_id):
-            raise HTTPException(400, "Ticket template not found")
-
-
-def resolve_ticket_department_id(
-    db: Session,
-    *,
-    company_id: int,
-    ticket_type_id: int | None,
-    department_id: int | None,
-) -> int | None:
-    resolved_department_id = department_id
-    ticket_type_department_id: int | None = None
-
-    if ticket_type_id is not None:
-        ticket_type = db.get(TicketType, ticket_type_id)
-        if not ticket_type or ticket_type.company_id != company_id:
-            raise HTTPException(400, "Ticket type not found")
-        ticket_type_department_id = int(ticket_type.department_id) if ticket_type.department_id is not None else None
-
-    if resolved_department_id is not None:
-        department = db.get(Department, resolved_department_id)
-        if not department or department.company_id != company_id:
-            raise HTTPException(400, "Department not found")
-        if not department.is_active:
-            raise HTTPException(400, "Department is inactive")
-
-    if ticket_type_department_id is not None:
-        if resolved_department_id is not None and resolved_department_id != ticket_type_department_id:
-            raise HTTPException(400, "Department does not match ticket type")
-        return ticket_type_department_id
-
-    return resolved_department_id
-
-
-def resolve_scope_leaf_units(db: Session, company_id: int, scope_unit_id: int) -> list[int]:
-    rows = (
-        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.is_active)
-        .filter(OrgUnit.company_id == company_id)
-        .all()
-    )
-    active_ids = {int(row[0]) for row in rows if bool(row[2])}
-    if scope_unit_id not in active_ids:
-        return []
-
-    children_by_parent: dict[int, list[int]] = {}
-    for unit_id, parent_id, is_active in rows:
-        if not bool(is_active):
-            continue
-        if parent_id is None:
-            continue
-        children_by_parent.setdefault(int(parent_id), []).append(int(unit_id))
-
-    stack = [scope_unit_id]
-    visited: set[int] = set()
-    leaf_ids: list[int] = []
-    while stack:
-        current = stack.pop()
-        if current in visited:
-            continue
-        visited.add(current)
-        children = children_by_parent.get(current, [])
-        if not children:
-            leaf_ids.append(current)
-            continue
-        stack.extend(children)
-    return leaf_ids
-
-
-def resolve_scope_descendant_units(db: Session, company_id: int, scope_unit_id: int) -> list[int]:
-    rows = (
-        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.is_active)
-        .filter(OrgUnit.company_id == company_id)
-        .all()
-    )
-    active_ids = {int(row[0]) for row in rows if bool(row[2])}
-    if scope_unit_id not in active_ids:
-        return []
-
-    children_by_parent: dict[int, list[int]] = {}
-    for unit_id, parent_id, is_active in rows:
-        if not bool(is_active):
-            continue
-        if parent_id is None:
-            continue
-        children_by_parent.setdefault(int(parent_id), []).append(int(unit_id))
-
-    stack = [scope_unit_id]
-    visited: set[int] = set()
-    result: list[int] = []
-    while stack:
-        current = stack.pop()
-        if current in visited:
-            continue
-        visited.add(current)
-        result.append(current)
-        for child in children_by_parent.get(current, []):
-            stack.append(child)
-    return result
-
-
-
-def resolve_target_unit_id_from_form_input(db: Session, company_id: int, raw_value: str | None) -> int | None:
-    value = " ".join(str(raw_value or "").split()).strip()
-    if not value:
-        return None
-
-    id_match = re.search(r"#(\d+)\)?\s*$", value)
-    if id_match:
-        unit_id = int(id_match.group(1))
-        row = (
-            db.query(OrgUnit.id)
-            .filter(
-                OrgUnit.company_id == company_id,
-                OrgUnit.id == unit_id,
-                OrgUnit.is_active.is_(True),
-            )
-            .first()
-        )
-        if row:
-            return int(row[0])
-
-    rows = (
-        db.query(OrgUnit.id, OrgUnit.name)
-        .filter(OrgUnit.company_id == company_id, OrgUnit.is_active.is_(True))
-        .all()
-    )
-    normalized_value = value.casefold()
-    matched_ids = [
-        int(unit_id)
-        for unit_id, unit_name in rows
-        if " ".join(str(unit_name or "").split()).strip().casefold() == normalized_value
-    ]
-    if len(matched_ids) == 1:
-        return matched_ids[0]
-    return None
-
-
-def resolve_executor_id_from_form_input(db: Session, company_id: int, raw_value: str | None) -> int | None:
-    value = " ".join(str(raw_value or "").split()).strip()
-    if not value:
-        return None
-
-    id_match = re.search(r"#(\d+)\)?\s*$", value)
-    if id_match:
-        user_id = int(id_match.group(1))
-        row = (
-            db.query(User.id)
-            .filter(
-                User.company_id == company_id,
-                User.id == user_id,
-                User.role != Role.platform_admin,
-                User.is_assignable_executor.is_(True),
-            )
-            .first()
-        )
-        if row:
-            return int(row[0])
-
-    rows = (
-        db.query(User.id, User.name, User.email)
-        .filter(
-            User.company_id == company_id,
-            User.role != Role.platform_admin,
-            User.is_assignable_executor.is_(True),
-        )
-        .all()
-    )
-    normalized_value = value.casefold()
-    matched_ids = [
-        int(user_id)
-        for user_id, user_name, user_email in rows
-        if " ".join(str(user_name or "").split()).strip().casefold() == normalized_value
-        or str(user_email or "").strip().casefold() == normalized_value
-    ]
-    if len(matched_ids) == 1:
-        return matched_ids[0]
-    return None
-
-def validate_template_links(
-    db: Session,
-    company_id: int,
-    ticket_type_id: int | None,
-    department_id: int | None,
-    default_executor_id: int | None,
-    scope_unit_id: int | None,
-) -> None:
-    if ticket_type_id is not None:
-        tt = db.get(TicketType, ticket_type_id)
-        if not tt or tt.company_id != company_id:
-            raise HTTPException(400, "Ticket type not found")
-    if department_id is not None:
-        department = db.get(Department, department_id)
-        if not department or department.company_id != company_id:
-            raise HTTPException(400, "Department not found")
-        if not department.is_active:
-            raise HTTPException(400, "Department is inactive")
-    if default_executor_id is not None:
-        u = db.get(User, default_executor_id)
-        if not u or u.company_id != company_id or not is_assignable_executor_user(u):
-            raise HTTPException(400, "Executor not found")
-    if scope_unit_id is not None:
-        unit = db.get(OrgUnit, scope_unit_id)
-        if not unit or unit.company_id != company_id:
-            raise HTTPException(400, "Scope unit not found")
-
-
-def get_or_create_project_for_org_unit(db: Session, company_id: int, unit_id: int) -> int:
-    rows = (
-        db.query(OrgUnit.id, OrgUnit.parent_id, OrgUnit.name)
-        .filter(OrgUnit.company_id == company_id)
-        .all()
-    )
-    by_id = {int(row[0]): (row[1], str(row[2] or "").strip()) for row in rows}
-    if unit_id not in by_id:
-        raise HTTPException(400, "Target unit not found")
-
-    parts: list[str] = []
-    current: int | None = unit_id
-    visited: set[int] = set()
-    while current is not None and current in by_id and current not in visited:
-        visited.add(current)
-        parent_id, name = by_id[current]
-        if name:
-            parts.append(name)
-        current = int(parent_id) if parent_id is not None else None
-
-    base_name = " / ".join(reversed(parts)).strip() or f"Org unit #{unit_id}"
-    candidate_names = [base_name]
-    if len(base_name) > 240:
-        candidate_names = [f"{base_name[:220]} #{unit_id}", f"Org unit #{unit_id}"]
-    else:
-        candidate_names.append(f"{base_name} #{unit_id}")
-
-    for project_name in candidate_names:
-        existing = (
-            db.query(Project.id)
-            .filter(Project.company_id == company_id, Project.name == project_name)
-            .first()
-        )
-        if existing:
-            return int(existing[0])
-
-        item = Project(
-            company_id=company_id,
-            name=project_name,
-            description="Auto-created from org structure",
-        )
-        db.add(item)
-        db.flush()
-        return int(item.id)
-
-    raise HTTPException(400, "Cannot resolve project for target unit")
-
-
-def get_preferred_executor_for_unit(
-    db: Session,
-    company_id: int,
-    unit_id: int,
-    department_id: int | None = None,
-) -> int | None:
-    query = (
-        db.query(UnitAssignment.user_id)
-        .join(User, User.id == UnitAssignment.user_id)
-        .filter(
-            UnitAssignment.company_id == company_id,
-            UnitAssignment.unit_id == unit_id,
-            UnitAssignment.role_code == "EXECUTOR",
-            User.company_id == company_id,
-            User.role != Role.platform_admin,
-            User.is_assignable_executor.is_(True),
-            department_match_filter(UnitAssignment.department_id, department_id),
-        )
-        .order_by(UnitAssignment.is_primary.desc(), UnitAssignment.id.asc())
-    )
-    row = query.first()
-    return int(row[0]) if row else None
-
-
-def month_period_key(dt: datetime | None = None) -> str:
-    base = dt or local_now()
-    return base.strftime("%Y-%m")
-
-
-def normalize_period_key(raw_value: str | None) -> str | None:
-    raw = (raw_value or "").strip()
-    if not raw:
-        return None
-    if len(raw) != 7 or raw[4] != "-":
-        return None
-    yyyy = raw[:4]
-    mm = raw[5:]
-    if not (yyyy.isdigit() and mm.isdigit()):
-        return None
-    month_value = int(mm)
-    if month_value < 1 or month_value > 12:
-        return None
-    return f"{yyyy}-{mm}"
-
-
-def resolve_deadline_by_rule(rule: str | None, now_dt: datetime | None = None) -> datetime | None:
-    raw = (rule or "").strip().lower()
-    if not raw:
-        return None
-    base = now_dt or local_now()
-    if raw.startswith("dom:"):
-        try:
-            day = int(raw.split(":", 1)[1])
-        except ValueError:
-            return None
-        if day < 1:
-            return None
-        last_day = monthrange(base.year, base.month)[1]
-        clamped_day = min(day, last_day)
-        return base.replace(day=clamped_day, hour=23, minute=59, second=0, microsecond=0)
-    try:
-        exact_date = datetime.strptime(raw, "%Y-%m-%d")
-        return exact_date.replace(hour=23, minute=59, second=0, microsecond=0)
-    except ValueError:
-        pass
-    if raw.startswith("+") and raw.endswith("h"):
-        try:
-            return base + timedelta(hours=max(1, int(raw[1:-1])))
-        except ValueError:
-            return None
-    if raw.startswith("+") and raw.endswith("d"):
-        try:
-            return base + timedelta(days=max(1, int(raw[1:-1])))
-        except ValueError:
-            return None
-    return None
-
-
-def template_deadline_date_value(rule: str | None) -> str:
-    raw = (rule or "").strip()
-    if not raw:
-        return ""
-    try:
-        return datetime.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except ValueError:
-        return ""
-
-
-def template_deadline_mode(rule: str | None) -> str:
-    raw = (rule or "").strip().lower()
-    if raw.startswith("dom:"):
-        return "dom"
-    if template_deadline_date_value(raw):
-        return "date"
-    return "none"
-
-
-def template_deadline_dom_value(rule: str | None) -> str:
-    raw = (rule or "").strip().lower()
-    if not raw.startswith("dom:"):
-        return ""
-    try:
-        day = int(raw.split(":", 1)[1])
-    except ValueError:
-        return ""
-    if day < 1 or day > 31:
-        return ""
-    return str(day)
-
-
-def parse_template_deadline_rule_from_form(form) -> str | None:
-    mode = (form.get("deadline_mode") or "").strip().lower()
-    if mode == "date":
-        date_value = (form.get("deadline_date") or "").strip()
-        if not date_value:
-            return None
-        try:
-            return datetime.strptime(date_value, "%Y-%m-%d").strftime("%Y-%m-%d")
-        except ValueError:
-            return None
-    if mode == "dom":
-        dom_raw = (form.get("deadline_dom") or "").strip()
-        if not dom_raw:
-            return None
-        try:
-            day = int(dom_raw)
-        except ValueError:
-            return None
-        if day < 1 or day > 31:
-            return None
-        return f"dom:{day}"
-    legacy_raw = (form.get("default_deadline_rule") or "").strip().lower()
-    if not legacy_raw:
-        return None
-    if legacy_raw.startswith("dom:"):
-        return legacy_raw
-    try:
-        return datetime.strptime(legacy_raw, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except ValueError:
-        return legacy_raw
-
-
-def normalize_ticket_title(raw_title: str | None) -> str:
-    return (raw_title or "").strip()
-
-
-def is_ticket_title_too_long(title: str | None) -> bool:
-    return len(title or "") > MAX_TICKET_TITLE_LEN
-
-
-def truncate_ticket_title(title: str | None) -> str:
-    normalized = normalize_ticket_title(title)
-    if len(normalized) <= MAX_TICKET_TITLE_LEN:
-        return normalized
-    return normalized[:MAX_TICKET_TITLE_LEN].rstrip()
 _storage_service = StorageService(
     upload_dir=UPLOAD_DIR,
     upload_dir_getter=lambda: UPLOAD_DIR,
@@ -2051,6 +1502,62 @@ def to_local_dt(dt: datetime | None) -> datetime | None:
 
 def local_now() -> datetime:
     return datetime.utcnow() + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
+
+
+_ticket_support = TicketSupport(
+    local_now=local_now,
+    delete_stored_file_func=lambda stored_path: delete_stored_file(stored_path),
+    ensure_company_user_func=ensure_company_user,
+    is_platform_admin_func=is_platform_admin,
+    is_assignable_executor_user_func=is_assignable_executor_user,
+    max_ticket_title_len=MAX_TICKET_TITLE_LEN,
+    http_exception_cls=HTTPException,
+    re_module=re,
+    datetime_cls=datetime,
+    timedelta_cls=timedelta,
+    monthrange_func=monthrange,
+    user_model=User,
+    ticket_model=Ticket,
+    ticket_watcher_model=TicketWatcher,
+    project_model=Project,
+    ticket_type_model=TicketType,
+    department_model=Department,
+    org_unit_model=OrgUnit,
+    ticket_template_model=TicketTemplate,
+    attachment_model=Attachment,
+    comment_model=Comment,
+    comment_media_model=CommentMedia,
+    ticket_log_model=TicketLog,
+    deadline_reminder_log_model=DeadlineReminderLog,
+    ticket_generation_key_model=TicketGenerationKey,
+    unit_assignment_model=UnitAssignment,
+    role_enum=Role,
+)
+
+department_match_filter = _ticket_support.department_match_filter
+add_ticket_watcher = _ticket_support.add_ticket_watcher
+ensure_default_ticket_watchers = _ticket_support.ensure_default_ticket_watchers
+get_api_ticket_or_404 = _ticket_support.get_api_ticket_or_404
+delete_ticket_with_related_data = _ticket_support.delete_ticket_with_related_data
+validate_ticket_links = _ticket_support.validate_ticket_links
+resolve_ticket_department_id = _ticket_support.resolve_ticket_department_id
+resolve_scope_leaf_units = _ticket_support.resolve_scope_leaf_units
+resolve_scope_descendant_units = _ticket_support.resolve_scope_descendant_units
+resolve_target_unit_id_from_form_input = _ticket_support.resolve_target_unit_id_from_form_input
+resolve_executor_id_from_form_input = _ticket_support.resolve_executor_id_from_form_input
+validate_template_links = _ticket_support.validate_template_links
+get_or_create_project_for_org_unit = _ticket_support.get_or_create_project_for_org_unit
+get_preferred_executor_for_unit = _ticket_support.get_preferred_executor_for_unit
+month_period_key = _ticket_support.month_period_key
+normalize_period_key = _ticket_support.normalize_period_key
+resolve_deadline_by_rule = _ticket_support.resolve_deadline_by_rule
+template_deadline_date_value = _ticket_support.template_deadline_date_value
+template_deadline_mode = _ticket_support.template_deadline_mode
+template_deadline_dom_value = _ticket_support.template_deadline_dom_value
+parse_template_deadline_rule_from_form = _ticket_support.parse_template_deadline_rule_from_form
+normalize_ticket_title = _ticket_support.normalize_ticket_title
+is_ticket_title_too_long = _ticket_support.is_ticket_title_too_long
+truncate_ticket_title = _ticket_support.truncate_ticket_title
 
 
 def clamp_deadline_soon_warning_minutes(value: int) -> int:
