@@ -96,6 +96,7 @@ from app_support.auth_core import (
 from app_support.comment_service import CommentService
 from app_support.company_cleanup import CompanyCleanupService
 from app_support.deadline_reminder_service import DeadlineReminderService
+from app_support.email_auth_support import EmailAuthSupport
 from app_support.enums import (
     ARCHIVE_SOURCE_STATUSES,
     COMPANY_ACCESS_LEVELS,
@@ -2793,130 +2794,39 @@ prepare_user_password_reset = partial(
 build_email_verification_url = core_build_email_verification_url
 build_password_reset_url = core_build_password_reset_url
 
+_email_auth_support = EmailAuthSupport(
+    email_message_cls=EmailMessage,
+    smtplib_module=smtplib,
+    logger=logger,
+    email_delivery_error_cls=EmailDeliveryError,
+    format_sender_email_getter=lambda: SMTP_FROM_EMAIL,
+    format_sender_name_getter=lambda: SMTP_FROM_NAME,
+    smtp_host_getter=lambda: SMTP_HOST,
+    smtp_port_getter=lambda: SMTP_PORT,
+    smtp_username_getter=lambda: SMTP_USERNAME,
+    smtp_password_getter=lambda: SMTP_PASSWORD,
+    smtp_use_tls_getter=lambda: SMTP_USE_TLS,
+    smtp_use_ssl_getter=lambda: SMTP_USE_SSL,
+    smtp_timeout_sec_getter=lambda: SMTP_TIMEOUT_SEC,
+    email_verification_expire_hours_getter=lambda: EMAIL_VERIFICATION_EXPIRE_HOURS,
+    password_reset_expire_hours_getter=lambda: PASSWORD_RESET_EXPIRE_HOURS,
+    access_token_cookie_max_age_getter=lambda: ACCESS_TOKEN_COOKIE_MAX_AGE,
+    now_utc_fn=datetime.utcnow,
+    is_email_verification_required_func=is_email_verification_required,
+    prepare_user_email_verification_func=prepare_user_email_verification,
+    prepare_user_password_reset_func=prepare_user_password_reset,
+    build_email_verification_url_func=build_email_verification_url,
+    build_password_reset_url_func=build_password_reset_url,
+    core_get_auth_cookie_params_func=core_get_auth_cookie_params,
+    core_delete_auth_cookie_func=core_delete_auth_cookie,
+)
 
-def format_email_sender() -> str:
-    sender_email = SMTP_FROM_EMAIL or SMTP_USERNAME or "no-reply@localhost"
-    if SMTP_FROM_NAME:
-        return f"{SMTP_FROM_NAME} <{sender_email}>"
-    return sender_email
-
-
-def send_email_message(recipient: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = format_email_sender()
-    msg["To"] = recipient
-    if html_body:
-        msg.set_content(text_body)
-        msg.add_alternative(html_body, subtype="html")
-    else:
-        msg.set_content(text_body)
-
-    if not SMTP_HOST:
-        logger.warning("SMTP_HOST is not configured. Email to %s was not sent.", recipient)
-        return False
-
-    smtp = None
-    try:
-        if SMTP_USE_SSL:
-            smtp = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SEC)
-        else:
-            smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SEC)
-            if SMTP_USE_TLS:
-                smtp.starttls()
-        if SMTP_USERNAME:
-            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
-        smtp.send_message(msg)
-        return True
-    except Exception as exc:
-        raise EmailDeliveryError("Could not send email") from exc
-    finally:
-        if smtp is not None:
-            try:
-                smtp.quit()
-            except Exception:
-                pass
-
-
-def send_user_verification_email(
-    request: Request,
-    db: Session,
-    user: User,
-    *,
-    force_new_token: bool = False,
-) -> str:
-    if not is_email_verification_required(user):
-        return ""
-    token_value = prepare_user_email_verification(user, force_new_token=force_new_token)
-    verification_url = build_email_verification_url(request, token_value)
-    subject = "Подтвердите email в servora"
-    ttl_hours_text = str(EMAIL_VERIFICATION_EXPIRE_HOURS)
-    text_body = (
-        f"Здравствуйте, {user.name}!\n\n"
-        "Подтвердите ваш email, чтобы завершить регистрацию и войти в servora:\n"
-        f"{verification_url}\n\n"
-        f"Ссылка действует {ttl_hours_text} ч."
-    )
-    html_body = (
-        f"<p>Здравствуйте, {user.name}!</p>"
-        "<p>Подтвердите ваш email, чтобы завершить регистрацию и войти в servora:</p>"
-        f'<p><a href="{verification_url}">{verification_url}</a></p>'
-        f"<p>Ссылка действует {ttl_hours_text} ч.</p>"
-    )
-    sent = send_email_message(user.email, subject, text_body, html_body=html_body)
-    if not sent:
-        logger.warning("Verification link for %s: %s", user.email, verification_url)
-    user.email_verification_sent_at = datetime.utcnow()
-    db.commit()
-    db.refresh(user)
-    return verification_url
-
-
-def send_user_password_reset_email(
-    request: Request,
-    db: Session,
-    user: User,
-    *,
-    force_new_token: bool = False,
-) -> str:
-    token_value = prepare_user_password_reset(user, force_new_token=force_new_token)
-    reset_url = build_password_reset_url(request, token_value)
-    ttl_hours_text = str(PASSWORD_RESET_EXPIRE_HOURS)
-    subject = "Сброс пароля в servora"
-    text_body = (
-        f"Здравствуйте, {user.name}!\n\n"
-        "Чтобы задать новый пароль для аккаунта servora, перейдите по ссылке:\n"
-        f"{reset_url}\n\n"
-        f"Ссылка действует {ttl_hours_text} ч."
-    )
-    html_body = (
-        f"<p>Здравствуйте, {user.name}!</p>"
-        "<p>Чтобы задать новый пароль для аккаунта servora, перейдите по ссылке:</p>"
-        f'<p><a href="{reset_url}">{reset_url}</a></p>'
-        f"<p>Ссылка действует {ttl_hours_text} ч.</p>"
-    )
-    sent = send_email_message(user.email, subject, text_body, html_body=html_body)
-    if not sent:
-        logger.warning("Password reset link for %s: %s", user.email, reset_url)
-    user.password_reset_sent_at = datetime.utcnow()
-    db.commit()
-    db.refresh(user)
-    return reset_url
-
-
-def get_auth_cookie_params(request: Request) -> dict[str, object]:
-    return core_get_auth_cookie_params(
-        request,
-        access_token_cookie_max_age=ACCESS_TOKEN_COOKIE_MAX_AGE,
-    )
-
-
-def delete_auth_cookie(response: Response, request: Request) -> None:
-    core_delete_auth_cookie(
-        response,
-        request,
-        access_token_cookie_max_age=ACCESS_TOKEN_COOKIE_MAX_AGE,
-    )
+format_email_sender = _email_auth_support.format_email_sender
+send_email_message = _email_auth_support.send_email_message
+send_user_verification_email = _email_auth_support.send_user_verification_email
+send_user_password_reset_email = _email_auth_support.send_user_password_reset_email
+get_auth_cookie_params = _email_auth_support.get_auth_cookie_params
+delete_auth_cookie = _email_auth_support.delete_auth_cookie
 
 
 def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
