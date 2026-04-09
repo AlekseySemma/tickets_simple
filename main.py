@@ -117,6 +117,7 @@ from app_support.notification_service import NotificationService
 from app_support.org_structure_support import OrgStructureSupport
 from app_support.push_support import PushSupport
 from app_support.receipt_support import ReceiptSupport
+from app_support.role_flags_support import RoleFlagsSupport
 from app_support.role_template_support import RoleTemplateSupport
 from app_support.security_support import SecuritySupport
 from app_support.startup import (
@@ -128,6 +129,7 @@ from app_support.storage import StorageService
 from app_support.ticket_support import TicketSupport
 from app_support.ticket_runtime_service import TicketRuntimeService
 from app_support.ticket_text_support import TicketTextSupport
+from app_support.text_repair_support import TextRepairSupport
 from app_support.ui_support import UiSupport
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
@@ -409,63 +411,18 @@ class Base(DeclarativeBase):
 # =========================
 
 
-def normalize_role_label(raw_value: str | None) -> str | None:
-    value = " ".join(str(raw_value or "").split()).strip()
-    if not value:
-        return None
-    return value[:MAX_ROLE_LABEL_LEN]
+_role_flags_support = RoleFlagsSupport(
+    max_role_label_len=MAX_ROLE_LABEL_LEN,
+    max_role_template_name_len=MAX_ROLE_TEMPLATE_NAME_LEN,
+    manager_roles=MANAGER_ROLES,
+    role_enum=Role,
+)
 
-
-def normalize_role_template_name(raw_value: str | None) -> str | None:
-    value = " ".join(str(raw_value or "").split()).strip()
-    if not value:
-        return None
-    return value[:MAX_ROLE_TEMPLATE_NAME_LEN]
-
-
-def default_is_assignable_executor(role: Role) -> bool:
-    return role in (Role.admin, Role.executor)
-
-
-def default_show_receipts_accounting_mode(role: Role) -> bool:
-    return role != Role.executor
-
-
-def normalize_capability_flags(
-    access_level: Role,
-    *,
-    show_receipts_accounting_mode: bool | None = None,
-    is_assignable_executor: bool | None = None,
-    can_view_all_tickets: bool | None = None,
-    can_create_tickets: bool | None = None,
-    can_close_tickets: bool | None = None,
-) -> dict[str, bool]:
-    normalized = {
-        "show_receipts_accounting_mode": (
-            default_show_receipts_accounting_mode(access_level)
-            if show_receipts_accounting_mode is None
-            else bool(show_receipts_accounting_mode)
-        ),
-        "is_assignable_executor": (
-            default_is_assignable_executor(access_level)
-            if is_assignable_executor is None
-            else bool(is_assignable_executor)
-        ),
-        "can_view_all_tickets": bool(can_view_all_tickets),
-        "can_create_tickets": True if can_create_tickets is None else bool(can_create_tickets),
-        "can_close_tickets": True if can_close_tickets is None else bool(can_close_tickets),
-    }
-    if access_level in MANAGER_ROLES:
-        normalized["can_view_all_tickets"] = True
-        normalized["can_create_tickets"] = True
-        normalized["can_close_tickets"] = True
-    if access_level == Role.platform_admin:
-        normalized["show_receipts_accounting_mode"] = True
-        normalized["is_assignable_executor"] = False
-        normalized["can_view_all_tickets"] = False
-        normalized["can_create_tickets"] = False
-        normalized["can_close_tickets"] = False
-    return normalized
+normalize_role_label = _role_flags_support.normalize_role_label
+normalize_role_template_name = _role_flags_support.normalize_role_template_name
+default_is_assignable_executor = _role_flags_support.default_is_assignable_executor
+default_show_receipts_accounting_mode = _role_flags_support.default_show_receipts_accounting_mode
+normalize_capability_flags = _role_flags_support.normalize_capability_flags
 
 
 def is_assignable_executor_user(user: object | None) -> bool:
@@ -1544,45 +1501,9 @@ format_deadline = _ui_support.format_deadline
 parse_deadline_inputs = _ui_support.parse_deadline_inputs
 
 
-def fix_mojibake_text(value: str | None) -> str:
-    text = (value or "")
-    if not text:
-        return ""
+_text_repair_support = TextRepairSupport(re_module=re)
 
-    def _score(s: str) -> int:
-        cyr = sum(1 for ch in s if "\u0400" <= ch <= "\u04FF")
-        bad = len(re.findall(r"[\u00D0\u00D1\u0420\u0421\u0440\u0441](?=[^\s])", s))
-        bad += len(re.findall(r"[\u201A\u201E\u2026\u2020\u2021\u2030\u2122]", s))
-        bad += s.count("\uFFFD")
-        return cyr * 2 - bad
-
-    best = text
-    best_score = _score(text)
-    current = text
-
-    for _ in range(3):
-        candidates: list[str] = []
-        try:
-            candidates.append(current.encode("cp1251").decode("utf-8"))
-        except Exception:
-            pass
-        try:
-            candidates.append(current.encode("latin1").decode("utf-8"))
-        except Exception:
-            pass
-
-        improved = False
-        for candidate in candidates:
-            score = _score(candidate)
-            if score > best_score:
-                best = candidate
-                best_score = score
-                improved = True
-        if not improved:
-            break
-        current = best
-
-    return best
+fix_mojibake_text = _text_repair_support.fix_mojibake_text
 
 
 def ticket_title_notification_preview(
