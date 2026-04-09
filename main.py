@@ -125,6 +125,7 @@ from app_support.startup import (
 from app_support.storage import StorageService
 from app_support.ticket_support import TicketSupport
 from app_support.ticket_runtime_service import TicketRuntimeService
+from app_support.ui_support import UiSupport
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
     append_query_params,
@@ -1559,263 +1560,43 @@ normalize_ticket_title = _ticket_support.normalize_ticket_title
 is_ticket_title_too_long = _ticket_support.is_ticket_title_too_long
 truncate_ticket_title = _ticket_support.truncate_ticket_title
 
+_ui_support = UiSupport(
+    datetime_cls=datetime,
+    timedelta_cls=timedelta,
+    re_module=re,
+    urlencode_func=urlencode,
+    http_exception_cls=HTTPException,
+    local_time_offset_hours=LOCAL_TIME_OFFSET_HOURS,
+    min_deadline_soon_warning_minutes=MIN_DEADLINE_SOON_WARNING_MINUTES,
+    max_deadline_soon_warning_minutes=MAX_DEADLINE_SOON_WARNING_MINUTES,
+    default_deadline_soon_warning_minutes=DEFAULT_DEADLINE_SOON_WARNING_MINUTES,
+    min_archive_retention_days=MIN_ARCHIVE_RETENTION_DAYS,
+    max_archive_retention_days=MAX_ARCHIVE_RETENTION_DAYS,
+    default_archive_retention_days=DEFAULT_ARCHIVE_RETENTION_DAYS,
+    settings_sections=SETTINGS_SECTIONS,
+    org_structure_sections=ORG_STRUCTURE_SECTIONS,
+    org_structure_import_errors=ORG_STRUCTURE_IMPORT_ERRORS,
+    org_structure_node_errors=ORG_STRUCTURE_NODE_ERRORS,
+    org_structure_executor_errors=ORG_STRUCTURE_EXECUTOR_ERRORS,
+)
 
-def clamp_deadline_soon_warning_minutes(value: int) -> int:
-    return max(
-        MIN_DEADLINE_SOON_WARNING_MINUTES,
-        min(MAX_DEADLINE_SOON_WARNING_MINUTES, int(value)),
-    )
-
-
-def parse_deadline_soon_warning_minutes(raw: str | None) -> int | None:
-    raw_value = (raw or "").strip()
-    if not raw_value:
-        return None
-    if not re.fullmatch(r"\d+", raw_value):
-        return None
-    parsed = int(raw_value)
-    if parsed < MIN_DEADLINE_SOON_WARNING_MINUTES or parsed > MAX_DEADLINE_SOON_WARNING_MINUTES:
-        return None
-    return parsed
-
-
-def get_company_deadline_soon_warning_minutes(company: Company | None) -> int:
-    if not company:
-        return DEFAULT_DEADLINE_SOON_WARNING_MINUTES
-    if company.deadline_soon_warning_minutes is None:
-        return DEFAULT_DEADLINE_SOON_WARNING_MINUTES
-    return clamp_deadline_soon_warning_minutes(company.deadline_soon_warning_minutes)
-
-
-def clamp_archive_retention_days(value: int) -> int:
-    return max(
-        MIN_ARCHIVE_RETENTION_DAYS,
-        min(MAX_ARCHIVE_RETENTION_DAYS, int(value)),
-    )
-
-
-def parse_archive_retention_days(raw: str | None) -> int | None:
-    raw_value = (raw or "").strip()
-    if not raw_value:
-        return None
-    if not re.fullmatch(r"\d+", raw_value):
-        return None
-    parsed = int(raw_value)
-    if parsed < MIN_ARCHIVE_RETENTION_DAYS or parsed > MAX_ARCHIVE_RETENTION_DAYS:
-        return None
-    return parsed
-
-
-def get_company_archive_retention_days(company: Company | None) -> int:
-    if not company:
-        return DEFAULT_ARCHIVE_RETENTION_DAYS
-    if company.archive_retention_days_default is None:
-        return DEFAULT_ARCHIVE_RETENTION_DAYS
-    return clamp_archive_retention_days(company.archive_retention_days_default)
-
-
-def normalize_settings_section(raw: str | None) -> str:
-    value = (raw or "").strip().lower()
-    if value in SETTINGS_SECTIONS:
-        return value
-    return ""
-
-
-def build_settings_url(section: str | None = None, **params: object) -> str:
-    items: list[tuple[str, str]] = []
-    normalized_section = normalize_settings_section(section)
-    if normalized_section:
-        items.append(("section", normalized_section))
-    for key, value in params.items():
-        if value is None or value is False or value == "":
-            continue
-        items.append((key, "1" if value is True else str(value)))
-    if not items:
-        return "/web/settings"
-    return f"/web/settings?{urlencode(items)}"
-
-
-def normalize_org_structure_section(raw: str | None) -> str:
-    value = (raw or "").strip().lower()
-    if value in ORG_STRUCTURE_SECTIONS:
-        return value
-    return ""
-
-
-def infer_org_structure_section(
-    raw: str | None = None,
-    *,
-    error: str | None = None,
-    import_ok: str | None = None,
-    edit_unit_id: str | None = None,
-    assignment_unit_id: str | None = None,
-    assignment_executor_id: str | None = None,
-    assignment_department_id: str | None = None,
-    assignment_unit_q: str | None = None,
-    assignment_executor_q: str | None = None,
-    assignment_primary: str | None = None,
-    assignment_page: int | None = None,
-) -> str:
-    normalized = normalize_org_structure_section(raw)
-    if normalized:
-        return normalized
-    error_code = (error or "").strip().lower()
-    if (import_ok or "").strip() == "1" or error_code in ORG_STRUCTURE_IMPORT_ERRORS:
-        return "import"
-    if (
-        (edit_unit_id or "").strip()
-        or error_code in ORG_STRUCTURE_NODE_ERRORS
-    ):
-        return "nodes"
-    has_assignment_context = any(
-        (
-            (assignment_unit_id or "").strip(),
-            (assignment_executor_id or "").strip(),
-            (assignment_department_id or "").strip(),
-            (assignment_unit_q or "").strip(),
-            (assignment_executor_q or "").strip(),
-            (assignment_primary or "").strip(),
-            (assignment_page or 1) > 1,
-        )
-    )
-    if has_assignment_context or error_code in ORG_STRUCTURE_EXECUTOR_ERRORS:
-        return "executors"
-    return "nodes"
-
-
-def build_org_structure_url(section: str | None = None, **params: object) -> str:
-    items: list[tuple[str, str]] = []
-    normalized_section = normalize_org_structure_section(section)
-    if normalized_section:
-        items.append(("section", normalized_section))
-    for key, value in params.items():
-        if value is None or value is False or value == "":
-            continue
-        items.append((key, "1" if value is True else str(value)))
-    if not items:
-        return "/web/org-structure"
-    return f"/web/org-structure?{urlencode(items)}"
-
-
-def normalize_ticket_type_archive_retention_days(value: int | None) -> int | None:
-    if value is None:
-        return None
-    parsed = int(value)
-    if parsed < MIN_ARCHIVE_RETENTION_DAYS or parsed > MAX_ARCHIVE_RETENTION_DAYS:
-        raise HTTPException(
-            422,
-            f"archive_retention_days must be between {MIN_ARCHIVE_RETENTION_DAYS} and {MAX_ARCHIVE_RETENTION_DAYS}",
-        )
-    return parsed
-
-
-def format_dt(dt: datetime | None) -> str:
-    local_dt = to_local_dt(dt)
-    if local_dt is None:
-        return "\u2014"
-
-    now_local = to_local_dt(datetime.utcnow())
-    if not now_local:
-        return local_dt.strftime("%d.%m.%Y %H:%M")
-
-    date_part = local_dt.date()
-    now_date = now_local.date()
-
-    if date_part == now_date:
-        return local_dt.strftime("\u0421\u0435\u0433\u043e\u0434\u043d\u044f, %H:%M")
-    if date_part == (now_date - timedelta(days=1)):
-        return local_dt.strftime("\u0412\u0447\u0435\u0440\u0430, %H:%M")
-    if date_part == (now_date + timedelta(days=1)):
-        return local_dt.strftime("\u0417\u0430\u0432\u0442\u0440\u0430, %H:%M")
-
-    month_names = {
-        1: "\u044f\u043d\u0432",
-        2: "\u0444\u0435\u0432",
-        3: "\u043c\u0430\u0440",
-        4: "\u0430\u043f\u0440",
-        5: "\u043c\u0430\u044f",
-        6: "\u0438\u044e\u043d",
-        7: "\u0438\u044e\u043b",
-        8: "\u0430\u0432\u0433",
-        9: "\u0441\u0435\u043d",
-        10: "\u043e\u043a\u0442",
-        11: "\u043d\u043e\u044f",
-        12: "\u0434\u0435\u043a",
-    }
-
-    if local_dt.year == now_local.year:
-        mon = month_names.get(local_dt.month, local_dt.strftime("%m"))
-        return f"{local_dt.day} {mon}, {local_dt.strftime('%H:%M')}"
-
-    return local_dt.strftime("%d.%m.%Y %H:%M")
-
-
-
-
-def format_deadline(dt: datetime | None) -> str:
-    if dt is None:
-        return "\u2014"
-
-    now_local = local_now()
-    date_part = dt.date()
-    now_date = now_local.date()
-
-    if date_part == now_date:
-        return dt.strftime("\u0421\u0435\u0433\u043e\u0434\u043d\u044f, %H:%M")
-    if date_part == (now_date - timedelta(days=1)):
-        return dt.strftime("\u0412\u0447\u0435\u0440\u0430, %H:%M")
-    if date_part == (now_date + timedelta(days=1)):
-        return dt.strftime("\u0417\u0430\u0432\u0442\u0440\u0430, %H:%M")
-
-    month_names = {
-        1: "\u044f\u043d\u0432",
-        2: "\u0444\u0435\u0432",
-        3: "\u043c\u0430\u0440",
-        4: "\u0430\u043f\u0440",
-        5: "\u043c\u0430\u044f",
-        6: "\u0438\u044e\u043d",
-        7: "\u0438\u044e\u043b",
-        8: "\u0430\u0432\u0433",
-        9: "\u0441\u0435\u043d",
-        10: "\u043e\u043a\u0442",
-        11: "\u043d\u043e\u044f",
-        12: "\u0434\u0435\u043a",
-    }
-
-    if dt.year == now_local.year:
-        mon = month_names.get(dt.month, dt.strftime("%m"))
-        return f"{dt.day} {mon}, {dt.strftime('%H:%M')}"
-
-    return dt.strftime("%d.%m.%Y %H:%M")
-
-
-def parse_deadline_inputs(deadline_date_raw: str | None, deadline_time4_raw: str | None) -> datetime | None:
-    deadline_date = (deadline_date_raw or "").strip()
-    time4 = (deadline_time4_raw or "").strip()
-    if not deadline_date:
-        return None
-
-    # If date is set and time is empty, use current local time.
-    if not time4:
-        time4 = local_now().strftime("%H%M")
-
-    time4 = "".join(ch for ch in time4 if ch.isdigit())[:4]
-    if not time4:
-        return None
-
-    if len(time4) <= 2:
-        hh = min(23, int(time4))
-        mm = 0
-        time4_fixed = f"{hh:02d}{mm:02d}"
-    else:
-        time4_fixed = time4.zfill(4)
-
-    try:
-        hh = min(23, int(time4_fixed[:2]))
-        mm = min(59, int(time4_fixed[2:]))
-        return datetime.strptime(deadline_date, "%Y-%m-%d").replace(hour=hh, minute=mm)
-    except ValueError:
-        return None
+to_local_dt = _ui_support.to_local_dt
+local_now = _ui_support.local_now
+clamp_deadline_soon_warning_minutes = _ui_support.clamp_deadline_soon_warning_minutes
+parse_deadline_soon_warning_minutes = _ui_support.parse_deadline_soon_warning_minutes
+get_company_deadline_soon_warning_minutes = _ui_support.get_company_deadline_soon_warning_minutes
+clamp_archive_retention_days = _ui_support.clamp_archive_retention_days
+parse_archive_retention_days = _ui_support.parse_archive_retention_days
+get_company_archive_retention_days = _ui_support.get_company_archive_retention_days
+normalize_settings_section = _ui_support.normalize_settings_section
+build_settings_url = _ui_support.build_settings_url
+normalize_org_structure_section = _ui_support.normalize_org_structure_section
+infer_org_structure_section = _ui_support.infer_org_structure_section
+build_org_structure_url = _ui_support.build_org_structure_url
+normalize_ticket_type_archive_retention_days = _ui_support.normalize_ticket_type_archive_retention_days
+format_dt = _ui_support.format_dt
+format_deadline = _ui_support.format_deadline
+parse_deadline_inputs = _ui_support.parse_deadline_inputs
 
 
 def fix_mojibake_text(value: str | None) -> str:
