@@ -115,8 +115,10 @@ from app_support.enums import (
 )
 from app_support.notification_service import NotificationService
 from app_support.org_structure_support import OrgStructureSupport
+from app_support.push_support import PushSupport
 from app_support.receipt_support import ReceiptSupport
 from app_support.role_template_support import RoleTemplateSupport
+from app_support.security_support import SecuritySupport
 from app_support.startup import (
     ensure_platform_admin_user,
     maybe_repair_text_on_start,
@@ -125,6 +127,7 @@ from app_support.startup import (
 from app_support.storage import StorageService
 from app_support.ticket_support import TicketSupport
 from app_support.ticket_runtime_service import TicketRuntimeService
+from app_support.ticket_text_support import TicketTextSupport
 from app_support.ui_support import UiSupport
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
 from app_support.web import (
@@ -404,50 +407,6 @@ class Base(DeclarativeBase):
 # =========================
 # РњРѕРґРµР»Рё
 # =========================
-def ticket_field_change_log_action(field_label: str, old_value: str | None, new_value: str | None) -> str:
-    old_text = (old_value or "").strip() or "\u2014"
-    new_text = (new_value or "").strip() or "\u2014"
-    return f"\u0418\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 {field_label}: {old_text} -> {new_text}"
-
-
-def _ticket_user_name(db: Session, user_id: int | None) -> str | None:
-    if not user_id:
-        return None
-    row = db.get(User, user_id)
-    if row and (row.name or "").strip():
-        return row.name
-    return f"#{user_id}"
-
-
-def _ticket_project_name(db: Session, project_id: int | None) -> str | None:
-    if not project_id:
-        return None
-    row = db.get(Project, project_id)
-    if row and (row.name or "").strip():
-        return row.name
-    return f"#{project_id}"
-
-
-def _ticket_type_name(db: Session, ticket_type_id: int | None) -> str | None:
-    if not ticket_type_id:
-        return None
-    row = db.get(TicketType, ticket_type_id)
-    if row and (row.name or "").strip():
-        return row.name
-    return f"#{ticket_type_id}"
-
-
-def _department_name(db: Session, department_id: int | None) -> str | None:
-    if not department_id:
-        return None
-    row = db.get(Department, department_id)
-    if row and (row.name or "").strip():
-        return row.name
-    return f"#{department_id}"
-
-
-def _ticket_deadline_text(value: datetime | None) -> str | None:
-    return format_deadline(value) if value else None
 
 
 def normalize_role_label(raw_value: str | None) -> str | None:
@@ -1362,66 +1321,19 @@ def get_db():
         db.close()
 
 
-def is_native_android_app_request(request: Request) -> bool:
-    user_agent = (request.headers.get("user-agent") or "").strip().lower()
-    return ANDROID_APP_USER_AGENT_TOKEN in user_agent
+_security_support = SecuritySupport(
+    rate_limit_lock=RATE_LIMIT_LOCK,
+    rate_limit_buckets=RATE_LIMIT_BUCKETS,
+    session_local_factory=lambda: SessionLocal(),
+    security_event_model=SecurityEvent,
+    get_client_ip_func=get_client_ip,
+    time_module=time,
+)
 
-
-def normalize_mobile_platform(value: str | None) -> str:
-    platform = (value or "android").strip().lower()
-    return platform if platform in {"android"} else ""
-
-
-def normalize_email(value: str | None) -> str | None:
-    v = (value or "").strip().lower()
-    return v or None
-
-
-def normalize_department_name(value: str | None) -> str:
-    return " ".join((value or "").split()).strip()
-
-
-def hit_rate_limit(bucket: str, max_calls: int, window_seconds: int) -> tuple[bool, int]:
-    now = time.time()
-    cutoff = now - max(1, window_seconds)
-    with RATE_LIMIT_LOCK:
-        hits = [ts for ts in RATE_LIMIT_BUCKETS.get(bucket, []) if ts >= cutoff]
-        if len(hits) >= max_calls:
-            RATE_LIMIT_BUCKETS[bucket] = hits
-            retry_after = max(1, int(window_seconds - (now - hits[0])) + 1)
-            return True, retry_after
-        hits.append(now)
-        RATE_LIMIT_BUCKETS[bucket] = hits
-    return False, 0
-
-
-def audit_security_event(
-    event_type: str,
-    request: Request | None = None,
-    *,
-    success: bool,
-    email: str | None = None,
-    user_id: int | None = None,
-    detail: str | None = None,
-) -> None:
-    db = SessionLocal()
-    try:
-        db.add(
-            SecurityEvent(
-                event_type=(event_type or "").strip()[:80] or "security_event",
-                endpoint=(request.url.path if request else "")[:255] or None,
-                ip_address=get_client_ip(request)[:64],
-                email=normalize_email(email),
-                user_id=user_id,
-                success=bool(success),
-                detail=((detail or "").strip()[:1000] or None),
-            )
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-    finally:
-        db.close()
+normalize_email = _security_support.normalize_email
+normalize_department_name = _security_support.normalize_department_name
+hit_rate_limit = _security_support.hit_rate_limit
+audit_security_event = _security_support.audit_security_event
 
 
 _storage_service = StorageService(
@@ -1503,6 +1415,39 @@ def to_local_dt(dt: datetime | None) -> datetime | None:
 
 def local_now() -> datetime:
     return datetime.utcnow() + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
+
+
+_push_support = PushSupport(
+    android_app_user_agent_token=ANDROID_APP_USER_AGENT_TOKEN,
+    pywebpush_available_getter=lambda: PYWEBPUSH_AVAILABLE,
+    vapid_private_key_getter=lambda: VAPID_PRIVATE_KEY,
+    vapid_public_key_getter=lambda: VAPID_PUBLIC_KEY,
+    vapid_subject_getter=lambda: VAPID_SUBJECT,
+    firebase_admin_available_getter=lambda: FIREBASE_ADMIN_AVAILABLE,
+    firebase_credentials_file_getter=lambda: FIREBASE_CREDENTIALS_FILE,
+    firebase_app_getter=lambda: _FIREBASE_APP,
+    firebase_app_setter=lambda app: globals().__setitem__("_FIREBASE_APP", app),
+    firebase_app_lock=_FIREBASE_APP_LOCK,
+    firebase_admin_module=firebase_admin,
+    firebase_credentials_module=firebase_credentials,
+    firebase_messaging_module=firebase_messaging,
+    logger=logger,
+    webpush_func=webpush,
+    webpush_exception_cls=WebPushException,
+    datetime_cls=datetime,
+    path_cls=Path,
+    push_subscription_model=PushSubscription,
+    mobile_device_model=MobileDevice,
+)
+
+is_native_android_app_request = _push_support.is_native_android_app_request
+normalize_mobile_platform = _push_support.normalize_mobile_platform
+push_is_configured = _push_support.push_is_configured
+mobile_push_is_configured = _push_support.mobile_push_is_configured
+get_firebase_app = _push_support.get_firebase_app
+should_drop_mobile_token = _push_support.should_drop_mobile_token
+send_push_to_user_report = _push_support.send_push_to_user_report
+send_mobile_push_to_user_report = _push_support.send_mobile_push_to_user_report
 
 
 _ticket_support = TicketSupport(
@@ -1699,94 +1644,43 @@ LOG_ACTION_CHANGED = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435"
 LOG_ACTION_FILE_ADDED = "\u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
 LOG_ACTION_FILE_DELETED = "\u0443\u0434\u0430\u043b\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u0430"
 
+_ticket_text_support = TicketTextSupport(
+    fix_mojibake_text_func=fix_mojibake_text,
+    format_deadline_func=format_deadline,
+    re_module=re,
+    ticket_log_model=TicketLog,
+    notification_model=Notification,
+    user_model=User,
+    project_model=Project,
+    ticket_type_model=TicketType,
+    department_model=Department,
+    log_action_changed=LOG_ACTION_CHANGED,
+    log_action_created_from_template=LOG_ACTION_CREATED_FROM_TEMPLATE,
+    log_action_created=LOG_ACTION_CREATED,
+    log_action_deadline_changed=LOG_ACTION_DEADLINE_CHANGED,
+    log_action_executor_changed=LOG_ACTION_EXECUTOR_CHANGED,
+    log_action_project_changed=LOG_ACTION_PROJECT_CHANGED,
+    log_action_ticket_type_changed=LOG_ACTION_TICKET_TYPE_CHANGED,
+    log_action_target_unit_changed=LOG_ACTION_TARGET_UNIT_CHANGED,
+    log_action_template_changed=LOG_ACTION_TEMPLATE_CHANGED,
+    log_action_template_period_changed=LOG_ACTION_TEMPLATE_PERIOD_CHANGED,
+    log_action_file_added=LOG_ACTION_FILE_ADDED,
+    log_action_file_deleted=LOG_ACTION_FILE_DELETED,
+    notification_ticket_title_preview_len=NOTIFICATION_TICKET_TITLE_PREVIEW_LEN,
+)
 
-def is_placeholder_log_action(value: str | None) -> bool:
-    text = (value or "").strip()
-    if not text:
-        return True
-    meaningful = re.sub(r"[\s\?\!\.,:;\'\"`\-_/\\|()\[\]{}<>+=*#%&~@]+", "", text)
-    return not meaningful
-
-
-def normalize_log_action(action: str | None) -> str:
-    raw = (action or "").strip()
-    fixed_raw = fix_mojibake_text(raw).strip()
-    text = fixed_raw.lower()
-    if not raw:
-        return LOG_ACTION_CHANGED
-    merged = f"{raw.lower()} {text}"
-    escaped = raw.encode("unicode_escape").decode("ascii").lower()
-
-    escaped_map = {
-        "\\u0421\\u0403\\u0420\\u0455\\u0420\\xb7\\u0420\\u0491\\u0420\\xb0\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\u0455 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0421\\u0453": LOG_ACTION_CREATED_FROM_TEMPLATE,
-        "\\u0421\\u0403\\u0420\\u0455\\u0420\\xb7\\u0420\\u0491\\u0420\\xb0\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": LOG_ACTION_CREATED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u0403\\u0421\\u0402\\u0420\\u0455\\u0420\\u0454\\u0420\\xb0": LOG_ACTION_DEADLINE_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0451\\u0421\\u0403\\u0420\\u0457\\u0420\\u0455\\u0420\\xbb\\u0420\\u0405\\u0420\\u0451\\u0421\\u201a\\u0420\\xb5\\u0420\\xbb\\u0421\\u040f": LOG_ACTION_EXECUTOR_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0421\\u0402\\u0420\\u0455\\u0420\\xb5\\u0420\\u0454\\u0421\\u201a\\u0420\\xb0": LOG_ACTION_PROJECT_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201a\\u0420\\u0451\\u0420\\u0457\\u0420\\xb0 \\u0420\\xb7\\u0420\\xb0\\u0421\\u040f\\u0420\\u0406\\u0420\\u0454\\u0420\\u0451": LOG_ACTION_TICKET_TYPE_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u2020\\u0420\\xb5\\u0420\\xbb\\u0420\\xb5\\u0420\\u0406\\u0420\\u0455\\u0420\\u0456\\u0420\\u0455 \\u0421\\u0453\\u0420\\xb7\\u0420\\xbb\\u0420\\xb0": LOG_ACTION_TARGET_UNIT_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0 \\u0420\\xb7\\u0420\\xb0\\u0421\\u040f\\u0420\\u0406\\u0420\\u0454\\u0420\\u0451": LOG_ACTION_TEMPLATE_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0420\\u0457\\u0420\\xb5\\u0421\\u0402\\u0420\\u0451\\u0420\\u0455\\u0420\\u0491\\u0420\\xb0 \\u0421\\u20ac\\u0420\\xb0\\u0420\\xb1\\u0420\\xbb\\u0420\\u0455\\u0420\\u0405\\u0420\\xb0": LOG_ACTION_TEMPLATE_PERIOD_CHANGED,
-        "\\u0420\\u0451\\u0420\\xb7\\u0420\\u0458\\u0420\\xb5\\u0420\\u0405\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5": LOG_ACTION_CHANGED,
-        "\\u0420\\u0491\\u0420\\u0455\\u0420\\xb1\\u0420\\xb0\\u0420\\u0406\\u0420\\xbb\\u0420\\xb5\\u0420\\u0405\\u0420\\u0451\\u0420\\xb5 \\u0421\\u201e\\u0420\\xb0\\u0420\\u2116\\u0420\\xbb\\u0420\\xb0": LOG_ACTION_FILE_ADDED,
-        "\\u0423\\u0434\\u0430\\u043b\\u0435\\u043d\\u0438\\u0435 \\u0444\\u0430\\u0439\\u043b\\u0430": LOG_ACTION_FILE_DELETED,
-    }
-    if escaped in escaped_map:
-        return escaped_map[escaped]
-    if fixed_raw and ("->" in fixed_raw or "\u2192" in fixed_raw):
-        return fixed_raw
-
-    if is_placeholder_log_action(raw) or is_placeholder_log_action(text):
-        return LOG_ACTION_CHANGED
-
-    k_create = "\u0441\u043e\u0437\u0434"
-    k_template = "\u0448\u0430\u0431\u043b"
-    k_deadline = "\u0441\u0440\u043e\u043a"
-    k_executor = "\u0438\u0441\u043f\u043e\u043b\u043d"
-    k_project = "\u043f\u0440\u043e\u0435\u043a\u0442"
-    k_type = "\u0442\u0438\u043f"
-    k_ticket = "\u0437\u0430\u044f\u0432"
-    k_unit = "\u0443\u0437\u043b"
-    k_period = "\u043f\u0435\u0440\u0438\u043e\u0434"
-    k_file = "\u0444\u0430\u0439\u043b"
-    k_delete = "\u0443\u0434\u0430\u043b"
-    k_status = "\u0441\u0442\u0430\u0442\u0443\u0441"
-    k_change = "\u0438\u0437\u043c\u0435\u043d"
-
-    if k_create in merged:
-        if k_template in merged:
-            return LOG_ACTION_CREATED_FROM_TEMPLATE
-        return LOG_ACTION_CREATED
-    if k_deadline in merged:
-        return LOG_ACTION_DEADLINE_CHANGED
-    if k_executor in merged:
-        return LOG_ACTION_EXECUTOR_CHANGED
-    if k_project in merged:
-        return LOG_ACTION_PROJECT_CHANGED
-    if k_type in merged and k_ticket in merged:
-        return LOG_ACTION_TICKET_TYPE_CHANGED
-    if k_unit in merged:
-        return LOG_ACTION_TARGET_UNIT_CHANGED
-    if k_period in merged and k_template in merged:
-        return LOG_ACTION_TEMPLATE_PERIOD_CHANGED
-    if k_template in merged:
-        return LOG_ACTION_TEMPLATE_CHANGED
-    if k_delete in merged and k_file in merged:
-        return LOG_ACTION_FILE_DELETED
-    if k_file in merged or "file" in merged:
-        return LOG_ACTION_FILE_ADDED
-    if k_status in merged:
-        if "->" in fixed_raw or "\u2192" in fixed_raw:
-            return fixed_raw
-        return "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u0430"
-    if k_change in merged:
-        return LOG_ACTION_CHANGED
-    return text if not is_placeholder_log_action(text) else LOG_ACTION_CHANGED
-
-
-def add_ticket_log(db: Session, ticket_id: int, actor_id: int, action: str) -> None:
-    db.add(TicketLog(ticket_id=ticket_id, actor_id=actor_id, action=normalize_log_action(action)))
-
+ticket_field_change_log_action = _ticket_text_support.ticket_field_change_log_action
+_ticket_user_name = _ticket_text_support.ticket_user_name
+_ticket_project_name = _ticket_text_support.ticket_project_name
+_ticket_type_name = _ticket_text_support.ticket_type_name
+_department_name = _ticket_text_support.department_name
+_ticket_deadline_text = _ticket_text_support.ticket_deadline_text
+ticket_title_notification_preview = _ticket_text_support.ticket_title_notification_preview
+ticket_notification_title = _ticket_text_support.ticket_notification_title
+is_placeholder_log_action = _ticket_text_support.is_placeholder_log_action
+normalize_log_action = _ticket_text_support.normalize_log_action
+add_ticket_log = _ticket_text_support.add_ticket_log
+repair_mojibake_data = _ticket_text_support.repair_mojibake_data
 
 _comment_service = CommentService(
     normalize_optional_uploaded_files=normalize_optional_uploaded_files,
@@ -1811,140 +1705,6 @@ create_comment_media_record = _comment_service.create_comment_media_record
 serialize_comment_out = _comment_service.serialize_comment_out
 summarize_comment_media = _comment_service.summarize_comment_media
 create_comment_with_media_async = _comment_service.create_comment_with_media_async
-
-
-def push_is_configured() -> bool:
-    return bool(PYWEBPUSH_AVAILABLE and VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY and VAPID_SUBJECT)
-
-
-def mobile_push_is_configured() -> bool:
-    return bool(
-        FIREBASE_ADMIN_AVAILABLE
-        and FIREBASE_CREDENTIALS_FILE
-        and Path(FIREBASE_CREDENTIALS_FILE).is_file()
-    )
-
-
-def get_firebase_app():
-    global _FIREBASE_APP
-    if not mobile_push_is_configured():
-        return None
-    with _FIREBASE_APP_LOCK:
-        if _FIREBASE_APP is None:
-            try:
-                _FIREBASE_APP = firebase_admin.initialize_app(
-                    firebase_credentials.Certificate(FIREBASE_CREDENTIALS_FILE)
-                )
-            except Exception as exc:
-                logger.warning("Firebase app init failed: %s", exc)
-                return None
-        return _FIREBASE_APP
-
-
-def should_drop_mobile_token(exc: Exception) -> bool:
-    name = exc.__class__.__name__
-    details = str(exc).lower()
-    if name in {"UnregisteredError", "SenderIdMismatchError", "InvalidArgumentError"}:
-        return True
-    return any(
-        marker in details
-        for marker in (
-            "registration token is not a valid",
-            "requested entity was not found",
-            "unregistered",
-            "sender id mismatch",
-        )
-    )
-
-
-def send_push_to_user_report(db: Session, user_id: int, title: str, body: str, url: str) -> list[dict]:
-    if not push_is_configured():
-        return []
-
-    subs = db.query(PushSubscription).filter(PushSubscription.user_id == user_id).all()
-    if not subs:
-        return []
-
-    payload = json.dumps({"title": title, "body": body, "url": url})
-    vapid_claims = {"sub": VAPID_SUBJECT}
-    results: list[dict] = []
-    for sub in subs:
-        subscription_info = {
-            "endpoint": sub.endpoint,
-            "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
-        }
-        try:
-            webpush(
-                subscription_info=subscription_info,
-                data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims=vapid_claims,
-                ttl=60 * 60,
-            )
-            sub.updated_at = datetime.utcnow()
-            results.append({"id": sub.id, "ok": True})
-        except WebPushException as exc:
-            status_code = getattr(getattr(exc, "response", None), "status_code", None)
-            results.append({"id": sub.id, "ok": False, "status_code": status_code})
-            if status_code in {401, 404, 410}:
-                db.delete(sub)
-        except Exception:
-            results.append({"id": sub.id, "ok": False, "status_code": "error"})
-            continue
-    return results
-
-
-def send_mobile_push_to_user_report(db: Session, user_id: int, title: str, body: str, url: str) -> list[dict]:
-    if not mobile_push_is_configured():
-        return []
-
-    app = get_firebase_app()
-    if app is None:
-        return []
-
-    devices = (
-        db.query(MobileDevice)
-        .filter(MobileDevice.user_id == user_id, MobileDevice.platform == "android")
-        .all()
-    )
-    if not devices:
-        return []
-
-    safe_url = (url or "").strip() or "/web"
-    results: list[dict] = []
-    for device in devices:
-        message = firebase_messaging.Message(
-            token=device.token,
-            data={
-                "title": title,
-                "body": body or "",
-                "url": safe_url,
-            },
-            android=firebase_messaging.AndroidConfig(priority="high"),
-        )
-        try:
-            firebase_messaging.send(message, app=app)
-            now = datetime.utcnow()
-            device.last_seen_at = now
-            device.updated_at = now
-            results.append({"id": device.id, "ok": True, "channel": "android"})
-        except Exception as exc:
-            logger.warning(
-                "Android push send failed for mobile device %s: %s",
-                device.id,
-                exc,
-            )
-            results.append(
-                {
-                    "id": device.id,
-                    "ok": False,
-                    "channel": "android",
-                    "error_type": exc.__class__.__name__,
-                }
-            )
-            if should_drop_mobile_token(exc):
-                db.delete(device)
-    return results
 
 
 _notification_service = NotificationService(
