@@ -461,7 +461,11 @@ class User(Base):
     )
     role: Mapped[Role] = mapped_column(SAEnum(Role), index=True)
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
-    preferred_payment_card_id: Mapped[Optional[int]] = mapped_column(ForeignKey("payment_cards.id"), index=True, default=None)
+    preferred_payment_card_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("payment_cards.id", use_alter=True, name="fk_users_preferred_payment_card_id"),
+        index=True,
+        default=None,
+    )
     bk_last4: Mapped[Optional[str]] = mapped_column(String(4), default=None)
     notify_comments_as_watcher: Mapped[bool] = mapped_column(
         Boolean,
