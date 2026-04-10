@@ -26,6 +26,27 @@ class _DummyUpload:
         return chunk
 
 
+class _AsyncDummyUpload:
+    def __init__(self, filename: str, payload: bytes, content_type: str = "application/octet-stream"):
+        self.filename = filename
+        self.content_type = content_type
+        self._payload = payload
+        self._offset = 0
+        self.closed = False
+
+    async def read(self, size: int = -1) -> bytes:
+        if self._offset >= len(self._payload):
+            return b""
+        if size is None or size < 0:
+            size = len(self._payload) - self._offset
+        chunk = self._payload[self._offset : self._offset + size]
+        self._offset += len(chunk)
+        return chunk
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 class StorageServiceTests(unittest.TestCase):
     def build_service(self, upload_dir: Path) -> StorageService:
         return StorageService(
@@ -99,6 +120,28 @@ class StorageServiceTests(unittest.TestCase):
 
             with self.assertRaises(HTTPException):
                 service.make_safe_upload_name("script.exe", ticket_id=12)
+
+
+class StorageServiceAsyncTests(unittest.IsolatedAsyncioTestCase):
+    def build_service(self, upload_dir: Path) -> StorageService:
+        return StorageServiceTests().build_service(upload_dir)
+
+    async def test_async_store_closes_upload(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.build_service(Path(tmpdir))
+            upload = _AsyncDummyUpload("voice.ogg", b"OggSvoice", "audio/ogg")
+
+            stored_path, file_hash, file_size = await service.store_upload_file_to_storage_async(
+                upload,
+                service.build_comment_media_object_key("voice.ogg"),
+            )
+
+            self.assertTrue(upload.closed)
+            self.assertEqual(file_size, len(b"OggSvoice"))
+            self.assertEqual(len(file_hash), 64)
+            disk_path = service.resolve_attachment_disk_path(stored_path)
+            self.assertIsNotNone(disk_path)
+            self.assertTrue(disk_path.exists())
 
 
 if __name__ == "__main__":

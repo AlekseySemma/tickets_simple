@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 from pathlib import Path
 import shutil
 from urllib.parse import quote, urlsplit
@@ -223,6 +224,17 @@ class StorageService:
         prefix = f"{ticket_id}_" if ticket_id is not None else ""
         return f"{prefix}{uuid.uuid4().hex}{ext}"
 
+    async def close_upload_file_async(self, upload) -> None:
+        close = getattr(upload, "close", None)
+        if not callable(close):
+            return
+        try:
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            pass
+
     def write_upload_file(self, upload, destination: Path, max_size: int | None = None) -> None:
         self._refresh_runtime_settings()
         total = 0
@@ -360,20 +372,23 @@ class StorageService:
         object_key: str,
         max_size: int | None = None,
     ) -> tuple[str, str, int]:
-        self._refresh_runtime_settings()
-        normalized_key = self.build_storage_key(object_key)
-        max_allowed = self.max_upload_size_bytes if max_size is None else int(max_size)
-        if self.storage_backend == "s3":
-            payload = await self.read_upload_bytes_async(upload, max_size=max_allowed)
-            file_hash, file_size = self.compute_bytes_sha256_and_size(payload)
-            stored_path = self.store_bytes_in_storage(normalized_key, payload, content_type=upload.content_type)
-            return stored_path, file_hash, file_size
+        try:
+            self._refresh_runtime_settings()
+            normalized_key = self.build_storage_key(object_key)
+            max_allowed = self.max_upload_size_bytes if max_size is None else int(max_size)
+            if self.storage_backend == "s3":
+                payload = await self.read_upload_bytes_async(upload, max_size=max_allowed)
+                file_hash, file_size = self.compute_bytes_sha256_and_size(payload)
+                stored_path = self.store_bytes_in_storage(normalized_key, payload, content_type=upload.content_type)
+                return stored_path, file_hash, file_size
 
-        destination = self.upload_dir / Path(normalized_key)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        await self.write_upload_file_async(upload, destination, max_size=max_allowed)
-        file_hash, file_size = self.compute_file_sha256_and_size(destination)
-        return self.build_upload_url_from_disk_path(destination), file_hash, file_size
+            destination = self.upload_dir / Path(normalized_key)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            await self.write_upload_file_async(upload, destination, max_size=max_allowed)
+            file_hash, file_size = self.compute_file_sha256_and_size(destination)
+            return self.build_upload_url_from_disk_path(destination), file_hash, file_size
+        finally:
+            await self.close_upload_file_async(upload)
 
     def read_stored_file_bytes(self, raw_path: str | None) -> tuple[bytes, str] | None:
         self._refresh_runtime_settings()
