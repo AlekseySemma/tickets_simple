@@ -93,6 +93,7 @@ from app_support.auth_core import (
     resolve_current_user,
     verify_password as core_verify_password,
 )
+from app_support.auth_request_support import AuthRequestSupport
 from app_support.comment_service import CommentService
 from app_support.company_access_support import CompanyAccessSupport
 from app_support.company_cleanup import CompanyCleanupService
@@ -1801,19 +1802,22 @@ get_auth_cookie_params = _email_auth_support.get_auth_cookie_params
 delete_auth_cookie = _email_auth_support.delete_auth_cookie
 
 
+_auth_request_support = AuthRequestSupport(
+    resolve_current_user_func=resolve_current_user,
+    core_get_active_invite_func=core_get_active_invite,
+    user_model=User,
+    registration_invite_model=RegistrationInvite,
+    jwt_module=jwt,
+    jwt_secret=JWT_SECRET,
+    algorithm=ALGORITHM,
+    get_user_auth_token_version_func=get_user_auth_token_version,
+    ensure_user_can_authenticate_func=ensure_user_can_authenticate,
+    http_exception_cls=HTTPException,
+)
+
+
 def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    return resolve_current_user(
-        request,
-        token,
-        db,
-        user_model=User,
-        jwt_module=jwt,
-        jwt_secret=JWT_SECRET,
-        algorithm=ALGORITHM,
-        get_user_auth_token_version_func=get_user_auth_token_version,
-        ensure_user_can_authenticate_func=ensure_user_can_authenticate,
-        http_exception_cls=HTTPException,
-    )
+    return _auth_request_support.get_current_user(request, token, db)
 
 _company_access_support = CompanyAccessSupport(
     depends_func=Depends,
@@ -1917,12 +1921,7 @@ build_unit_parent_map = _org_structure_support.build_unit_parent_map
 would_create_unit_cycle = _org_structure_support.would_create_unit_cycle
 
 
-def get_active_invite(db: Session, token: str | None) -> RegistrationInvite | None:
-    return core_get_active_invite(
-        db,
-        token,
-        registration_invite_model=RegistrationInvite,
-    )
+get_active_invite = _auth_request_support.get_active_invite
 
 # =========================
 # РџСЂРёР»РѕР¶РµРЅРёРµ
