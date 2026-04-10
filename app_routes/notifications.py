@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlsplit
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -161,7 +162,7 @@ def register_notification_routes(
             .update(
                 {
                     Notification.is_read: True,
-                    Notification.read_at: datetime.utcnow(),
+                    Notification.read_at: utc_now_naive(),
                 },
                 synchronize_session=False,
             )
@@ -205,6 +206,6 @@ def register_notification_routes(
             raise HTTPException(404, "Notification not found")
         if not item.is_read:
             item.is_read = True
-            item.read_at = datetime.utcnow()
+            item.read_at = utc_now_naive()
             db.commit()
         return RedirectResponse(url=safe_notification_target(item.url), status_code=http_303_see_other)

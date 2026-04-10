@@ -21,7 +21,7 @@ class PushSupport:
         logger,
         webpush_func,
         webpush_exception_cls,
-        datetime_cls,
+        now_utc_fn,
         path_cls,
         push_subscription_model,
         mobile_device_model,
@@ -42,7 +42,7 @@ class PushSupport:
         self.logger = logger
         self.webpush_func = webpush_func
         self.webpush_exception_cls = webpush_exception_cls
-        self.datetime_cls = datetime_cls
+        self.now_utc_fn = now_utc_fn
         self.path_cls = path_cls
         self.push_subscription_model = push_subscription_model
         self.mobile_device_model = mobile_device_model
@@ -128,7 +128,7 @@ class PushSupport:
                     vapid_claims=vapid_claims,
                     ttl=60 * 60,
                 )
-                sub.updated_at = self.datetime_cls.utcnow()
+                sub.updated_at = self.now_utc_fn()
                 results.append({"id": sub.id, "ok": True})
             except self.webpush_exception_cls as exc:
                 status_code = getattr(getattr(exc, "response", None), "status_code", None)
@@ -169,7 +169,7 @@ class PushSupport:
             )
             try:
                 self.firebase_messaging_module.send(message, app=app)
-                now = self.datetime_cls.utcnow()
+                now = self.now_utc_fn()
                 device.last_seen_at = now
                 device.updated_at = now
                 results.append({"id": device.id, "ok": True, "channel": "android"})

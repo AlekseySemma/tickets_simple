@@ -1,4 +1,5 @@
 from datetime import datetime
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -121,7 +122,7 @@ def register_auth_routes(
             role=role_enum.platform_admin,
             company_id=None,
             email_verified=True,
-            email_verified_at=datetime.utcnow(),
+            email_verified_at=utc_now_naive(),
             **normalize_capability_flags(role_enum.platform_admin),
         )
         try:
@@ -191,7 +192,7 @@ def register_auth_routes(
                 {"request": request, "success": False, "error": "Ссылка подтверждения недействительна или уже использована."},
                 status_code=400,
             )
-        if user.email_verification_expires_at and user.email_verification_expires_at <= datetime.utcnow():
+        if user.email_verification_expires_at and user.email_verification_expires_at <= utc_now_naive():
             return templates.TemplateResponse(
                 "verify_email.html",
                 {"request": request, "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},

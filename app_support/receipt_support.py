@@ -19,6 +19,7 @@ class ReceiptSupport:
         receipt_model,
         receipt_status_enum,
         role_enum,
+        now_utc_fn,
     ):
         self.datetime_cls = datetime_cls
         self.decimal_cls = decimal_cls
@@ -31,6 +32,7 @@ class ReceiptSupport:
         self.receipt_model = receipt_model
         self.receipt_status_enum = receipt_status_enum
         self.role_enum = role_enum
+        self.now_utc_fn = now_utc_fn
 
     def parse_receipt_date(self, raw: str | None):
         value = (raw or "").strip()
@@ -86,7 +88,7 @@ class ReceiptSupport:
         fallback_card_id: int,
     ) -> str:
         ext = self.path_cls(source_filename or "").suffix.lower()[:10] or ".bin"
-        dt_token = (receipt_date_value or self.datetime_cls.utcnow().date()).isoformat()
+        dt_token = (receipt_date_value or self.now_utc_fn().date()).isoformat()
         digits = self.re_module.sub(r"\D+", "", (card_name or "").strip())
         card_last4 = digits[-4:] if len(digits) >= 4 else f"{int(fallback_card_id):04d}"[-4:]
         project_token = self.sanitize_filename_part(project_name, max_len=80)

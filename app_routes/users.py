@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -213,7 +214,7 @@ def register_user_management_routes(
             role=role_value,
             company_id=user.company_id,
             created_by=user.id,
-            expires_at=datetime.utcnow() + timedelta(days=expires_days),
+            expires_at=utc_now_naive() + timedelta(days=expires_days),
         )
         try:
             db.add(invite)

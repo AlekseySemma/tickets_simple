@@ -3,6 +3,7 @@ import io
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -136,7 +137,7 @@ def register_receipt_export_routes(
             output = io.BytesIO()
             workbook.save(output)
             output.seek(0)
-            filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            filename = f"receipts_{utc_now_naive().strftime('%Y%m%d_%H%M%S')}.xlsx"
             headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
             return StreamingResponse(
                 output,
@@ -163,7 +164,7 @@ def register_receipt_export_routes(
                     ]
                 )
             payload = ("\ufeff" + text_buffer.getvalue()).encode("utf-8")
-            filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+            filename = f"receipts_{utc_now_naive().strftime('%Y%m%d_%H%M%S')}.csv"
             headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
             return Response(payload, media_type="text/csv; charset=utf-8", headers=headers)
 
@@ -242,6 +243,6 @@ def register_receipt_export_routes(
                 arcname = f"{dt_str}_{card_name}_{comment}_{amount_token}_r{receipt.id}_f{file_row.id}{ext}"
                 archive.writestr(arcname, payload)
         output.seek(0)
-        filename = f"receipts_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
+        filename = f"receipts_{utc_now_naive().strftime('%Y%m%d_%H%M%S')}.zip"
         headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
         return StreamingResponse(output, media_type="application/zip", headers=headers)

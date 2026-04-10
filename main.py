@@ -131,6 +131,7 @@ from app_support.storage import StorageService
 from app_support.ticket_support import TicketSupport
 from app_support.ticket_runtime_service import TicketRuntimeService
 from app_support.ticket_text_support import TicketTextSupport
+from app_support.time_support import utc_now_naive
 from app_support.text_repair_support import TextRepairSupport
 from app_support.ui_support import UiSupport
 from app_support.user_management import can_manage_company_user, manageable_roles_for_web_user_management
@@ -513,7 +514,7 @@ class Company(Base):
         default=DEFAULT_ARCHIVE_RETENTION_DAYS,
         server_default=str(DEFAULT_ARCHIVE_RETENTION_DAYS),
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class RoleTemplate(Base):
@@ -564,7 +565,7 @@ class RoleTemplate(Base):
             for key, value in normalized.items():
                 kwargs.setdefault(key, value)
         super().__init__(**kwargs)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 class RegistrationInvite(Base):
     __tablename__ = "registration_invites"
@@ -574,7 +575,7 @@ class RegistrationInvite(Base):
     company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id"), index=True, default=None)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     used_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
 
@@ -594,7 +595,7 @@ class Department(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class PaymentCard(Base):
@@ -605,7 +606,7 @@ class PaymentCard(Base):
     owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class Receipt(Base):
@@ -623,8 +624,8 @@ class Receipt(Base):
     supplier: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     processed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class ReceiptFile(Base):
@@ -636,7 +637,7 @@ class ReceiptFile(Base):
     original_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     file_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class UnitType(Base):
@@ -650,7 +651,7 @@ class UnitType(Base):
     name: Mapped[str] = mapped_column(String(255), index=True)
     code: Mapped[Optional[str]] = mapped_column(String(80), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class OrgUnit(Base):
@@ -662,7 +663,7 @@ class OrgUnit(Base):
     unit_type_id: Mapped[int] = mapped_column(ForeignKey("unit_types.id"), index=True)
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class UnitAssignment(Base):
@@ -684,7 +685,7 @@ class UnitAssignment(Base):
     role_code: Mapped[str] = mapped_column(String(64), index=True)
     department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class TicketType(Base):
@@ -697,7 +698,7 @@ class TicketType(Base):
     department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), index=True, default=None)
     archive_retention_days: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class TicketTemplate(Base):
@@ -714,7 +715,7 @@ class TicketTemplate(Base):
     default_executor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
     scope_unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("org_units.id"), index=True, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class Ticket(Base):
@@ -741,7 +742,7 @@ class Ticket(Base):
     delete_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None, index=True)
     is_legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class TicketWatcher(Base):
@@ -751,7 +752,7 @@ class TicketWatcher(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     added_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
 
 
 class TicketGenerationKey(Base):
@@ -771,7 +772,7 @@ class TicketGenerationKey(Base):
     target_unit_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), index=True)
     period_key: Mapped[str] = mapped_column(String(16), index=True)
     ticket_id: Mapped[Optional[int]] = mapped_column(Integer, default=None, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
 
 
 class Comment(Base):
@@ -780,7 +781,7 @@ class Comment(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     text: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class CommentMedia(Base):
@@ -793,7 +794,7 @@ class CommentMedia(Base):
     file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     file_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class Attachment(Base):
@@ -806,7 +807,7 @@ class Attachment(Base):
     file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     file_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 class TicketLog(Base):
     __tablename__ = "ticket_logs"
@@ -814,7 +815,7 @@ class TicketLog(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     action: Mapped[str] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
@@ -823,8 +824,8 @@ class PushSubscription(Base):
     endpoint: Mapped[str] = mapped_column(String(1000), unique=True, index=True)
     p256dh: Mapped[str] = mapped_column(String(255))
     auth: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class MobileDevice(Base):
@@ -839,9 +840,9 @@ class MobileDevice(Base):
     token: Mapped[str] = mapped_column(String(2048), unique=True, index=True)
     app_version: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     device_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 class DeadlineReminderLog(Base):
     __tablename__ = "deadline_reminder_logs"
@@ -849,7 +850,7 @@ class DeadlineReminderLog(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     reminder_key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class ArchiveCleanupLog(Base):
@@ -862,7 +863,7 @@ class ArchiveCleanupLog(Base):
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
     retention_days: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     delete_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
-    deleted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
 
 
 class Notification(Base):
@@ -874,7 +875,7 @@ class Notification(Base):
     body: Mapped[Optional[str]] = mapped_column(Text, default=None)
     url: Mapped[Optional[str]] = mapped_column(String(500), default=None)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
 
 
@@ -888,7 +889,7 @@ class SecurityEvent(Base):
     user_id: Mapped[Optional[int]] = mapped_column(Integer, index=True, default=None)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     detail: Mapped[Optional[str]] = mapped_column(Text, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 def ensure_migrations_ready() -> None:
     try:
@@ -1373,7 +1374,7 @@ def to_local_dt(dt: datetime | None) -> datetime | None:
 
 
 def local_now() -> datetime:
-    return datetime.utcnow() + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
+    return utc_now_naive() + timedelta(hours=LOCAL_TIME_OFFSET_HOURS)
 
 
 _push_support = PushSupport(
@@ -1393,7 +1394,7 @@ _push_support = PushSupport(
     logger=logger,
     webpush_func=webpush,
     webpush_exception_cls=WebPushException,
-    datetime_cls=datetime,
+    now_utc_fn=utc_now_naive,
     path_cls=Path,
     push_subscription_model=PushSubscription,
     mobile_device_model=MobileDevice,
@@ -1482,6 +1483,7 @@ _ui_support = UiSupport(
     org_structure_import_errors=ORG_STRUCTURE_IMPORT_ERRORS,
     org_structure_node_errors=ORG_STRUCTURE_NODE_ERRORS,
     org_structure_executor_errors=ORG_STRUCTURE_EXECUTOR_ERRORS,
+    now_utc_fn=utc_now_naive,
 )
 
 to_local_dt = _ui_support.to_local_dt
@@ -1784,7 +1786,7 @@ _email_auth_support = EmailAuthSupport(
     email_verification_expire_hours_getter=lambda: EMAIL_VERIFICATION_EXPIRE_HOURS,
     password_reset_expire_hours_getter=lambda: PASSWORD_RESET_EXPIRE_HOURS,
     access_token_cookie_max_age_getter=lambda: ACCESS_TOKEN_COOKIE_MAX_AGE,
-    now_utc_fn=datetime.utcnow,
+    now_utc_fn=utc_now_naive,
     is_email_verification_required_func=is_email_verification_required,
     prepare_user_email_verification_func=prepare_user_email_verification,
     prepare_user_password_reset_func=prepare_user_password_reset,
@@ -1849,6 +1851,7 @@ _receipt_support = ReceiptSupport(
     receipt_model=Receipt,
     receipt_status_enum=ReceiptStatus,
     role_enum=Role,
+    now_utc_fn=utc_now_naive,
 )
 
 parse_receipt_date = _receipt_support.parse_receipt_date
@@ -2806,3 +2809,5 @@ register_tickets_api_routes(
 # =========================
 # WEB UI
 # =========================
+
+

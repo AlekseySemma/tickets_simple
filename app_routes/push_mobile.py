@@ -1,4 +1,5 @@
 from datetime import datetime
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 
@@ -45,7 +46,7 @@ def register_push_mobile_routes(
             existing.user_id = user.id
             existing.p256dh = p256dh
             existing.auth = auth
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = utc_now_naive()
         else:
             db.add(
                 push_subscription_model(
@@ -144,7 +145,7 @@ def register_push_mobile_routes(
         if not token or not device_id:
             raise HTTPException(400, "Device token and device id are required")
 
-        now = datetime.utcnow()
+        now = utc_now_naive()
         existing_by_device = (
             db.query(mobile_device_model)
             .filter(mobile_device_model.platform == platform, mobile_device_model.device_id == device_id)

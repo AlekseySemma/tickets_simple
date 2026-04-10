@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import secrets
 from urllib.parse import quote
 
 from fastapi import HTTPException
+from app_support.time_support import utc_now_naive
 
 
 def hash_password(password: str, *, pwd_context) -> str:
@@ -33,7 +34,7 @@ def create_access_token(
     jwt_secret: str,
     algorithm: str,
     access_token_expire_minutes: int,
-    now_utc_fn=datetime.utcnow,
+    now_utc_fn=utc_now_naive,
 ) -> str:
     exp = now_utc_fn() + timedelta(minutes=access_token_expire_minutes)
     return jwt_module.encode(
@@ -69,7 +70,7 @@ def ensure_user_can_authenticate(
         raise http_exception_cls(status_code=403, detail="Email address is not verified")
 
 
-def mark_user_email_verified(user: object, *, now_utc_fn=datetime.utcnow) -> None:
+def mark_user_email_verified(user: object, *, now_utc_fn=utc_now_naive) -> None:
     now = now_utc_fn()
     user.email_verified = True
     user.email_verified_at = now
@@ -83,7 +84,7 @@ def prepare_user_email_verification(
     *,
     email_verification_expire_hours: int,
     force_new_token: bool = False,
-    now_utc_fn=datetime.utcnow,
+    now_utc_fn=utc_now_naive,
     token_factory=secrets.token_urlsafe,
 ) -> str:
     now = now_utc_fn()
@@ -112,7 +113,7 @@ def prepare_user_password_reset(
     *,
     password_reset_expire_hours: int,
     force_new_token: bool = False,
-    now_utc_fn=datetime.utcnow,
+    now_utc_fn=utc_now_naive,
     token_factory=secrets.token_urlsafe,
 ) -> str:
     now = now_utc_fn()
@@ -210,7 +211,7 @@ def get_active_invite(
     token: str | None,
     *,
     registration_invite_model,
-    now_utc_fn=datetime.utcnow,
+    now_utc_fn=utc_now_naive,
 ):
     token_value = (token or "").strip()
     if not token_value:

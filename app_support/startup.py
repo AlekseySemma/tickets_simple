@@ -1,7 +1,7 @@
-from datetime import datetime
 import os
 import threading
 from typing import Callable
+from app_support.time_support import utc_now_naive
 
 
 def maybe_repair_text_on_start(*, enabled: bool, session_factory, repair_fn: Callable) -> None:
@@ -40,7 +40,7 @@ def ensure_platform_admin_user(
             role=role_enum.platform_admin,
             company_id=None,
             email_verified=True,
-            email_verified_at=datetime.utcnow(),
+            email_verified_at=utc_now_naive(),
             **normalize_capability_flags(role_enum.platform_admin),
         )
         db.add(user)

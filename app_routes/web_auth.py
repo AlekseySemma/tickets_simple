@@ -1,4 +1,5 @@
 from datetime import datetime
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -226,7 +227,7 @@ def register_web_auth_routes(
             db.flush()
 
             invite.used_by = user.id
-            invite.used_at = datetime.utcnow()
+            invite.used_at = utc_now_naive()
             db.commit()
         except sqlalchemy_error:
             audit_security_event("web_register", request, success=False, email=email, detail="db_error")
@@ -301,7 +302,7 @@ def register_web_auth_routes(
                 {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
                 status_code=400,
             )
-        if user.password_reset_expires_at and user.password_reset_expires_at <= datetime.utcnow():
+        if user.password_reset_expires_at and user.password_reset_expires_at <= utc_now_naive():
             return templates.TemplateResponse(
                 "password_reset_confirm.html",
                 {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
@@ -327,7 +328,7 @@ def register_web_auth_routes(
                 {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
                 status_code=400,
             )
-        if user.password_reset_expires_at and user.password_reset_expires_at <= datetime.utcnow():
+        if user.password_reset_expires_at and user.password_reset_expires_at <= utc_now_naive():
             return templates.TemplateResponse(
                 "password_reset_confirm.html",
                 {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},

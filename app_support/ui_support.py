@@ -19,6 +19,7 @@ class UiSupport:
         org_structure_import_errors,
         org_structure_node_errors,
         org_structure_executor_errors,
+        now_utc_fn,
     ):
         self.datetime_cls = datetime_cls
         self.timedelta_cls = timedelta_cls
@@ -37,6 +38,7 @@ class UiSupport:
         self.org_structure_import_errors = set(org_structure_import_errors)
         self.org_structure_node_errors = set(org_structure_node_errors)
         self.org_structure_executor_errors = set(org_structure_executor_errors)
+        self.now_utc_fn = now_utc_fn
 
     def to_local_dt(self, dt):
         if dt is None:
@@ -44,7 +46,7 @@ class UiSupport:
         return dt + self.timedelta_cls(hours=self.local_time_offset_hours)
 
     def local_now(self):
-        return self.datetime_cls.utcnow() + self.timedelta_cls(hours=self.local_time_offset_hours)
+        return self.now_utc_fn() + self.timedelta_cls(hours=self.local_time_offset_hours)
 
     def clamp_deadline_soon_warning_minutes(self, value: int) -> int:
         return max(
@@ -185,7 +187,7 @@ class UiSupport:
         if local_dt is None:
             return "-"
 
-        now_local = self.to_local_dt(self.datetime_cls.utcnow())
+        now_local = self.to_local_dt(self.now_utc_fn())
         if not now_local:
             return local_dt.strftime("%d.%m.%Y %H:%M")
 

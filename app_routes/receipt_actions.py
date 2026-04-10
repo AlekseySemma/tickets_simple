@@ -1,4 +1,5 @@
 from datetime import datetime
+from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -45,9 +46,9 @@ def register_receipt_action_routes(
         except ValueError:
             return RedirectResponse(url="/web/receipts?err=bad_status", status_code=http_303_see_other)
         receipt.status = new_status
-        receipt.updated_at = datetime.utcnow()
+        receipt.updated_at = utc_now_naive()
         if new_status in (receipt_status_enum.accepted, receipt_status_enum.rejected):
-            receipt.processed_at = datetime.utcnow()
+            receipt.processed_at = utc_now_naive()
             receipt.processed_by = user.id
         else:
             receipt.processed_at = None
@@ -121,7 +122,7 @@ def register_receipt_action_routes(
         receipt.receipt_date = receipt_date
         receipt.category = category
         receipt.supplier = supplier
-        receipt.updated_at = datetime.utcnow()
+        receipt.updated_at = utc_now_naive()
         try:
             db.commit()
         except sqlalchemy_error:
@@ -234,7 +235,7 @@ def register_receipt_action_routes(
             .filter(receipt_model.company_id == user.company_id, receipt_model.id.in_(receipt_ids))
             .all()
         )
-        now = datetime.utcnow()
+        now = utc_now_naive()
         for receipt in receipts:
             receipt.status = new_status
             receipt.updated_at = now
