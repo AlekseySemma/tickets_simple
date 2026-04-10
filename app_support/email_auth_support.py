@@ -72,7 +72,7 @@ class EmailAuthSupport:
 
         smtp_host = self.smtp_host_getter()
         if not smtp_host:
-            self.logger.warning("SMTP_HOST is not configured. Email to %s was not sent.", recipient)
+            self.logger.info("SMTP_HOST is not configured. Email to %s was not sent.", recipient)
             return False
 
         smtp = None
@@ -120,7 +120,7 @@ class EmailAuthSupport:
         )
         sent = self.send_email_message(user.email, subject, text_body, html_body=html_body)
         if not sent:
-            self.logger.warning("Verification link for %s: %s", user.email, verification_url)
+            self.logger.info("Verification link for %s: %s", user.email, verification_url)
         user.email_verification_sent_at = self.now_utc_fn()
         db.commit()
         db.refresh(user)
@@ -145,7 +145,7 @@ class EmailAuthSupport:
         )
         sent = self.send_email_message(user.email, subject, text_body, html_body=html_body)
         if not sent:
-            self.logger.warning("Password reset link for %s: %s", user.email, reset_url)
+            self.logger.info("Password reset link for %s: %s", user.email, reset_url)
         user.password_reset_sent_at = self.now_utc_fn()
         db.commit()
         db.refresh(user)
