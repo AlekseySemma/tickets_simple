@@ -72,6 +72,7 @@ def register_ticket_template_routes(
             .all()
         )
         return templates.TemplateResponse(
+            request,
             "ticket_templates.html",
             {
                 "request": request,

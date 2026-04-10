@@ -114,6 +114,7 @@ def register_admin_company_routes(
             )
 
         return templates.TemplateResponse(
+            request,
             "admin_companies.html",
             {
                 "request": request,
@@ -193,6 +194,7 @@ def register_admin_company_routes(
             "delete_failed": "Не удалось удалить пользователя. Повторите попытку.",
         }
         return templates.TemplateResponse(
+            request,
             "admin_company_settings.html",
             {
                 "request": request,

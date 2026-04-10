@@ -11,7 +11,7 @@ def register_public_routes(
 ):
     @app.get("/")
     def root(request: Request):
-        return templates.TemplateResponse("landing.html", {"request": request})
+        return templates.TemplateResponse(request, "landing.html", {"request": request})
 
     @app.get("/health")
     def health():
@@ -44,6 +44,7 @@ def register_public_routes(
     @app.get("/web/pwa-check")
     def web_pwa_check(request: Request, user=Depends(get_current_user)):
         return templates.TemplateResponse(
+            request,
             "pwa_check.html",
             {
                 "request": request,

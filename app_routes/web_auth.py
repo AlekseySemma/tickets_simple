@@ -54,7 +54,7 @@ def register_web_auth_routes(
             info_message = "Сессии на всех устройствах завершены. Войдите снова."
         elif info == "password_changed":
             info_message = "Пароль изменён. Войдите с новым паролем."
-        return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info_message})
+        return templates.TemplateResponse(request, "login.html", {"request": request, "error": None, "info": info_message})
 
     @app.post("/web/login")
     async def web_login(request: Request, db=Depends(get_db)):
@@ -68,6 +68,7 @@ def register_web_auth_routes(
         if limited_ip or limited_user:
             audit_security_event("web_login", request, success=False, email=email, detail="rate_limited")
             return templates.TemplateResponse(
+                request,
                 "login.html",
                 {"request": request, "error": "Слишком много попыток входа. Попробуйте позже.", "info": None},
                 status_code=429,
@@ -77,12 +78,14 @@ def register_web_auth_routes(
         if not user or not verify_password(password, user.password_hash):
             audit_security_event("web_login", request, success=False, email=email, detail="invalid_credentials")
             return templates.TemplateResponse(
+                request,
                 "login.html",
                 {"request": request, "error": "Неверный email или пароль", "info": None},
             )
         if not is_user_email_verified(user):
             audit_security_event("web_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
             return templates.TemplateResponse(
+                request,
                 "login.html",
                 {
                     "request": request,
@@ -105,6 +108,7 @@ def register_web_auth_routes(
     @app.get("/web/register-company")
     def web_register_company_page(request: Request):
         return templates.TemplateResponse(
+            request,
             "register_company.html",
             {"request": request, "error": None, "success": False},
         )
@@ -144,17 +148,20 @@ def register_web_auth_routes(
                 rl_register_window_sec=rl_register_window_sec,
             )
             return templates.TemplateResponse(
+                request,
                 "register_company.html",
                 {"request": request, "error": None, "success": True},
             )
         except HTTPException as exc:
             return templates.TemplateResponse(
+                request,
                 "register_company.html",
                 {"request": request, "error": str(exc.detail), "success": False},
             )
         except Exception:
             audit_security_event("register_company", request, success=False, email=admin_email, detail="validation_error")
             return templates.TemplateResponse(
+                request,
                 "register_company.html",
                 {"request": request, "error": "РџСЂРѕРІРµСЂСЊС‚Рµ РІРІРµРґРµРЅРЅС‹Рµ РґР°РЅРЅС‹Рµ", "success": False},
             )
@@ -164,6 +171,7 @@ def register_web_auth_routes(
         invite = get_active_invite(db, token)
         role_value = invite.role.value if invite else ""
         return templates.TemplateResponse(
+            request,
             "register.html",
             {
                 "request": request,
@@ -186,6 +194,7 @@ def register_web_auth_routes(
         if limited:
             audit_security_event("web_register", request, success=False, email=email, detail="rate_limited")
             return templates.TemplateResponse(
+                request,
                 "register.html",
                 {"request": request, "token": token, "role_value": "", "error": "Слишком много попыток. Попробуйте позже.", "success": False},
                 status_code=429,
@@ -197,18 +206,21 @@ def register_web_auth_routes(
         if not invite:
             audit_security_event("web_register", request, success=False, email=email, detail="invalid_invite")
             return templates.TemplateResponse(
+                request,
                 "register.html",
                 {"request": request, "token": token, "role_value": role_value, "error": "Ссылка недействительна", "success": False},
             )
         if not (name and email and password):
             audit_security_event("web_register", request, success=False, email=email, detail="missing_fields")
             return templates.TemplateResponse(
+                request,
                 "register.html",
                 {"request": request, "token": token, "role_value": role_value, "error": "Заполните все поля", "success": False},
             )
         if db.query(user_model).filter(user_model.email == email).first():
             audit_security_event("web_register", request, success=False, email=email, detail="email_exists")
             return templates.TemplateResponse(
+                request,
                 "register.html",
                 {"request": request, "token": token, "role_value": role_value, "error": "Email уже используется", "success": False},
             )
@@ -233,6 +245,7 @@ def register_web_auth_routes(
             audit_security_event("web_register", request, success=False, email=email, detail="db_error")
             db.rollback()
             return templates.TemplateResponse(
+                request,
                 "register.html",
                 {"request": request, "token": token, "role_value": role_value, "error": "Не удалось завершить регистрацию", "success": False},
             )
@@ -243,6 +256,7 @@ def register_web_auth_routes(
 
         audit_security_event("web_register", request, success=True, email=email, user_id=user.id)
         return templates.TemplateResponse(
+            request,
             "register.html",
             {"request": request, "token": "", "role_value": invite.role.value, "error": None, "success": True},
         )
@@ -250,6 +264,7 @@ def register_web_auth_routes(
     @app.get("/web/password-reset")
     def web_password_reset_page(request: Request):
         return templates.TemplateResponse(
+            request,
             "password_reset_request.html",
             {"request": request, "success": False, "message": None},
         )
@@ -282,6 +297,7 @@ def register_web_auth_routes(
         else:
             audit_security_event("password_reset_request", request, success=False, email=email, detail="rate_limited")
         return templates.TemplateResponse(
+            request,
             "password_reset_request.html",
             {
                 "request": request,
@@ -298,17 +314,20 @@ def register_web_auth_routes(
             user = db.query(user_model).filter(user_model.password_reset_token == token_value).first()
         if not user:
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
                 status_code=400,
             )
         if user.password_reset_expires_at and user.password_reset_expires_at <= utc_now_naive():
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
                 status_code=400,
             )
         return templates.TemplateResponse(
+            request,
             "password_reset_confirm.html",
             {"request": request, "token": token_value, "success": False, "error": None},
         )
@@ -324,30 +343,35 @@ def register_web_auth_routes(
             user = db.query(user_model).filter(user_model.password_reset_token == token_value).first()
         if not user:
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": "", "success": False, "error": "Ссылка сброса пароля недействительна или уже использована."},
                 status_code=400,
             )
         if user.password_reset_expires_at and user.password_reset_expires_at <= utc_now_naive():
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": "", "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
                 status_code=400,
             )
         if not password:
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": token_value, "success": False, "error": "Введите новый пароль."},
                 status_code=400,
             )
         if len(password) < 8:
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": token_value, "success": False, "error": "Пароль должен быть не короче 8 символов."},
                 status_code=400,
             )
         if password != password_confirm:
             return templates.TemplateResponse(
+                request,
                 "password_reset_confirm.html",
                 {"request": request, "token": token_value, "success": False, "error": "Пароли не совпадают."},
                 status_code=400,
@@ -358,6 +382,7 @@ def register_web_auth_routes(
         db.commit()
         audit_security_event("password_reset_confirm", request, success=True, email=user.email, user_id=user.id)
         return templates.TemplateResponse(
+            request,
             "password_reset_confirm.html",
             {"request": request, "token": "", "success": True, "error": None},
         )

@@ -378,6 +378,7 @@ def render_web_tickets_page(
     tickets = tickets_query.offset(start).limit(per_page).all()
 
     response = templates.TemplateResponse(
+        request,
         "tickets.html",
         {
             "request": request,

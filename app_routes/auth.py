@@ -188,12 +188,14 @@ def register_auth_routes(
 
         if not user:
             return templates.TemplateResponse(
+                request,
                 "verify_email.html",
                 {"request": request, "success": False, "error": "Ссылка подтверждения недействительна или уже использована."},
                 status_code=400,
             )
         if user.email_verification_expires_at and user.email_verification_expires_at <= utc_now_naive():
             return templates.TemplateResponse(
+                request,
                 "verify_email.html",
                 {"request": request, "success": False, "error": "Срок действия ссылки истёк. Запросите новое письмо."},
                 status_code=400,
@@ -203,6 +205,7 @@ def register_auth_routes(
         db.commit()
         audit_security_event("email_verify", request, success=True, email=user.email, user_id=user.id)
         return templates.TemplateResponse(
+            request,
             "verify_email.html",
             {"request": request, "success": True, "error": None},
         )
@@ -210,6 +213,7 @@ def register_auth_routes(
     @app.get("/web/verify-email/resend")
     def web_resend_verification_page(request: Request):
         return templates.TemplateResponse(
+            request,
             "verify_email_resend.html",
             {"request": request, "success": False, "message": None},
         )
@@ -242,6 +246,7 @@ def register_auth_routes(
         else:
             audit_security_event("email_verify_resend", request, success=False, email=email, detail="rate_limited")
         return templates.TemplateResponse(
+            request,
             "verify_email_resend.html",
             {
                 "request": request,

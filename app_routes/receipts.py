@@ -155,6 +155,7 @@ def register_receipt_routes(
             err = ""
 
         return templates.TemplateResponse(
+            request,
             "receipts.html",
             {
                 "request": request,

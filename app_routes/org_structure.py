@@ -365,6 +365,7 @@ def register_org_structure_routes(
         ]
 
         return templates.TemplateResponse(
+            request,
             "org_structure.html",
             {
                 "request": request,

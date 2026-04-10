@@ -113,6 +113,7 @@ def register_settings_routes(
             for meta in settings_sections.values()
         ]
         return templates.TemplateResponse(
+            request,
             "settings.html",
             {
                 "request": request,

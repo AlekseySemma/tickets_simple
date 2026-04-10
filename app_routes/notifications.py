@@ -122,6 +122,7 @@ def register_notification_routes(
             or 0
         )
         return templates.TemplateResponse(
+            request,
             "notifications.html",
             {
                 "request": request,

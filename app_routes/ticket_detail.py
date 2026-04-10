@@ -322,6 +322,7 @@ def register_ticket_detail_routes(
             deadline_time4 = ticket.deadline.strftime("%H%M")
 
         return templates.TemplateResponse(
+            request,
             "ticket_edit.html",
             {
                 "request": request,
@@ -632,6 +633,7 @@ def register_ticket_detail_routes(
         )
 
         return templates.TemplateResponse(
+            request,
             "ticket_detail.html",
             {
                 "request": request,

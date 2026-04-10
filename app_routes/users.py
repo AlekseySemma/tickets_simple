@@ -162,6 +162,7 @@ def register_user_management_routes(
             "delete_self": "Свой аккаунт удалить нельзя.",
         }
         return templates.TemplateResponse(
+            request,
             "users.html",
             {
                 "request": request,
