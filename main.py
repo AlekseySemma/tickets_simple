@@ -94,6 +94,7 @@ from app_support.auth_core import (
     verify_password as core_verify_password,
 )
 from app_support.comment_service import CommentService
+from app_support.company_access_support import CompanyAccessSupport
 from app_support.company_cleanup import CompanyCleanupService
 from app_support.deadline_reminder_service import DeadlineReminderService
 from app_support.email_auth_support import EmailAuthSupport
@@ -1814,43 +1815,22 @@ def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme
         http_exception_cls=HTTPException,
     )
 
-def require_role(*roles: Role):
-    def checker(user: User = Depends(get_current_user)):
-        if user.role not in roles:
-            raise HTTPException(status_code=403, detail="Forbidden")
-        return user
-    return checker
+_company_access_support = CompanyAccessSupport(
+    depends_func=Depends,
+    get_current_user_func=get_current_user,
+    ensure_company_user_func=ensure_company_user,
+    http_exception_cls=HTTPException,
+    ticket_model=Ticket,
+    receipt_model=Receipt,
+    list_tickets_for_user_func=list_tickets_for_user,
+    is_platform_admin_func=is_platform_admin,
+    role_enum=Role,
+)
 
-
-def get_company_ticket_or_404(db: Session, user: User, ticket_id: int) -> Ticket:
-    ensure_company_user(user)
-    ticket = db.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    if ticket.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
-    return ticket
-
-
-def get_company_receipt_or_404(db: Session, user: User, receipt_id: int) -> Receipt:
-    ensure_company_user(user)
-    receipt = db.get(Receipt, receipt_id)
-    if not receipt:
-        raise HTTPException(404, "Receipt not found")
-    if receipt.company_id != user.company_id:
-        raise HTTPException(403, "Forbidden")
-    return receipt
-
-
-def list_tickets(db: Session, user: User):
-    return list_tickets_for_user(
-        db,
-        user,
-        ticket_model=Ticket,
-        is_platform_admin=is_platform_admin,
-        ensure_company_user=ensure_company_user,
-        role_enum=Role,
-    )
+require_role = _company_access_support.require_role
+get_company_ticket_or_404 = _company_access_support.get_company_ticket_or_404
+get_company_receipt_or_404 = _company_access_support.get_company_receipt_or_404
+list_tickets = _company_access_support.list_tickets
 
 
 _receipt_support = ReceiptSupport(
