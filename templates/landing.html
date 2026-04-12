@@ -226,7 +226,7 @@
       .hero {
         position: relative;
         min-height: var(--hero-height);
-        padding: 112px 0 64px;
+        padding: 96px 0 56px;
         overflow: clip;
         background:
           linear-gradient(180deg, rgba(14, 26, 33, 0.2), rgba(14, 26, 33, 0.06)),
@@ -251,11 +251,12 @@
       .hero-shell {
         width: min(1280px, calc(100% - 32px));
         margin: 0 auto;
-        min-height: calc(var(--hero-height) - 148px);
+        min-height: calc(var(--hero-height) - 126px);
         display: grid;
         grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
         gap: 34px;
-        align-items: center;
+        align-items: start;
+        padding-top: 18px;
         position: relative;
         z-index: 2;
       }
@@ -263,8 +264,8 @@
       .hero-copy {
         max-width: 620px;
         color: #fffdf7;
-        padding: 8px 0 18px;
-        align-self: center;
+        padding: 0 0 18px;
+        align-self: start;
       }
 
       .hero-kicker {
@@ -346,6 +347,7 @@
         min-height: auto;
         max-width: 640px;
         justify-self: end;
+        align-self: start;
         padding: 18px;
         border-radius: 32px;
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -483,7 +485,7 @@
 
       .signal-split {
         display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+        grid-template-columns: 1fr;
         gap: 14px;
       }
 
