@@ -251,19 +251,20 @@
       .hero-shell {
         width: min(1280px, calc(100% - 32px));
         margin: 0 auto;
-        min-height: calc(var(--hero-height) - 176px);
+        min-height: calc(var(--hero-height) - 148px);
         display: grid;
-        grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
+        grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
         gap: 34px;
-        align-items: end;
+        align-items: center;
         position: relative;
         z-index: 2;
       }
 
       .hero-copy {
-        max-width: 560px;
+        max-width: 620px;
         color: #fffdf7;
-        padding: 18px 0 8px;
+        padding: 8px 0 18px;
+        align-self: center;
       }
 
       .hero-kicker {
@@ -293,9 +294,10 @@
       .hero-copy h1 {
         margin: 22px 0 16px;
         font-family: "Fraunces", serif;
-        font-size: clamp(42px, 6vw, 78px);
+        font-size: clamp(40px, 5.3vw, 70px);
         line-height: 0.94;
         letter-spacing: -0.02em;
+        max-width: 10ch;
       }
 
       .hero-copy p {
@@ -303,6 +305,7 @@
         font-size: 18px;
         line-height: 1.58;
         color: rgba(255, 251, 244, 0.76);
+        max-width: 560px;
       }
 
       .hero-actions {
@@ -340,9 +343,11 @@
 
       .signal-stage {
         position: relative;
-        min-height: 620px;
-        padding: 24px;
-        border-radius: 36px;
+        min-height: auto;
+        max-width: 640px;
+        justify-self: end;
+        padding: 18px;
+        border-radius: 32px;
         border: 1px solid rgba(255, 255, 255, 0.12);
         background:
           linear-gradient(180deg, rgba(247, 251, 250, 0.18), rgba(247, 251, 250, 0.04)),
@@ -365,12 +370,12 @@
         position: relative;
         z-index: 1;
         display: grid;
-        gap: 14px;
+        gap: 12px;
       }
 
       .signal-rail {
-        padding: 18px;
-        border-radius: 24px;
+        padding: 16px;
+        border-radius: 22px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         background: var(--panel);
         box-shadow: var(--shadow-md);
@@ -488,8 +493,8 @@
       }
 
       .notice-band {
-        padding: 16px 18px;
-        border-radius: 22px;
+        padding: 14px 16px;
+        border-radius: 18px;
         background:
           radial-gradient(220px 100px at 100% 0, rgba(31, 157, 143, 0.18), transparent 70%),
           linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.72));
@@ -506,6 +511,13 @@
         font-size: 13px;
         line-height: 1.5;
         color: #5d7580;
+      }
+
+      .hero-note {
+        margin-top: 12px;
+        color: rgba(255, 251, 244, 0.68);
+        font-size: 13px;
+        line-height: 1.5;
       }
 
       .section {
@@ -873,6 +885,11 @@
           min-height: auto;
           width: min(1280px, calc(100% - 20px));
         }
+
+        .signal-stage {
+          max-width: none;
+          justify-self: stretch;
+        }
       }
 
       @media (max-width: 760px) {
@@ -985,6 +1002,7 @@
             <a class="btn btn-primary" href="/web/register-company">Попробовать для команды</a>
             <a class="btn btn-secondary" href="/web/login">Войти</a>
           </div>
+          <div class="hero-note">Подходит для внутренних сервисных команд, эксплуатации, подрядчиков и регулярных рабочих запросов.</div>
           <div class="hero-meta">
             <div class="hero-meta-item">
               <strong>Все в одном месте</strong>
@@ -1094,31 +1112,6 @@
                 </div>
               </div>
             </div>
-
-            <section class="signal-rail">
-              <div class="signal-rail-header">
-                <div class="signal-rail-title">Без сложного старта</div>
-                <span class="signal-chip is-mint">С первых дней</span>
-              </div>
-              <div class="auth-lines">
-                <div class="auth-line">
-                  <div class="line-code">A</div>
-                  <div>
-                    <strong>Быстрое подключение команды</strong>
-                    <span>Можно создать компанию, пригласить людей и начать работать без долгого внедрения.</span>
-                  </div>
-                  <div class="line-status is-good">СТАРТ</div>
-                </div>
-                <div class="auth-line">
-                  <div class="line-code">B</div>
-                  <div>
-                    <strong>Работа там, где удобно</strong>
-                    <span>Сервис доступен в браузере и подходит для работы как в офисе, так и в поле.</span>
-                  </div>
-                  <div class="line-status is-good">ГИБКО</div>
-                </div>
-              </div>
-            </section>
           </div>
         </div>
       </div>
