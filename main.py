@@ -188,6 +188,7 @@ if len(JWT_SECRET) < 32:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 РґРЅРµР№
 ACCESS_TOKEN_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+AUTH_COOKIE_DOMAIN = (os.getenv("AUTH_COOKIE_DOMAIN") or "").strip()
 PUBLIC_WEB_PATHS = {
     "/web/login",
     "/web/register",
@@ -1790,6 +1791,7 @@ _email_auth_support = EmailAuthSupport(
     email_verification_expire_hours_getter=lambda: EMAIL_VERIFICATION_EXPIRE_HOURS,
     password_reset_expire_hours_getter=lambda: PASSWORD_RESET_EXPIRE_HOURS,
     access_token_cookie_max_age_getter=lambda: ACCESS_TOKEN_COOKIE_MAX_AGE,
+    auth_cookie_domain_getter=lambda: AUTH_COOKIE_DOMAIN,
     now_utc_fn=utc_now_naive,
     is_email_verification_required_func=is_email_verification_required,
     prepare_user_email_verification_func=prepare_user_email_verification,

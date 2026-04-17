@@ -137,13 +137,53 @@ def build_password_reset_url(request, token: str, *, quote_fn=quote) -> str:
     return f"{str(request.base_url).rstrip('/')}/web/password-reset/confirm?token={quote_fn(token)}"
 
 
-def get_auth_cookie_params(request, *, access_token_cookie_max_age: int) -> dict[str, object]:
-    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+def normalize_auth_cookie_host(raw_host: str | None) -> str:
+    host = (raw_host or "").split(",")[0].strip().lower()
+    if not host:
+        return ""
+    if host.startswith("["):
+        return host
+    if ":" in host:
+        host = host.split(":", 1)[0].strip()
+    return host
+
+
+def normalize_auth_cookie_domain(raw_domain: str | None) -> str | None:
+    value = (raw_domain or "").strip().lower()
+    if not value:
+        return None
+    if "://" in value:
+        value = value.split("://", 1)[1]
+    value = value.split("/", 1)[0].split(":", 1)[0].strip().strip(".")
+    if not value:
+        return None
+    return f".{value}"
+
+
+def host_matches_auth_cookie_domain(host: str, cookie_domain: str | None) -> bool:
+    normalized_host = normalize_auth_cookie_host(host)
+    normalized_domain = normalize_auth_cookie_domain(cookie_domain)
+    if not normalized_host or not normalized_domain:
+        return False
+    bare_domain = normalized_domain.lstrip(".")
+    return normalized_host == bare_domain or normalized_host.endswith(f".{bare_domain}")
+
+
+def get_auth_cookie_params(
+    request,
+    *,
+    access_token_cookie_max_age: int,
+    auth_cookie_domain: str | None = None,
+) -> dict[str, object]:
+    host = normalize_auth_cookie_host(request.headers.get("x-forwarded-host") or request.headers.get("host") or "")
     forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
     scheme = forwarded_proto or request.url.scheme
 
     cookie_domain = None
-    if host.endswith(".servora.ru") or host == "servora.ru":
+    configured_cookie_domain = normalize_auth_cookie_domain(auth_cookie_domain)
+    if configured_cookie_domain and host_matches_auth_cookie_domain(host, configured_cookie_domain):
+        cookie_domain = configured_cookie_domain
+    elif host.endswith(".servora.ru") or host == "servora.ru":
         cookie_domain = ".servora.ru"
 
     return {
@@ -157,10 +197,17 @@ def get_auth_cookie_params(request, *, access_token_cookie_max_age: int) -> dict
     }
 
 
-def delete_auth_cookie(response, request, *, access_token_cookie_max_age: int) -> None:
+def delete_auth_cookie(
+    response,
+    request,
+    *,
+    access_token_cookie_max_age: int,
+    auth_cookie_domain: str | None = None,
+) -> None:
     cookie_params = get_auth_cookie_params(
         request,
         access_token_cookie_max_age=access_token_cookie_max_age,
+        auth_cookie_domain=auth_cookie_domain,
     )
     response.delete_cookie(
         "access_token",

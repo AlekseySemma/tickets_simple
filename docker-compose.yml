@@ -3,9 +3,9 @@ services:
     image: postgres:15
     restart: always
     environment:
-      POSTGRES_DB: tickets
-      POSTGRES_USER: tickets
-      POSTGRES_PASSWORD: change_me_strong
+      POSTGRES_DB: ${POSTGRES_DB:-tickets}
+      POSTGRES_USER: ${POSTGRES_USER:-tickets}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_strong}
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -17,7 +17,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://tickets:change_me_strong@db:5432/tickets
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tickets}:${POSTGRES_PASSWORD:-change_me_strong}@db:5432/${POSTGRES_DB:-tickets}
       JWT_SECRET: ${JWT_SECRET}
       UPLOAD_DIR: /data/uploads
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
@@ -28,6 +28,7 @@ services:
       S3_REGION: ${S3_REGION:-}
       S3_PRESIGNED_TTL_SECONDS: ${S3_PRESIGNED_TTL_SECONDS:-3600}
       S3_ADDRESSING_STYLE: ${S3_ADDRESSING_STYLE:-path}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: /app/private_key.pem
       VAPID_SUBJECT: ${VAPID_SUBJECT}

@@ -18,6 +18,7 @@ class EmailAuthSupport:
         email_verification_expire_hours_getter,
         password_reset_expire_hours_getter,
         access_token_cookie_max_age_getter,
+        auth_cookie_domain_getter,
         now_utc_fn,
         is_email_verification_required_func,
         prepare_user_email_verification_func,
@@ -43,6 +44,7 @@ class EmailAuthSupport:
         self.email_verification_expire_hours_getter = email_verification_expire_hours_getter
         self.password_reset_expire_hours_getter = password_reset_expire_hours_getter
         self.access_token_cookie_max_age_getter = access_token_cookie_max_age_getter
+        self.auth_cookie_domain_getter = auth_cookie_domain_getter
         self.now_utc_fn = now_utc_fn
         self.is_email_verification_required_func = is_email_verification_required_func
         self.prepare_user_email_verification_func = prepare_user_email_verification_func
@@ -155,6 +157,7 @@ class EmailAuthSupport:
         return self.core_get_auth_cookie_params_func(
             request,
             access_token_cookie_max_age=self.access_token_cookie_max_age_getter(),
+            auth_cookie_domain=self.auth_cookie_domain_getter(),
         )
 
     def delete_auth_cookie(self, response, request) -> None:
@@ -162,4 +165,5 @@ class EmailAuthSupport:
             response,
             request,
             access_token_cookie_max_age=self.access_token_cookie_max_age_getter(),
+            auth_cookie_domain=self.auth_cookie_domain_getter(),
         )
