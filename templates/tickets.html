@@ -358,7 +358,27 @@
       padding: 14px;
       margin-bottom: 8px;
     }
-    .ticket-head-id { font-size: 12px; color: #6f8185; margin-bottom: 4px; }
+    .ticket-head-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .ticket-head-id {
+      font-size: 12px;
+      color: #6f8185;
+      min-width: 0;
+    }
+    .ticket-head-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 4px;
+      flex: 0 0 auto;
+      max-width: 58%;
+    }
     .ticket-head-project { font-size: 13px; color: #3f6669; margin-bottom: 6px; }
     .ticket-head-title a { color: #1f5c5f; }
     .ticket-head-title a:hover { color: #18484b; }
@@ -1248,7 +1268,38 @@
         <div class="ticket-row">
           <div class="ticket-main">
             <div class="ticket-head">
-              <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+              <div class="ticket-head-top">
+                <div class="ticket-head-id">ID заявки: #{{ t.id }}</div>
+                <div class="ticket-head-status">
+                  {% if deadline_overdue %}
+                    <span id="overdue-badge-{{ t.id }}" class="badge badge-status st-OVERDUE">Просрочено</span>
+                  {% endif %}
+                  <div class="position-relative d-inline-block">
+                    {% if is_archive_page %}
+                    <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
+                      {{ status_labels[t.status.value] }}
+                    </span>
+                    {% if t.is_legal_hold %}
+                    <span class="badge text-bg-warning ms-1">Legal hold</span>
+                    {% endif %}
+                    {% elif can_close_current %}
+                    <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
+                      {{ status_labels[t.status.value] }} ▼
+                    </span>
+                    <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded">
+                      <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="NEW">Новая</button>
+                      <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">В работе</button>
+                      <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
+                      <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
+                    </div>
+                    {% else %}
+                    <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
+                      {{ status_labels[t.status.value] }}
+                    </span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
               <div class="ticket-head-project">Узел: <b>{{ projects_by_id.get(t.project_id, "—") }}</b></div>
               <h5 class="ticket-head-title">
                 <a href="/web/tickets/{{ t.id }}?next={{ current_list_url_encoded }}" class="text-decoration-none">
@@ -1274,54 +1325,6 @@
           </div>
 
           <div class="ticket-side text-md-end">
-            {% set is_overdue = t.deadline and t.status.value not in ["DONE", "CANCELED", "ARCHIVED"] and t.deadline < now %}
-
-<div class="d-flex flex-wrap justify-content-md-between justify-content-start align-items-center gap-2">
-  <div class="d-flex flex-wrap gap-2 align-items-center">
-    {% if is_overdue %}
-      <span id="overdue-badge-{{ t.id }}" class="badge badge-status st-OVERDUE"
-      style="{% if not is_overdue %}display:none;{% endif %}">
-  Просрочено
-</span>
-
-
-    {% endif %}
-  </div>
-
-  <div class="position-relative d-inline-block">
-  
-  <!-- Текущий статус -->
-  {% if is_archive_page %}
-  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
-  {{ status_labels[t.status.value] }}
-</span>
-  {% if t.is_legal_hold %}
-  <span class="badge text-bg-warning ms-1">Legal hold</span>
-  {% endif %}
-  {% elif can_close_current %}
-  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }} status-toggle" data-ticket-id="{{ t.id }}">
-  {{ status_labels[t.status.value] }} ▼
-</span>
-
-
-  <!-- Выпадающее меню -->
-  <div id="status-menu-{{ t.id }}" class="status-menu shadow-sm p-2 bg-white rounded">
-  <button type="button" class="badge badge-status st-NEW w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="NEW">Новая</button>
-  <button type="button" class="badge badge-status st-IN_PROGRESS w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="IN_PROGRESS">В работе</button>
-  <button type="button" class="badge badge-status st-DONE w-100 mb-1 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="DONE">Выполнена</button>
-  <button type="button" class="badge badge-status st-CANCELED w-100 border-0 status-option" data-ticket-id="{{ t.id }}" data-status="CANCELED">Отменена</button>
-</div>
-  {% else %}
-  <span id="status-badge-{{ t.id }}" class="badge badge-status st-{{ t.status.value }}">
-  {{ status_labels[t.status.value] }}
-</span>
-  {% endif %}
-
-
-</div>
-
-</div>
-
             {% set can_archive = (user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id)) and t.status.value in ["DONE", "CANCELED"] %}
             {% set can_restore = user.role in ["ADMIN", "CURATOR"] and t.status.value == "ARCHIVED" %}
 
