@@ -264,6 +264,11 @@ SETTINGS_SECTIONS = {
         "title": "Общие",
         "description": "Базовые параметры работы заявок и подсветки сроков.",
     },
+    "tickets": {
+        "id": "tickets",
+        "title": "Заявки",
+        "description": "Отображение списка заявок и карточек.",
+    },
     "notifications": {
         "id": "notifications",
         "title": "Уведомления",
@@ -474,6 +479,21 @@ class User(Base):
         server_default=text("true"),
     )
     notify_receipt_created: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
+    ticket_card_show_department: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
+    ticket_card_show_executor: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+    )
+    ticket_card_show_creator: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         server_default=text("true"),
@@ -965,6 +985,9 @@ def ensure_migrations_ready() -> None:
                 "role_label",
                 "show_receipts_accounting_mode",
                 "notify_receipt_created",
+                "ticket_card_show_department",
+                "ticket_card_show_executor",
+                "ticket_card_show_creator",
                 "is_assignable_executor",
                 "can_view_all_tickets",
                 "can_create_tickets",

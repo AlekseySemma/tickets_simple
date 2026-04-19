@@ -56,8 +56,18 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
                 company_id=company.id,
                 email_verified=True,
             )
+            executor = main.User(
+                email="overview-executor@example.com",
+                name="Overview Executor",
+                password_hash=main.hash_password("secret123"),
+                role=main.Role.executor,
+                company_id=company.id,
+                email_verified=True,
+                is_assignable_executor=True,
+            )
             project = main.Project(name="Overview Project", company_id=company.id)
-            db.add_all([admin, project])
+            department = main.Department(company_id=company.id, name="Overview Department", is_active=True)
+            db.add_all([admin, executor, project, department])
             db.flush()
             active_ticket = main.Ticket(
                 title="Active ticket",
@@ -65,6 +75,8 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
                 status=main.TicketStatus.new,
                 company_id=company.id,
                 project_id=project.id,
+                executor_id=executor.id,
+                department_id=department.id,
                 created_by=admin.id,
             )
             archived_ticket = main.Ticket(
@@ -81,7 +93,11 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
             )
             db.add_all([active_ticket, archived_ticket])
             db.commit()
-            return {"active_ticket_id": active_ticket.id, "archived_ticket_id": archived_ticket.id}
+            return {
+                "admin_id": admin.id,
+                "active_ticket_id": active_ticket.id,
+                "archived_ticket_id": archived_ticket.id,
+            }
 
     def login_web(self) -> None:
         response = self.client.post(
@@ -110,6 +126,29 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Archived ticket", response.text)
         self.assertIn(f'/web/tickets/{ids["archived_ticket_id"]}', response.text)
+
+    def test_ticket_card_fields_can_be_hidden_in_card_list_only(self):
+        ids = self.seed_context()
+        with main.SessionLocal() as db:
+            user = db.get(main.User, ids["admin_id"])
+            user.ticket_card_show_department = False
+            user.ticket_card_show_executor = False
+            user.ticket_card_show_creator = False
+            db.commit()
+        self.login_web()
+
+        response = self.client.get("/web?view_mode=cards")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Active ticket", response.text)
+        self.assertNotIn('data-ticket-card-field="department"', response.text)
+        self.assertNotIn('data-ticket-card-field="executor"', response.text)
+        self.assertNotIn('data-ticket-card-field="creator"', response.text)
+
+        detail_response = self.client.get(f'/web/tickets/{ids["active_ticket_id"]}')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertIn("Overview Department", detail_response.text)
+        self.assertIn("Overview Executor", detail_response.text)
 
 
 if __name__ == "__main__":

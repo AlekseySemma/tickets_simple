@@ -405,6 +405,11 @@ def render_web_tickets_page(
             "projects_by_id": projects_by_id,
             "ticket_types_by_id": ticket_types_by_id,
             "departments_by_id": departments_by_id,
+            "ticket_card_fields": {
+                "department": bool(getattr(user, "ticket_card_show_department", True)),
+                "executor": bool(getattr(user, "ticket_card_show_executor", True)),
+                "creator": bool(getattr(user, "ticket_card_show_creator", True)),
+            },
             "now": now,
             "now_plus_deadline_warning": now_plus_deadline_warning,
             "deadline_soon_warning_minutes": deadline_soon_warning_minutes,

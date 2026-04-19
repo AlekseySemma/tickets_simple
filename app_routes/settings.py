@@ -73,6 +73,11 @@ def register_settings_routes(
             request.query_params.get("receipt_notifications_error"),
             {"save_failed"},
         )
+        ticket_card_fields_saved = (request.query_params.get("ticket_card_fields_saved") or "").strip() == "1"
+        ticket_card_fields_error = _sanitize_query_error(
+            request.query_params.get("ticket_card_fields_error"),
+            {"save_failed"},
+        )
         preferred_card_saved = (request.query_params.get("preferred_card_saved") or "").strip() == "1"
         preferred_card_error = _sanitize_query_error(
             request.query_params.get("preferred_card_error"),
@@ -129,6 +134,11 @@ def register_settings_routes(
                 "watcher_comments_error": watcher_comments_error,
                 "receipt_notifications_saved": receipt_notifications_saved,
                 "receipt_notifications_error": receipt_notifications_error,
+                "ticket_card_fields_saved": ticket_card_fields_saved,
+                "ticket_card_fields_error": ticket_card_fields_error,
+                "ticket_card_show_department": bool(getattr(user, "ticket_card_show_department", True)),
+                "ticket_card_show_executor": bool(getattr(user, "ticket_card_show_executor", True)),
+                "ticket_card_show_creator": bool(getattr(user, "ticket_card_show_creator", True)),
                 "preferred_card_saved": preferred_card_saved,
                 "preferred_card_error": preferred_card_error,
                 "card_created": card_created,
@@ -265,6 +275,35 @@ def register_settings_routes(
             )
         return RedirectResponse(
             url=build_settings_url(section, receipt_notifications_saved=True),
+            status_code=http_303_see_other,
+        )
+
+    @app.post("/web/settings/ticket-card-fields")
+    async def web_settings_ticket_card_fields(
+        request: Request,
+        db=Depends(get_db),
+        user=Depends(get_current_user),
+    ):
+        form = await request.form()
+        section = normalize_settings_section(form.get("section") or request.query_params.get("section"))
+
+        def is_enabled(name: str) -> bool:
+            return (form.get(name) or "").strip() in {"1", "true", "on"}
+
+        try:
+            user.ticket_card_show_department = is_enabled("ticket_card_show_department")
+            user.ticket_card_show_executor = is_enabled("ticket_card_show_executor")
+            user.ticket_card_show_creator = is_enabled("ticket_card_show_creator")
+            db.add(user)
+            db.commit()
+        except sqlalchemy_error:
+            db.rollback()
+            return RedirectResponse(
+                url=build_settings_url(section, ticket_card_fields_error="save_failed"),
+                status_code=http_303_see_other,
+            )
+        return RedirectResponse(
+            url=build_settings_url(section, ticket_card_fields_saved=True),
             status_code=http_303_see_other,
         )
 

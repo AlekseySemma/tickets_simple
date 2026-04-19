@@ -1259,9 +1259,15 @@
               <div class="muted mb-2">{{ t.description or "" }}</div>
               <div class="ticket-meta">
                 <span class="meta-chip">Тип: <b>{{ ticket_types_by_id.get(t.ticket_type_id, "—") }}</b></span>
-                <span class="meta-chip">Отдел: <b>{{ departments_by_id.get(t.department_id, "—") }}</b></span>
-                <span class="meta-chip">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
-                <span class="meta-chip">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
+                {% if ticket_card_fields.department %}
+                <span class="meta-chip" data-ticket-card-field="department">Отдел: <b>{{ departments_by_id.get(t.department_id, "—") }}</b></span>
+                {% endif %}
+                {% if ticket_card_fields.executor %}
+                <span class="meta-chip" data-ticket-card-field="executor">Исполнитель: <b>{{ users_by_id.get(t.executor_id, "—") }}</b></span>
+                {% endif %}
+                {% if ticket_card_fields.creator %}
+                <span class="meta-chip" data-ticket-card-field="creator">Создал: <b>{{ users_by_id.get(t.created_by, "—") }}</b></span>
+                {% endif %}
                 <span class="meta-chip {% if t.deadline %}deadline-chip{% endif %}">Крайний срок: <b>{{ format_deadline(t.deadline) }}</b></span>
               </div>
             </div>

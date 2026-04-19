@@ -78,6 +78,7 @@ class SettingsSectionsTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("/web/settings?section=general", response.text)
+        self.assertIn("/web/settings?section=tickets", response.text)
         self.assertIn("/web/settings?section=notifications", response.text)
         self.assertIn("/web/settings?section=receipts", response.text)
         self.assertIn("/web/settings?section=archive", response.text)
@@ -96,8 +97,28 @@ class SettingsSectionsTests(unittest.TestCase):
         self.assertIn('action="/web/settings/watcher-comments"', response.text)
         self.assertIn('action="/web/settings/receipt-notifications"', response.text)
         self.assertIn('id="enable-push-btn"', response.text)
+        self.assertNotIn('action="/web/settings/ticket-card-fields"', response.text)
         self.assertNotIn('action="/web/settings/archive-retention"', response.text)
         self.assertNotIn('action="/web/settings/preferred-card"', response.text)
+
+    def test_ticket_card_fields_update_redirects_back_to_tickets_section(self):
+        user_id = self.seed_user()
+        self.login_web()
+
+        response = self.client.post(
+            "/web/settings/ticket-card-fields",
+            data={"section": "tickets", "ticket_card_show_executor": "1"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/web/settings?section=tickets&ticket_card_fields_saved=1")
+        with main.SessionLocal() as db:
+            user = db.get(main.User, user_id)
+            self.assertFalse(user.ticket_card_show_department)
+            self.assertTrue(user.ticket_card_show_executor)
+            self.assertFalse(user.ticket_card_show_creator)
 
     def test_archive_update_redirects_back_to_archive_section(self):
         self.seed_user()
