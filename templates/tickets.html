@@ -96,6 +96,77 @@
     .panel-toolbar-btn.is-active .panel-chevron {
       transform: rotate(180deg);
     }
+    @media (min-width: 992px) {
+      .filters-toggle-btn {
+        display: none;
+      }
+      .tickets-filter-panel {
+        display: block !important;
+      }
+      .tickets-filter-panel .panel-card .card-body {
+        padding: 8px 10px;
+      }
+      .tickets-filter-form {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: flex-end;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scrollbar-width: thin;
+      }
+      .tickets-filter-form > [class*="col-"] {
+        flex: 0 0 auto;
+        width: auto;
+        max-width: none;
+      }
+      .tickets-filter-form .filter-field-search {
+        width: 220px;
+      }
+      .tickets-filter-form .filter-field {
+        width: 138px;
+      }
+      .tickets-filter-form .filter-field-wide {
+        width: 168px;
+      }
+      .tickets-filter-form .filter-field-check {
+        width: 150px;
+      }
+      .tickets-filter-form .filter-actions {
+        width: auto;
+        min-width: 176px;
+        padding-top: 0 !important;
+        justify-content: flex-start !important;
+        flex-wrap: nowrap !important;
+      }
+      .tickets-filter-form .form-label {
+        font-size: 11px;
+        line-height: 1.05;
+      }
+      .tickets-filter-form .form-control,
+      .tickets-filter-form .form-select {
+        min-height: 32px;
+        padding-top: 0.25rem;
+        padding-bottom: 0.25rem;
+        font-size: 12px;
+      }
+      .tickets-filter-form .btn {
+        min-height: 32px;
+        padding-top: 0.25rem;
+        padding-bottom: 0.25rem;
+        font-size: 12px;
+      }
+      .tickets-filter-form .form-check {
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        margin-bottom: 0;
+      }
+      .tickets-filter-form .form-check-label {
+        font-size: 12px;
+        line-height: 1.1;
+      }
+    }
     @media (max-width: 767.98px) {
       .panel-toolbar {
         gap: 6px;
@@ -700,7 +771,7 @@
       {% endif %}
       <button
         type="button"
-        class="panel-toolbar-btn {% if filters_form_open %}is-active{% endif %}"
+        class="panel-toolbar-btn filters-toggle-btn {% if filters_form_open %}is-active{% endif %}"
         data-panel-toggle="filters"
         aria-expanded="{% if filters_form_open %}true{% else %}false{% endif %}"
       >
@@ -860,18 +931,18 @@
     </div>
     {% endif %}
 
-    <div class="panel-collapse mb-3 {% if filters_form_open %}is-open{% endif %}" data-panel-content="filters">
+    <div class="panel-collapse tickets-filter-panel mb-3 {% if filters_form_open %}is-open{% endif %}" data-panel-content="filters">
       <div class="card shadow-sm panel-card">
       <div class="card-body">
-          <form method="get" action="{{ list_path }}" class="row g-2 align-items-end mt-1">
+          <form method="get" action="{{ list_path }}" class="row g-2 align-items-end mt-1 tickets-filter-form">
             <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <input type="hidden" name="page_size" value="{{ page_size }}">
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4 filter-field-search">
               <label class="form-label mb-1">Поиск</label>
               <input name="q" class="form-control" placeholder="ID, название или описание..." value="{{ q }}" />
             </div>
 
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-3 filter-field">
               <label class="form-label mb-1">Статус</label>
               <select name="status_filter" class="form-select">
                 <option value="" {% if not status_filter %}selected{% endif %}>Все</option>
@@ -882,7 +953,7 @@
             </div>
 
             {% if not org_v2_enabled %}
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-3 filter-field">
                 <label class="form-label mb-1">Проект</label>
                 <select name="project_id" class="form-select">
                   <option value="" {% if not project_id_filter %}selected{% endif %}>Все</option>
@@ -892,7 +963,7 @@
                 </select>
               </div>
             {% endif %}
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-3 filter-field-wide">
               <label class="form-label mb-1">Тип заявки</label>
               <select name="ticket_type_id" class="form-select">
                 <option value="" {% if not ticket_type_id_filter %}selected{% endif %}>Все</option>
@@ -901,7 +972,7 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-3 filter-field">
               <label class="form-label mb-1">Отдел</label>
               <select name="department_id" class="form-select">
                 <option value="" {% if not department_id_filter %}selected{% endif %}>Все</option>
@@ -910,7 +981,7 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-3 filter-field-wide">
               <label class="form-label mb-1">Узел/поддерево</label>
               <select name="target_unit_id" class="form-select">
                 <option value="" {% if not target_unit_id_filter %}selected{% endif %}>Все</option>
@@ -920,7 +991,7 @@
               </select>
             </div>
             {% if user.role in ["ADMIN", "CURATOR"] %}
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-3 filter-field">
                 <label class="form-label mb-1">Исполнитель</label>
                 <select name="executor_id" class="form-select">
                   <option value="" {% if not executor_id_filter %}selected{% endif %}>Все</option>
@@ -930,7 +1001,7 @@
                   {% endfor %}
                 </select>
               </div>
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-3 filter-field-wide">
                 <label class="form-label mb-1">Ответственный по узлу</label>
                 <select name="unit_executor_id" class="form-select">
                   <option value="" {% if not unit_executor_id_filter %}selected{% endif %}>Все</option>
@@ -941,7 +1012,7 @@
               </div>
 
               {% if not is_archive_page %}
-              <div class="col-12 col-md-3">
+              <div class="col-12 col-md-3 filter-field-check">
                 <div class="form-check mt-4">
                   <input class="form-check-input" type="checkbox" id="only_overdue" name="only_overdue" value="1"
                          {% if only_overdue == "1" %}checked{% endif %}>
@@ -951,7 +1022,7 @@
               {% endif %}
             {% endif %}
 
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-3 filter-field-wide">
                 <label class="form-label mb-1">Сортировка</label>
                 <select name="sort" class="form-select">
                   <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
@@ -962,7 +1033,7 @@
                 </select>
               </div>
 
-            <div class="col-12 d-flex flex-wrap justify-content-between align-items-end gap-2 pt-1">
+            <div class="col-12 d-flex flex-wrap justify-content-between align-items-end gap-2 pt-1 filter-actions">
               <a class="small" href="{{ reset_filters_url }}">Сбросить фильтры</a>
               <button class="btn btn-primary">Применить</button>
             </div>
