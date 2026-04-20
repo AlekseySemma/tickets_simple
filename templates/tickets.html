@@ -577,6 +577,9 @@
     .view-switch .btn {
       min-width: 120px;
     }
+    .panel-toolbar .view-switch {
+      margin-left: auto;
+    }
     .page-head {
       display: flex;
       align-items: center;
@@ -624,6 +627,9 @@
       .view-switch .btn {
         min-width: 0;
         flex: 1 1 auto;
+      }
+      .panel-toolbar .view-switch {
+        margin-left: 0;
       }
       .ticket-row {
         flex-direction: column;
@@ -748,6 +754,26 @@
         {% endif %}
         <span class="panel-chevron">▼</span>
       </button>
+      {% if can_switch_view_mode %}
+      <form method="get" action="{{ list_path }}" class="view-switch">
+        <input type="hidden" name="page" value="{{ page }}">
+        <input type="hidden" name="page_size" value="{{ page_size }}">
+        <input type="hidden" name="q" value="{{ q }}">
+        <input type="hidden" name="status_filter" value="{{ status_filter }}">
+        <input type="hidden" name="project_id" value="{{ project_id_filter }}">
+        <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+        <input type="hidden" name="department_id" value="{{ department_id_filter }}">
+        <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
+        <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
+        <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
+        <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <div class="btn-group" role="group" aria-label="Режим отображения">
+          <button type="submit" name="view_mode" value="table" class="btn btn-sm {% if view_mode == 'table' %}btn-primary{% else %}btn-outline-primary{% endif %}">Таблица</button>
+          <button type="submit" name="view_mode" value="cards" class="btn btn-sm {% if view_mode == 'cards' %}btn-primary{% else %}btn-outline-primary{% endif %}">Карточки</button>
+        </div>
+      </form>
+      {% endif %}
     </div>
 
     {% if create_enabled %}
@@ -1008,30 +1034,6 @@
         </div>
       </div>
     </div>
-
-    {% if can_switch_view_mode %}
-    <div class="d-flex justify-content-end mb-3">
-      <form method="get" action="{{ list_path }}" class="view-switch">
-        <input type="hidden" name="page" value="{{ page }}">
-        <input type="hidden" name="page_size" value="{{ page_size }}">
-        <input type="hidden" name="q" value="{{ q }}">
-        <input type="hidden" name="status_filter" value="{{ status_filter }}">
-        <input type="hidden" name="project_id" value="{{ project_id_filter }}">
-        <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
-        <input type="hidden" name="department_id" value="{{ department_id_filter }}">
-        <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
-        <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
-        <input type="hidden" name="executor_id" value="{{ executor_id_filter }}">
-        <input type="hidden" name="only_overdue" value="{{ only_overdue }}">
-        <input type="hidden" name="sort" value="{{ sort }}">
-        <div class="btn-group" role="group" aria-label="Режим отображения">
-          <button type="submit" name="view_mode" value="table" class="btn btn-sm {% if view_mode == 'table' %}btn-primary{% else %}btn-outline-primary{% endif %}">Таблица</button>
-          <button type="submit" name="view_mode" value="cards" class="btn btn-sm {% if view_mode == 'cards' %}btn-primary{% else %}btn-outline-primary{% endif %}">Карточки</button>
-        </div>
-      </form>
-    </div>
-    {% endif %}
-
 
     {% if can_switch_view_mode and view_mode == "table" %}
       {% set has_bulk_actions = bulk_actions|length > 0 %}
