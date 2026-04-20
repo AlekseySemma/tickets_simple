@@ -2398,7 +2398,6 @@ register_ticket_overview_routes(
             is_manager=is_manager,
             templates=templates,
             or_=or_,
-            func=func,
             cast=cast,
             string_type=String,
             company_model=Company,

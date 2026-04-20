@@ -34,7 +34,6 @@ def render_web_tickets_page(
     is_manager,
     templates,
     or_,
-    func,
     cast,
     string_type,
     company_model,
@@ -248,22 +247,6 @@ def render_web_tickets_page(
         view_mode_value = "cards"
 
     total_count = filtered_query.count()
-    legal_hold_count = filtered_query.filter(ticket_model.is_legal_hold.is_(True)).count()
-
-    counts_by_status = {"NEW": 0, "IN_PROGRESS": 0, "DONE": 0, "CANCELED": 0, "ARCHIVED": 0}
-    status_counts = filtered_query.with_entities(ticket_model.status, func.count(ticket_model.id)).group_by(ticket_model.status).all()
-    for status_value, count_value in status_counts:
-        status_code = status_value.value if isinstance(status_value, ticket_status_enum) else str(status_value)
-        if status_code in counts_by_status:
-            counts_by_status[status_code] = int(count_value)
-
-    overdue_count = (
-        filtered_query.filter(
-            ticket_model.deadline.is_not(None),
-            ticket_model.deadline < now,
-            ticket_model.status.notin_(list(final_ticket_statuses)),
-        ).count()
-    )
 
     tickets_query = filtered_query
     if sort_value == "deadline_asc":
@@ -428,9 +411,6 @@ def render_web_tickets_page(
             "page_size_options": page_size_options,
             "status_labels": status_labels,
             "total_count": total_count,
-            "legal_hold_count": legal_hold_count,
-            "counts_by_status": counts_by_status,
-            "overdue_count": overdue_count,
             "filters_form_open": filters_form_open,
             "create_form_open": create_form_open,
             "create_error": create_error_value,
