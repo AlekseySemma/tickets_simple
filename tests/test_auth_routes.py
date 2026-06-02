@@ -42,6 +42,7 @@ class AuthRoutesTests(unittest.TestCase):
         with main.RATE_LIMIT_LOCK:
             main.RATE_LIMIT_BUCKETS.clear()
         self.client.cookies.clear()
+        os.environ["PUBLIC_COMPANY_REGISTRATION_ENABLED"] = "0"
 
     def test_auth_bootstrap_creates_platform_admin(self):
         response = self.client.post(
@@ -62,6 +63,7 @@ class AuthRoutesTests(unittest.TestCase):
             self.assertTrue(user.email_verified)
 
     def test_auth_register_company_creates_unverified_owner(self):
+        os.environ["PUBLIC_COMPANY_REGISTRATION_ENABLED"] = "1"
         response = self.client.post(
             "/auth/register-company",
             json={
@@ -82,6 +84,22 @@ class AuthRoutesTests(unittest.TestCase):
             self.assertEqual(user.role, main.Role.admin)
             self.assertFalse(user.email_verified)
             self.assertIsNotNone(user.email_verification_token)
+
+    def test_auth_register_company_returns_404_when_public_signup_disabled(self):
+        response = self.client.post(
+            "/auth/register-company",
+            json={
+                "company_name": "Blocked Co",
+                "admin_name": "Owner",
+                "admin_email": "blocked@example.com",
+                "admin_password": "secret123",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+        with main.SessionLocal() as db:
+            self.assertIsNone(db.query(main.Company).filter(main.Company.name == "Blocked Co").first())
+            self.assertIsNone(db.query(main.User).filter(main.User.email == "blocked@example.com").first())
 
 
 if __name__ == "__main__":

@@ -985,7 +985,9 @@
         </nav>
         <div class="top-actions">
           <a class="btn btn-secondary" href="/web/login">Войти</a>
+          {% if public_company_registration_enabled %}
           <a class="btn btn-primary" href="/web/register-company">Зарегистрировать компанию</a>
+          {% endif %}
         </div>
       </div>
     </header>
@@ -1001,7 +1003,9 @@
             Без хаоса в чатах, потерянных сообщений и вечного вопроса “кто этим занимается?”.
           </p>
           <div class="hero-actions">
+            {% if public_company_registration_enabled %}
             <a class="btn btn-primary" href="/web/register-company">Попробовать для команды</a>
+            {% endif %}
             <a class="btn btn-secondary" href="/web/login">Войти</a>
           </div>
           <div class="hero-note">Подходит для внутренних сервисных команд, эксплуатации, подрядчиков и регулярных рабочих запросов.</div>
@@ -1307,7 +1311,9 @@
           </p>
         </div>
         <div class="cta-actions">
+          {% if public_company_registration_enabled %}
           <a class="btn btn-primary" href="/web/register-company">Начать работу</a>
+          {% endif %}
           <a class="btn btn-outline" href="/web/login">Войти</a>
         </div>
       </section>

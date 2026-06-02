@@ -41,6 +41,7 @@ class EmailVerificationTests(unittest.TestCase):
         main.Base.metadata.create_all(bind=main.engine)
         with main.RATE_LIMIT_LOCK:
             main.RATE_LIMIT_BUCKETS.clear()
+        os.environ["PUBLIC_COMPANY_REGISTRATION_ENABLED"] = "0"
 
     def seed_invite(self) -> str:
         with main.SessionLocal() as db:
@@ -178,6 +179,7 @@ class EmailVerificationTests(unittest.TestCase):
             self.assertIsNotNone(user.email_verification_sent_at)
 
     def test_company_registration_creates_unverified_owner(self):
+        os.environ["PUBLIC_COMPANY_REGISTRATION_ENABLED"] = "1"
         response = self.client.post(
             "/web/register-company",
             data={
@@ -195,6 +197,21 @@ class EmailVerificationTests(unittest.TestCase):
             self.assertFalse(user.email_verified)
             self.assertEqual(user.role, main.Role.admin)
             self.assertIsNotNone(user.email_verification_token)
+
+    def test_company_registration_returns_404_when_public_signup_disabled(self):
+        response = self.client.get("/web/register-company")
+        self.assertEqual(response.status_code, 404)
+
+        post_response = self.client.post(
+            "/web/register-company",
+            data={
+                "company_name": "Blocked Co",
+                "admin_name": "Founder",
+                "admin_email": "blocked@example.com",
+                "admin_password": "secret123",
+            },
+        )
+        self.assertEqual(post_response.status_code, 404)
 
     def test_password_reset_request_creates_token(self):
         self.seed_verified_user(email="reset1@example.com")

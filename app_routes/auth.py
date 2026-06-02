@@ -1,3 +1,5 @@
+import os
+
 from datetime import datetime
 from app_support.time_support import utc_now_naive
 
@@ -65,6 +67,10 @@ def register_company_owner(
         logger.exception("Could not send verification email to %s", owner.email)
     audit_security_event("register_company", request, success=True, email=payload.admin_email, user_id=owner.id)
     return company, owner
+
+
+def public_company_registration_enabled() -> bool:
+    return (os.getenv("PUBLIC_COMPANY_REGISTRATION_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 
 
 def register_auth_routes(
@@ -137,6 +143,9 @@ def register_auth_routes(
 
     @app.post("/auth/register-company", response_model=bootstrap_setup_out_model)
     def register_company_and_owner(payload: bootstrap_setup_in_model, request: Request, db=Depends(get_db)):
+        if not public_company_registration_enabled():
+            audit_security_event("register_company", request, success=False, email=payload.admin_email, detail="disabled")
+            raise HTTPException(404, "Not found")
         company, owner = register_company_owner(
             payload=payload,
             request=request,

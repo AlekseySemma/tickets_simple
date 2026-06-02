@@ -40,6 +40,14 @@ VAPID_SUBJECT=mailto:admin@example.com
 
 `VAPID_PRIVATE_KEY` используется из `private_key.pem` (см. `docker-compose.yml`).
 
+Публичную регистрацию новых компаний рекомендуется держать выключенной:
+
+```env
+PUBLIC_COMPANY_REGISTRATION_ENABLED=0
+```
+
+При `0` маршруты `/web/register-company` и `/auth/register-company` недоступны.
+
 ## Migrations
 
 Проект использует Alembic. Полный runbook:

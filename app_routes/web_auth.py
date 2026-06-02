@@ -1,8 +1,14 @@
+import os
+
 from datetime import datetime
 from app_support.time_support import utc_now_naive
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+
+
+def public_company_registration_enabled() -> bool:
+    return (os.getenv("PUBLIC_COMPANY_REGISTRATION_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 
 
 def register_web_auth_routes(
@@ -54,7 +60,16 @@ def register_web_auth_routes(
             info_message = "Сессии на всех устройствах завершены. Войдите снова."
         elif info == "password_changed":
             info_message = "Пароль изменён. Войдите с новым паролем."
-        return templates.TemplateResponse(request, "login.html", {"request": request, "error": None, "info": info_message})
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "request": request,
+                "error": None,
+                "info": info_message,
+                "public_company_registration_enabled": public_company_registration_enabled(),
+            },
+        )
 
     @app.post("/web/login")
     async def web_login(request: Request, db=Depends(get_db)):
@@ -70,7 +85,12 @@ def register_web_auth_routes(
             return templates.TemplateResponse(
                 request,
                 "login.html",
-                {"request": request, "error": "Слишком много попыток входа. Попробуйте позже.", "info": None},
+                {
+                    "request": request,
+                    "error": "Слишком много попыток входа. Попробуйте позже.",
+                    "info": None,
+                    "public_company_registration_enabled": public_company_registration_enabled(),
+                },
                 status_code=429,
             )
 
@@ -80,7 +100,12 @@ def register_web_auth_routes(
             return templates.TemplateResponse(
                 request,
                 "login.html",
-                {"request": request, "error": "Неверный email или пароль", "info": None},
+                {
+                    "request": request,
+                    "error": "Неверный email или пароль",
+                    "info": None,
+                    "public_company_registration_enabled": public_company_registration_enabled(),
+                },
             )
         if not is_user_email_verified(user):
             audit_security_event("web_login", request, success=False, email=email, user_id=user.id, detail="email_not_verified")
@@ -91,6 +116,7 @@ def register_web_auth_routes(
                     "request": request,
                     "error": "Подтвердите email по ссылке из письма, затем повторите вход.",
                     "info": None,
+                    "public_company_registration_enabled": public_company_registration_enabled(),
                 },
                 status_code=403,
             )
@@ -107,6 +133,8 @@ def register_web_auth_routes(
 
     @app.get("/web/register-company")
     def web_register_company_page(request: Request):
+        if not public_company_registration_enabled():
+            raise HTTPException(404, "Not found")
         return templates.TemplateResponse(
             request,
             "register_company.html",
@@ -120,6 +148,9 @@ def register_web_auth_routes(
         admin_name = (form.get("admin_name") or "").strip()
         admin_email = (form.get("admin_email") or "").strip()
         admin_password = (form.get("admin_password") or "").strip()
+        if not public_company_registration_enabled():
+            audit_security_event("register_company", request, success=False, email=admin_email, detail="disabled")
+            raise HTTPException(404, "Not found")
 
         try:
             payload = bootstrap_setup_in_model(

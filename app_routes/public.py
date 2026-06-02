@@ -1,5 +1,11 @@
+import os
+
 from fastapi import Depends, Request
 from fastapi.responses import FileResponse
+
+
+def public_company_registration_enabled() -> bool:
+    return (os.getenv("PUBLIC_COMPANY_REGISTRATION_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"})
 
 
 def register_public_routes(
@@ -11,7 +17,14 @@ def register_public_routes(
 ):
     @app.get("/")
     def root(request: Request):
-        return templates.TemplateResponse(request, "landing.html", {"request": request})
+        return templates.TemplateResponse(
+            request,
+            "landing.html",
+            {
+                "request": request,
+                "public_company_registration_enabled": public_company_registration_enabled(),
+            },
+        )
 
     @app.get("/health")
     def health():

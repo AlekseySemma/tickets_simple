@@ -42,6 +42,7 @@ class WebAuthRoutesTests(unittest.TestCase):
         with main.RATE_LIMIT_LOCK:
             main.RATE_LIMIT_BUCKETS.clear()
         self.client.cookies.clear()
+        os.environ["PUBLIC_COMPANY_REGISTRATION_ENABLED"] = "0"
 
     def seed_verified_user(self, email: str = "web@example.com", password: str = "secret123") -> None:
         with main.SessionLocal() as db:
@@ -89,6 +90,15 @@ class WebAuthRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Сессии на всех устройствах завершены", response.text)
+        self.assertNotIn("/web/register-company", response.text)
+
+    def test_login_page_shows_company_registration_link_when_enabled(self):
+        os.environ["PUBLIC_COMPANY_REGISTRATION_ENABLED"] = "1"
+
+        response = self.client.get("/web/login")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("/web/register-company", response.text)
 
     def test_web_login_sets_cookie_and_redirects(self):
         self.seed_verified_user()
