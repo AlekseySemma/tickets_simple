@@ -261,6 +261,17 @@ def render_web_tickets_page(
             ticket_model.deadline.desc(),
             ticket_model.id.desc(),
         )
+    elif sort_value == "ticket_type_deadline_asc":
+        tickets_query = tickets_query.outerjoin(
+            ticket_type_model,
+            ticket_model.ticket_type_id == ticket_type_model.id,
+        ).order_by(
+            ticket_type_model.name.is_(None).asc(),
+            ticket_type_model.name.asc(),
+            ticket_model.deadline.is_(None).asc(),
+            ticket_model.deadline.asc(),
+            ticket_model.id.desc(),
+        )
     elif sort_value == "status":
         tickets_query = tickets_query.order_by(
             ticket_model.status.asc(),

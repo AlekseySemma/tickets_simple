@@ -1020,6 +1020,7 @@
                 <select name="sort" class="form-select">
                   <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
                   <option value="id_asc" {% if sort == "id_asc" %}selected{% endif %}>Сначала старые</option>
+                  <option value="ticket_type_deadline_asc" {% if sort == "ticket_type_deadline_asc" %}selected{% endif %}>Тип заявки, затем ближайший срок</option>
                   <option value="deadline_asc" {% if sort == "deadline_asc" %}selected{% endif %}>Срок: ближайшие</option>
                   <option value="deadline_desc" {% if sort == "deadline_desc" %}selected{% endif %}>Срок: дальние</option>
                   <option value="status" {% if sort == "status" %}selected{% endif %}>По статусу</option>
