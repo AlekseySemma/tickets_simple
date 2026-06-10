@@ -169,6 +169,18 @@ class TicketBulkActionsTests(unittest.TestCase):
         self.assertIn('id="bulk-ticket-actions-form"', response.text)
         self.assertIn('data-ticket-select-all', response.text)
         self.assertIn('name="ticket_ids"', response.text)
+        self.assertIn('<option value="complete">Выполнена</option>', response.text)
+        self.assertNotIn('<option value="take_in_work">Взять в работу</option>', response.text)
+
+    def test_table_view_renders_take_in_work_bulk_action_for_assignable_executor(self):
+        self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.get("/web?view_mode=table")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="take_in_work">Взять в работу</option>', response.text)
+        self.assertIn('<option value="complete">Выполнена</option>', response.text)
 
     def test_bulk_archive_archives_only_eligible_tickets(self):
         ids = self.seed_company_with_users()
@@ -219,6 +231,60 @@ class TicketBulkActionsTests(unittest.TestCase):
         with main.SessionLocal() as db:
             self.assertIsNone(db.get(main.Ticket, ids["own_ticket_id"]))
             self.assertIsNotNone(db.get(main.Ticket, ids["foreign_ticket_id"]))
+
+    def test_bulk_take_in_work_assigns_executor_and_skips_unavailable_tickets(self):
+        ids = self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.post(
+            "/web/tickets/bulk-action",
+            data={
+                "action": "take_in_work",
+                "ticket_ids": [str(ids["own_ticket_id"]), str(ids["foreign_ticket_id"])],
+                "next": "/web?view_mode=table",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(
+            response.headers["location"],
+            "/web?view_mode=table&bulk_ok=1&bulk_action=take_in_work&bulk_done=1&bulk_skipped=1",
+        )
+        with main.SessionLocal() as db:
+            own_ticket = db.get(main.Ticket, ids["own_ticket_id"])
+            foreign_ticket = db.get(main.Ticket, ids["foreign_ticket_id"])
+            self.assertEqual(own_ticket.status, main.TicketStatus.in_progress)
+            self.assertEqual(own_ticket.executor_id, ids["executor_id"])
+            self.assertEqual(foreign_ticket.status, main.TicketStatus.new)
+            self.assertEqual(foreign_ticket.executor_id, None)
+
+    def test_bulk_complete_sets_done_for_in_progress_tickets_only(self):
+        ids = self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.post(
+            "/web/tickets/bulk-action",
+            data={
+                "action": "complete",
+                "ticket_ids": [str(ids["in_progress_ticket_id"]), str(ids["own_ticket_id"])],
+                "next": "/web?view_mode=table",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(
+            response.headers["location"],
+            "/web?view_mode=table&bulk_ok=1&bulk_action=complete&bulk_done=1&bulk_skipped=1",
+        )
+        with main.SessionLocal() as db:
+            in_progress_ticket = db.get(main.Ticket, ids["in_progress_ticket_id"])
+            own_ticket = db.get(main.Ticket, ids["own_ticket_id"])
+            self.assertEqual(in_progress_ticket.status, main.TicketStatus.done)
+            self.assertEqual(own_ticket.status, main.TicketStatus.new)
 
     def test_table_view_renders_status_based_quick_actions(self):
         ids = self.seed_company_with_users()

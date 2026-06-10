@@ -334,10 +334,17 @@ def render_web_tickets_page(
                 {"id": "delete", "label": "Удалить навсегда"},
             ]
     else:
-        bulk_actions = [
-            {"id": "archive", "label": "В архив"},
-            {"id": "delete", "label": "Удалить"},
-        ]
+        bulk_actions = []
+        if bool(getattr(user, "is_assignable_executor", False)):
+            bulk_actions.append({"id": "take_in_work", "label": "Взять в работу"})
+        if is_manager(user) or (user.role == role_enum.executor and bool(getattr(user, "can_close_tickets", True))):
+            bulk_actions.append({"id": "complete", "label": "Выполнена"})
+        bulk_actions.extend(
+            [
+                {"id": "archive", "label": "В архив"},
+                {"id": "delete", "label": "Удалить"},
+            ]
+        )
     page_size_options = (10, 20, 30, 50, 100)
     page_size_raw = (page_size or "").strip() if page_size is not None else ""
     if not page_size_raw:

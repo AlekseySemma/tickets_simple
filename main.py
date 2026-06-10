@@ -316,6 +316,8 @@ ANDROID_APP_USER_AGENT_TOKEN = "servoraandroidapp"
 _FIREBASE_APP = None
 _FIREBASE_APP_LOCK = threading.Lock()
 TICKET_BULK_ACTION_LABELS = {
+    "take_in_work": "взять в работу",
+    "complete": "выполнить",
     "archive": "перенос в архив",
     "delete": "удаление",
     "restore": "восстановление",

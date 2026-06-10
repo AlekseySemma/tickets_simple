@@ -165,7 +165,8 @@ def register_ticket_overview_routes(
         )
         tickets_by_id = {int(ticket.id): ticket for ticket in tickets}
         company = db.get(company_model, user.company_id) if user.company_id is not None else None
-        notifications: list[tuple[object, object]] = []
+        status_notifications: list[tuple[object, object]] = []
+        executor_notifications: list[tuple[object, object]] = []
         done_count = 0
         skipped_count = 0
 
@@ -182,7 +183,7 @@ def register_ticket_overview_routes(
                         continue
                     old_status = ticket.status
                     archive_ticket(db, ticket, actor_id=user.id, company=company)
-                    notifications.append((ticket, old_status))
+                    status_notifications.append((ticket, old_status))
                     done_count += 1
                     continue
 
@@ -200,7 +201,63 @@ def register_ticket_overview_routes(
                         continue
                     old_status = ticket.status
                     restore_ticket_from_archive(db, ticket, actor_id=user.id)
-                    notifications.append((ticket, old_status))
+                    status_notifications.append((ticket, old_status))
+                    done_count += 1
+                    continue
+
+                if action == "take_in_work":
+                    if not can_take_ticket_in_work(user, ticket):
+                        skipped_count += 1
+                        continue
+                    old_status = ticket.status
+                    old_executor_id = ticket.executor_id
+                    changed = False
+                    if ticket.executor_id != user.id:
+                        ticket.executor_id = user.id
+                        add_ticket_log(
+                            db,
+                            ticket_id=ticket.id,
+                            actor_id=user.id,
+                            action=ticket_field_change_log_action(
+                                "исполнителя",
+                                ticket_user_name(db, old_executor_id),
+                                ticket_user_name(db, ticket.executor_id),
+                            ),
+                        )
+                        changed = True
+                    if ticket.status != ticket_status_enum.in_progress:
+                        ticket.status = ticket_status_enum.in_progress
+                        add_ticket_log(
+                            db,
+                            ticket_id=ticket.id,
+                            actor_id=user.id,
+                            action=ticket_status_change_log_action(old_status, ticket.status),
+                        )
+                        changed = True
+                    if not changed:
+                        skipped_count += 1
+                        continue
+                    ensure_default_ticket_watchers(db, ticket)
+                    executor_notifications.append((ticket, old_executor_id))
+                    if ticket.status != old_status:
+                        status_notifications.append((ticket, old_status))
+                    done_count += 1
+                    continue
+
+                if action == "complete":
+                    if not can_close_ticket(user, ticket) or ticket.status != ticket_status_enum.in_progress:
+                        skipped_count += 1
+                        continue
+                    old_status = ticket.status
+                    ticket.status = ticket_status_enum.done
+                    add_ticket_log(
+                        db,
+                        ticket_id=ticket.id,
+                        actor_id=user.id,
+                        action=ticket_status_change_log_action(old_status, ticket.status),
+                    )
+                    ensure_default_ticket_watchers(db, ticket)
+                    status_notifications.append((ticket, old_status))
                     done_count += 1
                     continue
 
@@ -238,9 +295,11 @@ def register_ticket_overview_routes(
                 status_code=http_303_see_other,
             )
 
-        for ticket, old_status in notifications:
+        for ticket, old_executor_id in executor_notifications:
+            notify_executor_reassigned(db, ticket, old_executor_id=old_executor_id, actor=user)
+        for ticket, old_status in status_notifications:
             notify_curators_status_changed(db, ticket, actor=user, old_status=old_status)
-        if notifications:
+        if executor_notifications or status_notifications:
             try:
                 db.commit()
             except sqlalchemy_error:
