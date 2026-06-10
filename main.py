@@ -23,7 +23,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import create_engine, String, Text, DateTime, Date, ForeignKey, Enum as SAEnum, Integer, Boolean, Numeric, UniqueConstraint, func, or_, cast, text, inspect as sa_inspect
+from sqlalchemy import create_engine, String, Text, DateTime, Date, ForeignKey, Enum as SAEnum, Integer, Boolean, Numeric, UniqueConstraint, func, or_, cast, case, text, inspect as sa_inspect
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from starlette.templating import Jinja2Templates
@@ -2401,6 +2401,7 @@ register_ticket_overview_routes(
             templates=templates,
             or_=or_,
             cast=cast,
+            case=case,
             string_type=String,
             company_model=Company,
             ticket_model=Ticket,

@@ -723,6 +723,7 @@
     {% if status_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
     {% if project_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
     {% if ticket_type_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
+    {% if sort_ticket_type_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
     {% if department_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
     {% if target_unit_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
     {% if unit_executor_id_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
@@ -762,6 +763,7 @@
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
         <input type="hidden" name="project_id" value="{{ project_id_filter }}">
         <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+        <input type="hidden" name="sort_ticket_type_id" value="{{ sort_ticket_type_id_filter }}">
         <input type="hidden" name="department_id" value="{{ department_id_filter }}">
         <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
         <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
@@ -957,11 +959,20 @@
               </div>
             {% endif %}
             <div class="col-6 col-md-3 filter-field-wide">
-              <label class="form-label mb-1">Тип заявки</label>
+              <label class="form-label mb-1">Фильтр по типу</label>
               <select name="ticket_type_id" class="form-select">
                 <option value="" {% if not ticket_type_id_filter %}selected{% endif %}>Все</option>
                 {% for tt in ticket_types %}
                   <option value="{{ tt.id }}" {% if ticket_type_id_filter == tt.id %}selected{% endif %}>{{ tt.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6 col-md-3 filter-field-wide">
+              <label class="form-label mb-1">Сортировка по типу</label>
+              <select name="sort_ticket_type_id" class="form-select">
+                <option value="" {% if not sort_ticket_type_id_filter %}selected{% endif %}>Не выбрано</option>
+                {% for tt in ticket_types %}
+                  <option value="{{ tt.id }}" {% if sort_ticket_type_id_filter == tt.id %}selected{% endif %}>Сначала: {{ tt.name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -1016,7 +1027,7 @@
             {% endif %}
 
             <div class="col-6 col-md-3 filter-field-wide">
-                <label class="form-label mb-1">Сортировка</label>
+                <label class="form-label mb-1">Сортировка списка</label>
                 <select name="sort" class="form-select">
                   <option value="id_desc" {% if sort == "id_desc" %}selected{% endif %}>Сначала новые</option>
                   <option value="id_asc" {% if sort == "id_asc" %}selected{% endif %}>Сначала старые</option>
@@ -1357,6 +1368,7 @@
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
             <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+            <input type="hidden" name="sort_ticket_type_id" value="{{ sort_ticket_type_id_filter }}">
             <input type="hidden" name="department_id" value="{{ department_id_filter }}">
             <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
             <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
@@ -1373,6 +1385,7 @@
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
             <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+            <input type="hidden" name="sort_ticket_type_id" value="{{ sort_ticket_type_id_filter }}">
             <input type="hidden" name="department_id" value="{{ department_id_filter }}">
             <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
             <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">
@@ -1393,6 +1406,7 @@
           <input type="hidden" name="status_filter" value="{{ status_filter }}">
           <input type="hidden" name="project_id" value="{{ project_id_filter }}">
           <input type="hidden" name="ticket_type_id" value="{{ ticket_type_id_filter }}">
+          <input type="hidden" name="sort_ticket_type_id" value="{{ sort_ticket_type_id_filter }}">
           <input type="hidden" name="department_id" value="{{ department_id_filter }}">
           <input type="hidden" name="target_unit_id" value="{{ target_unit_id_filter }}">
           <input type="hidden" name="unit_executor_id" value="{{ unit_executor_id_filter }}">

@@ -213,6 +213,84 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
         self.assertGreaterEqual(repair_later_pos, 0)
         self.assertLess(repair_nearest_pos, repair_later_pos)
 
+    def test_web_ticket_list_can_prioritize_selected_type_without_hiding_others(self):
+        with main.SessionLocal() as db:
+            company = main.Company(name="Priority Type Co")
+            db.add(company)
+            db.flush()
+            admin = main.User(
+                email="priority-type@example.com",
+                name="Priority Type Admin",
+                password_hash=main.hash_password("secret123"),
+                role=main.Role.admin,
+                company_id=company.id,
+                email_verified=True,
+            )
+            project = main.Project(name="Priority Type Project", company_id=company.id)
+            repair_type = main.TicketType(company_id=company.id, name="Repair", is_active=True)
+            monthly_type = main.TicketType(company_id=company.id, name="Monthly", is_active=True)
+            db.add_all([admin, project, repair_type, monthly_type])
+            db.flush()
+            repair_type_id = repair_type.id
+
+            base_deadline = main.local_now().replace(microsecond=0, second=0)
+            db.add_all(
+                [
+                    main.Ticket(
+                        title="Monthly nearest ticket",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        ticket_type_id=monthly_type.id,
+                        deadline=base_deadline + timedelta(days=1),
+                        created_by=admin.id,
+                    ),
+                    main.Ticket(
+                        title="Repair nearest ticket",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        ticket_type_id=repair_type.id,
+                        deadline=base_deadline + timedelta(days=2),
+                        created_by=admin.id,
+                    ),
+                    main.Ticket(
+                        title="Monthly later ticket",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        ticket_type_id=monthly_type.id,
+                        deadline=base_deadline + timedelta(days=3),
+                        created_by=admin.id,
+                    ),
+                ]
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/web/login",
+            data={"email": "priority-type@example.com", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+
+        response = self.client.get(
+            f"/web?sort_ticket_type_id={repair_type_id}&sort=deadline_asc&view_mode=table"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        repair_pos = response.text.find("Repair nearest ticket")
+        monthly_nearest_pos = response.text.find("Monthly nearest ticket")
+        monthly_later_pos = response.text.find("Monthly later ticket")
+        self.assertGreaterEqual(repair_pos, 0)
+        self.assertGreaterEqual(monthly_nearest_pos, 0)
+        self.assertGreaterEqual(monthly_later_pos, 0)
+        self.assertLess(repair_pos, monthly_nearest_pos)
+        self.assertLess(monthly_nearest_pos, monthly_later_pos)
+
     def test_web_ticket_list_can_sort_by_title(self):
         with main.SessionLocal() as db:
             company = main.Company(name="Title Sort Co")

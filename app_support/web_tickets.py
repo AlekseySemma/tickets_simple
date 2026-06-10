@@ -17,6 +17,7 @@ def render_web_tickets_page(
     unit_executor_id,
     q,
     only_overdue,
+    sort_ticket_type_id,
     sort,
     view_mode,
     open_create,
@@ -35,6 +36,7 @@ def render_web_tickets_page(
     templates,
     or_,
     cast,
+    case,
     string_type,
     company_model,
     ticket_model,
@@ -152,6 +154,7 @@ def render_web_tickets_page(
 
     project_id_int = _parse_optional_int(project_id)
     ticket_type_id_int = _parse_optional_int(ticket_type_id)
+    sort_ticket_type_id_int = _parse_optional_int(sort_ticket_type_id)
     department_id_int = _parse_optional_int(department_id)
     target_unit_id_int = _parse_optional_int(target_unit_id)
     unit_executor_id_int = _parse_optional_int(unit_executor_id)
@@ -236,6 +239,8 @@ def render_web_tickets_page(
         )
 
     sort_value = (sort or "").strip() or "id_desc"
+    if sort_ticket_type_id_int not in ticket_types_by_id:
+        sort_ticket_type_id_int = None
     raw_view_mode = (view_mode or "").strip().lower()
     can_switch_view_mode = user.role in (role_enum.admin, role_enum.curator, role_enum.executor)
     if can_switch_view_mode:
@@ -249,34 +254,46 @@ def render_web_tickets_page(
     total_count = filtered_query.count()
 
     tickets_query = filtered_query
+    priority_order = []
+    if sort_ticket_type_id_int is not None:
+        priority_order.append(
+            case(
+                (ticket_model.ticket_type_id == sort_ticket_type_id_int, 0),
+                else_=1,
+            ).asc()
+        )
     if sort_value == "deadline_asc":
         tickets_query = tickets_query.order_by(
+            *priority_order,
             ticket_model.deadline.is_(None).asc(),
             ticket_model.deadline.asc(),
             ticket_model.id.desc(),
         )
     elif sort_value == "deadline_desc":
         tickets_query = tickets_query.order_by(
+            *priority_order,
             ticket_model.deadline.is_(None).desc(),
             ticket_model.deadline.desc(),
             ticket_model.id.desc(),
         )
     elif sort_value == "title_asc":
         tickets_query = tickets_query.order_by(
+            *priority_order,
             ticket_model.title.asc(),
             ticket_model.id.desc(),
         )
     elif sort_value == "status":
         tickets_query = tickets_query.order_by(
+            *priority_order,
             ticket_model.status.asc(),
             ticket_model.deadline.is_(None).desc(),
             ticket_model.deadline.desc(),
             ticket_model.id.desc(),
         )
     elif sort_value == "id_asc":
-        tickets_query = tickets_query.order_by(ticket_model.id.asc())
+        tickets_query = tickets_query.order_by(*priority_order, ticket_model.id.asc())
     else:
-        tickets_query = tickets_query.order_by(ticket_model.id.desc())
+        tickets_query = tickets_query.order_by(*priority_order, ticket_model.id.desc())
 
     status_labels = {
         "NEW": "Новая",
@@ -291,6 +308,7 @@ def render_web_tickets_page(
         or project_id_int is not None
         or ticket_type_id_int is not None
         or department_id_int is not None
+        or sort_ticket_type_id_int is not None
         or target_unit_id_int is not None
         or unit_executor_id_int is not None
         or (executor_id or "").strip()
@@ -411,6 +429,7 @@ def render_web_tickets_page(
             "status_filter": status_filter or "",
             "project_id_filter": project_id_int if project_id_int is not None else "",
             "ticket_type_id_filter": ticket_type_id_int if ticket_type_id_int is not None else "",
+            "sort_ticket_type_id_filter": sort_ticket_type_id_int if sort_ticket_type_id_int is not None else "",
             "department_id_filter": department_id_int if department_id_int is not None else "",
             "target_unit_id_filter": target_unit_id_int if target_unit_id_int is not None else "",
             "unit_executor_id_filter": unit_executor_id_int if unit_executor_id_int is not None else "",
