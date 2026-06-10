@@ -356,6 +356,48 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
         self.assertLess(alpha_pos, bravo_pos)
         self.assertLess(bravo_pos, zulu_pos)
 
+    def test_web_ticket_list_renders_searchable_target_unit_filter(self):
+        with main.SessionLocal() as db:
+            company = main.Company(name="Unit Filter Co")
+            db.add(company)
+            db.flush()
+            admin = main.User(
+                email="unit-filter@example.com",
+                name="Unit Filter Admin",
+                password_hash=main.hash_password("secret123"),
+                role=main.Role.admin,
+                company_id=company.id,
+                email_verified=True,
+            )
+            project = main.Project(name="Unit Filter Project", company_id=company.id)
+            unit_type = main.UnitType(company_id=company.id, name="Branch", code="BR", is_active=True)
+            db.add_all([admin, project, unit_type])
+            db.flush()
+            unit = main.OrgUnit(
+                company_id=company.id,
+                name="North Block",
+                unit_type_id=unit_type.id,
+                parent_id=None,
+                is_active=True,
+            )
+            db.add(unit)
+            db.commit()
+            unit_id = unit.id
+
+        response = self.client.post(
+            "/web/login",
+            data={"email": "unit-filter@example.com", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+
+        response = self.client.get(f"/web?target_unit_id={unit_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="filter-target-unit-combobox"', response.text)
+        self.assertIn(f'id="filter-target-unit-id" name="target_unit_id" value="{unit_id}"', response.text)
+        self.assertIn(f'value="North Block (#{unit_id})"', response.text)
+
     def test_ticket_card_fields_can_be_hidden_in_card_list_only(self):
         ids = self.seed_context()
         with main.SessionLocal() as db:

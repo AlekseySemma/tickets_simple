@@ -146,6 +146,7 @@ def render_web_tickets_page(
             child_id, child_name = children[idx]
             child_is_last = idx == len(children) - 1
             stack.append((child_id, child_name, depth + 1, child_ancestor_has_next, child_is_last))
+    org_units_by_id = {int(item["id"]): str(item["short_name"]) for item in org_units}
 
     users_by_id = {item.id: f"{item.name}" for item in users}
     projects_by_id = {item.id: item.name for item in projects}
@@ -418,6 +419,11 @@ def render_web_tickets_page(
             "projects_by_id": projects_by_id,
             "ticket_types_by_id": ticket_types_by_id,
             "departments_by_id": departments_by_id,
+            "target_unit_filter_label": (
+                f'{org_units_by_id[target_unit_id_int]} (#{target_unit_id_int})'
+                if target_unit_id_int in org_units_by_id
+                else ""
+            ),
             "ticket_card_fields": {
                 "department": bool(getattr(user, "ticket_card_show_department", True)),
                 "executor": bool(getattr(user, "ticket_card_show_executor", True)),

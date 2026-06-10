@@ -987,12 +987,37 @@
             </div>
             <div class="col-6 col-md-3 filter-field-wide">
               <label class="form-label mb-1">Узел/поддерево</label>
-              <select name="target_unit_id" class="form-select">
-                <option value="" {% if not target_unit_id_filter %}selected{% endif %}>Все</option>
-                {% for u in org_units %}
-                  <option value="{{ u.id }}" {% if target_unit_id_filter == u.id %}selected{% endif %}>{{ u.short_name }}</option>
-                {% endfor %}
-              </select>
+              <div id="filter-target-unit-combobox-wrap" class="target-unit-combobox">
+                <input type="hidden" id="filter-target-unit-id" name="target_unit_id" value="{{ target_unit_id_filter }}" />
+                <div class="target-unit-input-wrap">
+                  <input
+                    id="filter-target-unit-combobox"
+                    class="form-control target-unit-combobox-input"
+                    type="text"
+                    name="target_unit_label"
+                    placeholder="Все или начните вводить узел..."
+                    aria-label="Узел или поддерево"
+                    autocomplete="off"
+                    value="{{ target_unit_filter_label }}"
+                  />
+                  <button type="button" id="filter-target-unit-clear" class="target-unit-clear {% if not target_unit_filter_label %}d-none{% endif %}" aria-label="Очистить поле">
+                    &times;
+                  </button>
+                </div>
+                <div id="filter-target-unit-dropdown" class="target-unit-dropdown d-none">
+                  {% for u in org_units %}
+                    <button
+                      type="button"
+                      class="target-unit-option"
+                      data-unit-id="{{ u.id }}"
+                      data-unit-label="{{ u.short_name }} (#{{ u.id }})"
+                    >{{ u.short_name }} (#{{ u.id }})</button>
+                  {% endfor %}
+                  <div id="filter-target-unit-empty" class="target-unit-empty d-none">
+                    Ничего не найдено
+                  </div>
+                </div>
+              </div>
             </div>
             {% if user.role in ["ADMIN", "CURATOR"] %}
               <div class="col-6 col-md-3 filter-field">
@@ -1693,145 +1718,167 @@ document.addEventListener("DOMContentLoaded", function () {
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  const wrap = document.getElementById("create-target-unit-combobox-wrap");
-  const textInput = document.getElementById("create-target-unit-combobox");
-  const clearBtn = document.getElementById("create-target-unit-clear");
-  const hiddenInput = document.getElementById("create-target-unit-id");
-  const dropdown = document.getElementById("create-target-unit-dropdown");
-  const emptyHint = document.getElementById("create-target-unit-empty");
-  if (!wrap || !textInput || !clearBtn || !hiddenInput || !dropdown || !emptyHint) return;
+  function initTargetUnitCombobox(config) {
+    const wrap = document.getElementById(config.wrapId);
+    const textInput = document.getElementById(config.inputId);
+    const clearBtn = document.getElementById(config.clearId);
+    const hiddenInput = document.getElementById(config.hiddenId);
+    const dropdown = document.getElementById(config.dropdownId);
+    const emptyHint = document.getElementById(config.emptyId);
+    if (!wrap || !textInput || !clearBtn || !hiddenInput || !dropdown || !emptyHint) return;
 
-  const options = Array.from(dropdown.querySelectorAll(".target-unit-option"));
-  let selectedLabel = "";
-  const normalize = (value) => (value || "").toLowerCase().replace(/\s+/g, " ").trim();
+    const options = Array.from(dropdown.querySelectorAll(".target-unit-option"));
+    let selectedLabel = (textInput.value || "").trim();
+    const normalize = (value) => (value || "").toLowerCase().replace(/\s+/g, " ").trim();
 
-  function isSameLabel(a, b) {
-    return normalize(a) === normalize(b);
-  }
-
-  function openDropdown() {
-    dropdown.classList.remove("d-none");
-    filterOptions(textInput.value);
-  }
-
-  function closeDropdown() {
-    dropdown.classList.add("d-none");
-  }
-
-  function filterOptions(queryText) {
-    const query = normalize(queryText);
-    let visibleCount = 0;
-
-    options.forEach((btn) => {
-      const label = btn.dataset.unitLabel || btn.textContent || "";
-      const visible = !query || normalize(label).includes(query);
-      btn.classList.toggle("d-none", !visible);
-      if (visible) visibleCount += 1;
-    });
-
-    emptyHint.classList.toggle("d-none", visibleCount > 0);
-  }
-
-  function syncValidation() {
-    clearBtn.classList.toggle("d-none", !Boolean((textInput.value || "").trim()));
-    const hasText = Boolean((textInput.value || "").trim());
-    if (!hasText) {
-      textInput.setCustomValidity("");
-      return;
+    function isSameLabel(a, b) {
+      return normalize(a) === normalize(b);
     }
-    if (!hiddenInput.value) {
-      textInput.setCustomValidity("Выберите узел из выпадающего списка");
-      return;
-    }
-    textInput.setCustomValidity("");
-  }
 
-  function trySelectExactMatch() {
-    const typed = normalize(textInput.value);
-    if (!typed) return false;
-    const exact = options.find((btn) => normalize(btn.dataset.unitLabel || btn.textContent || "") === typed);
-    if (!exact) return false;
-    selectUnit(exact);
-    return true;
-  }
-
-  function selectUnit(btn) {
-    const unitId = btn.dataset.unitId || "";
-    const unitLabel = (btn.dataset.unitLabel || btn.textContent || "").trim();
-    hiddenInput.value = unitId;
-    selectedLabel = unitLabel;
-    textInput.value = unitLabel;
-    syncValidation();
-    closeDropdown();
-  }
-
-  textInput.addEventListener("focus", openDropdown);
-  textInput.addEventListener("click", openDropdown);
-  textInput.addEventListener("input", function () {
-    if (!isSameLabel(textInput.value, selectedLabel)) {
-      hiddenInput.value = "";
+    function openDropdown() {
+      dropdown.classList.remove("d-none");
+      filterOptions(textInput.value);
     }
-    syncValidation();
-    openDropdown();
-  });
-  textInput.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") {
-      closeDropdown();
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      openDropdown();
-      const firstVisible = options.find((btn) => !btn.classList.contains("d-none"));
-      if (firstVisible) firstVisible.focus();
-    }
-  });
 
-  options.forEach((btn) => {
-    btn.addEventListener("mousedown", function (event) {
-      event.preventDefault();
-      selectUnit(btn);
-    });
-    btn.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        selectUnit(btn);
+    function closeDropdown() {
+      dropdown.classList.add("d-none");
+    }
+
+    function filterOptions(queryText) {
+      const query = normalize(queryText);
+      let visibleCount = 0;
+
+      options.forEach((btn) => {
+        const label = btn.dataset.unitLabel || btn.textContent || "";
+        const visible = !query || normalize(label).includes(query);
+        btn.classList.toggle("d-none", !visible);
+        if (visible) visibleCount += 1;
+      });
+
+      emptyHint.classList.toggle("d-none", visibleCount > 0);
+    }
+
+    function syncValidation() {
+      clearBtn.classList.toggle("d-none", !Boolean((textInput.value || "").trim()));
+      const hasText = Boolean((textInput.value || "").trim());
+      if (!hasText) {
+        textInput.setCustomValidity("");
+        return;
       }
-    });
-  });
+      if (!hiddenInput.value && config.requireSelection) {
+        textInput.setCustomValidity("Выберите узел из выпадающего списка");
+        return;
+      }
+      textInput.setCustomValidity("");
+    }
 
-  clearBtn.addEventListener("mousedown", function (event) {
-    event.preventDefault();
-  });
-  clearBtn.addEventListener("click", function () {
-    textInput.value = "";
-    hiddenInput.value = "";
-    selectedLabel = "";
-    syncValidation();
-    openDropdown();
-    textInput.focus();
-  });
+    function trySelectExactMatch() {
+      const typed = normalize(textInput.value);
+      if (!typed) return false;
+      const exact = options.find((btn) => normalize(btn.dataset.unitLabel || btn.textContent || "") === typed);
+      if (!exact) return false;
+      selectUnit(exact);
+      return true;
+    }
 
-  document.addEventListener("click", function (event) {
-    if (!wrap.contains(event.target)) {
+    function selectUnit(btn) {
+      const unitId = btn.dataset.unitId || "";
+      const unitLabel = (btn.dataset.unitLabel || btn.textContent || "").trim();
+      hiddenInput.value = unitId;
+      selectedLabel = unitLabel;
+      textInput.value = unitLabel;
+      syncValidation();
       closeDropdown();
     }
-  });
 
-  const createForm = textInput.closest("form");
-  if (createForm) {
-    createForm.addEventListener("submit", function () {
+    textInput.addEventListener("focus", openDropdown);
+    textInput.addEventListener("click", openDropdown);
+    textInput.addEventListener("input", function () {
       if (!isSameLabel(textInput.value, selectedLabel)) {
-        if (!trySelectExactMatch()) {
-          hiddenInput.value = "";
-        }
+        hiddenInput.value = "";
       }
       syncValidation();
-    }, true);
+      openDropdown();
+    });
+    textInput.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        closeDropdown();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        openDropdown();
+        const firstVisible = options.find((btn) => !btn.classList.contains("d-none"));
+        if (firstVisible) firstVisible.focus();
+      }
+    });
+
+    options.forEach((btn) => {
+      btn.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        selectUnit(btn);
+      });
+      btn.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectUnit(btn);
+        }
+      });
+    });
+
+    clearBtn.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    clearBtn.addEventListener("click", function () {
+      textInput.value = "";
+      hiddenInput.value = "";
+      selectedLabel = "";
+      syncValidation();
+      openDropdown();
+      textInput.focus();
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!wrap.contains(event.target)) {
+        closeDropdown();
+      }
+    });
+
+    const form = textInput.closest("form");
+    if (form) {
+      form.addEventListener("submit", function () {
+        if (!isSameLabel(textInput.value, selectedLabel)) {
+          if (!trySelectExactMatch()) {
+            hiddenInput.value = "";
+          }
+        }
+        syncValidation();
+      }, true);
+    }
+
+    filterOptions("");
+    syncValidation();
   }
 
-  filterOptions("");
-  syncValidation();
+  initTargetUnitCombobox({
+    wrapId: "create-target-unit-combobox-wrap",
+    inputId: "create-target-unit-combobox",
+    clearId: "create-target-unit-clear",
+    hiddenId: "create-target-unit-id",
+    dropdownId: "create-target-unit-dropdown",
+    emptyId: "create-target-unit-empty",
+    requireSelection: true,
+  });
+
+  initTargetUnitCombobox({
+    wrapId: "filter-target-unit-combobox-wrap",
+    inputId: "filter-target-unit-combobox",
+    clearId: "filter-target-unit-clear",
+    hiddenId: "filter-target-unit-id",
+    dropdownId: "filter-target-unit-dropdown",
+    emptyId: "filter-target-unit-empty",
+    requireSelection: false,
+  });
 });
 </script>
 
