@@ -128,7 +128,7 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
         self.assertIn("Archived ticket", response.text)
         self.assertIn(f'/web/tickets/{ids["archived_ticket_id"]}', response.text)
 
-    def test_web_ticket_list_can_sort_by_type_then_deadline(self):
+    def test_web_ticket_list_can_filter_by_type_then_sort_by_deadline(self):
         with main.SessionLocal() as db:
             company = main.Company(name="Sort Overview Co")
             db.add(company)
@@ -146,6 +146,7 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
             monthly_type = main.TicketType(company_id=company.id, name="Monthly", is_active=True)
             db.add_all([admin, project, repair_type, monthly_type])
             db.flush()
+            repair_type_id = repair_type.id
 
             base_deadline = main.local_now().replace(microsecond=0, second=0)
             db.add_all(
@@ -158,6 +159,16 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
                         project_id=project.id,
                         ticket_type_id=repair_type.id,
                         deadline=base_deadline + timedelta(days=3),
+                        created_by=admin.id,
+                    ),
+                    main.Ticket(
+                        title="Repair nearest ticket",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        ticket_type_id=repair_type.id,
+                        deadline=base_deadline + timedelta(days=1),
                         created_by=admin.id,
                     ),
                     main.Ticket(
@@ -191,17 +202,81 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 303)
 
-        response = self.client.get("/web?sort=ticket_type_deadline_asc&view_mode=table")
+        response = self.client.get(f"/web?ticket_type_id={repair_type_id}&sort=deadline_asc&view_mode=table")
 
         self.assertEqual(response.status_code, 200)
-        monthly_nearest_pos = response.text.find("Monthly nearest ticket")
-        monthly_later_pos = response.text.find("Monthly later ticket")
+        self.assertNotIn("Monthly nearest ticket", response.text)
+        self.assertNotIn("Monthly later ticket", response.text)
+        repair_nearest_pos = response.text.find("Repair nearest ticket")
         repair_later_pos = response.text.find("Repair later ticket")
-        self.assertGreaterEqual(monthly_nearest_pos, 0)
-        self.assertGreaterEqual(monthly_later_pos, 0)
+        self.assertGreaterEqual(repair_nearest_pos, 0)
         self.assertGreaterEqual(repair_later_pos, 0)
-        self.assertLess(monthly_nearest_pos, monthly_later_pos)
-        self.assertLess(monthly_later_pos, repair_later_pos)
+        self.assertLess(repair_nearest_pos, repair_later_pos)
+
+    def test_web_ticket_list_can_sort_by_title(self):
+        with main.SessionLocal() as db:
+            company = main.Company(name="Title Sort Co")
+            db.add(company)
+            db.flush()
+            admin = main.User(
+                email="title-sort@example.com",
+                name="Title Sort Admin",
+                password_hash=main.hash_password("secret123"),
+                role=main.Role.admin,
+                company_id=company.id,
+                email_verified=True,
+            )
+            project = main.Project(name="Title Sort Project", company_id=company.id)
+            db.add_all([admin, project])
+            db.flush()
+            db.add_all(
+                [
+                    main.Ticket(
+                        title="Zulu task",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        created_by=admin.id,
+                    ),
+                    main.Ticket(
+                        title="Alpha task",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        created_by=admin.id,
+                    ),
+                    main.Ticket(
+                        title="Bravo task",
+                        description="",
+                        status=main.TicketStatus.new,
+                        company_id=company.id,
+                        project_id=project.id,
+                        created_by=admin.id,
+                    ),
+                ]
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/web/login",
+            data={"email": "title-sort@example.com", "password": "secret123"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+
+        response = self.client.get("/web?sort=title_asc&view_mode=table")
+
+        self.assertEqual(response.status_code, 200)
+        alpha_pos = response.text.find("Alpha task")
+        bravo_pos = response.text.find("Bravo task")
+        zulu_pos = response.text.find("Zulu task")
+        self.assertGreaterEqual(alpha_pos, 0)
+        self.assertGreaterEqual(bravo_pos, 0)
+        self.assertGreaterEqual(zulu_pos, 0)
+        self.assertLess(alpha_pos, bravo_pos)
+        self.assertLess(bravo_pos, zulu_pos)
 
     def test_ticket_card_fields_can_be_hidden_in_card_list_only(self):
         ids = self.seed_context()
