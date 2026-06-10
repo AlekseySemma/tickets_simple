@@ -102,19 +102,23 @@
       }
       .tickets-filter-panel {
         display: block !important;
+        overflow: visible;
+      }
+      .tickets-filter-panel .panel-card {
+        overflow: visible;
       }
       .tickets-filter-panel .panel-card .card-body {
         padding: 6px 10px;
+        overflow: visible;
       }
       .tickets-filter-form {
         display: flex;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         align-items: flex-end;
         gap: 8px;
-        overflow-x: auto;
+        overflow: visible;
         margin-top: 0 !important;
-        padding-bottom: 2px;
-        scrollbar-width: thin;
+        padding-bottom: 0;
       }
       .tickets-filter-form > [class*="col-"] {
         flex: 0 0 auto;
@@ -194,6 +198,10 @@
     }
     .target-unit-combobox {
       position: relative;
+      z-index: 20;
+    }
+    .target-unit-combobox:focus-within {
+      z-index: 1600;
     }
     .target-unit-input-wrap {
       position: relative;
