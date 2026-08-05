@@ -876,9 +876,9 @@
               <label class="form-label mb-1">Исполнитель</label>
               {% if user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and user.can_view_all_tickets) %}
                 <select name="executor_id" class="form-select">
-                  <option value="" selected>Исполнитель (необязательно)</option>
+                  <option value="" {% if not create_default_executor_id %}selected{% endif %}>Исполнитель (необязательно)</option>
                   {% for e in executors %}
-                    <option value="{{ e.id }}">{{ e.name }} ({{ e.email }})</option>
+                    <option value="{{ e.id }}" {% if create_default_executor_id == e.id %}selected{% endif %}>{{ e.name }} ({{ e.email }})</option>
                   {% endfor %}
                 </select>
               {% else %}
@@ -905,11 +905,11 @@
               <div class="muted small mt-1">Можно выбрать нескольких пользователей. Создатель и исполнитель добавляются автоматически.</div>
             </div>
             <div class="col-12 col-md-6">
-              <select name="ticket_type_id" class="form-select">
-                <option value="" selected>Тип заявки (необязательно)</option>
+              <select id="create-ticket-type-id" name="ticket_type_id" class="form-select">
+                <option value="" {% if not create_default_ticket_type_id %}selected{% endif %}>Тип заявки (необязательно)</option>
                 {% for tt in ticket_types %}
                   {% if tt.is_active %}
-                    <option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}">{{ tt.name }}</option>
+                    <option value="{{ tt.id }}" data-department-id="{{ tt.department_id or '' }}" {% if create_default_ticket_type_id == tt.id %}selected{% endif %}>{{ tt.name }}</option>
                   {% endif %}
                 {% endfor %}
               </select>
@@ -1671,7 +1671,7 @@
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
-    const ticketTypeSelect = document.querySelector('select[name="ticket_type_id"]');
+    const ticketTypeSelect = document.getElementById("create-ticket-type-id");
     const departmentSelect = document.getElementById("create-department-id");
     if (!ticketTypeSelect || !departmentSelect) return;
 
@@ -1685,6 +1685,7 @@
     }
 
     ticketTypeSelect.addEventListener("change", syncDepartmentFromType);
+    syncDepartmentFromType();
   });
 </script>
 

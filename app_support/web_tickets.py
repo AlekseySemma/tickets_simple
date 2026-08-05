@@ -97,6 +97,19 @@ def render_web_tickets_page(
         .order_by(ticket_type_model.id.desc())
         .all()
     )
+    create_default_executor_id: int | None = None
+    create_default_ticket_type_id: int | None = None
+    if user.role == role_enum.executor:
+        executor_ids = {int(item.id) for item in executors}
+        if getattr(user, "can_view_all_tickets", False) and getattr(user, "id", None) in executor_ids:
+            create_default_executor_id = int(user.id)
+        for ticket_type in ticket_types:
+            normalized_name = str(ticket_type.name or "").strip().casefold()
+            if not ticket_type.is_active:
+                continue
+            if normalized_name in {"ремонт", "repair"}:
+                create_default_ticket_type_id = int(ticket_type.id)
+                break
     departments = (
         db.query(department_model.id, department_model.name, department_model.is_active)
         .filter(department_model.company_id == user.company_id)
@@ -414,6 +427,8 @@ def render_web_tickets_page(
             "watcher_candidates": users,
             "ticket_types": ticket_types,
             "departments": departments,
+            "create_default_executor_id": create_default_executor_id,
+            "create_default_ticket_type_id": create_default_ticket_type_id,
             "org_units": org_units,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,

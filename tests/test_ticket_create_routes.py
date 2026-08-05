@@ -70,6 +70,7 @@ class TicketCreateRoutesTests(unittest.TestCase):
                 role=main.Role.executor,
                 company_id=company.id,
                 email_verified=True,
+                can_view_all_tickets=True,
                 is_assignable_executor=True,
             )
             watcher = main.User(
@@ -81,21 +82,23 @@ class TicketCreateRoutesTests(unittest.TestCase):
                 email_verified=True,
                 is_assignable_executor=True,
             )
+            repair_type = main.TicketType(company_id=company.id, name="Ремонт", is_active=True)
             project = main.Project(name="Create Project", company_id=company.id)
-            db.add_all([admin, executor, watcher, project])
+            db.add_all([admin, executor, watcher, repair_type, project])
             db.commit()
             return {
                 "company_id": company.id,
                 "admin_id": admin.id,
                 "executor_id": executor.id,
                 "watcher_id": watcher.id,
+                "repair_type_id": repair_type.id,
                 "project_id": project.id,
             }
 
-    def login_web(self) -> None:
+    def login_web(self, email: str = "create-admin@example.com", password: str = "secret123") -> None:
         response = self.client.post(
             "/web/login",
-            data={"email": "create-admin@example.com", "password": "secret123"},
+            data={"email": email, "password": password},
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
@@ -162,6 +165,22 @@ class TicketCreateRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/web?open_create=1&create_error=title_too_long")
+
+    def test_executor_create_form_defaults_to_self_and_repair_type(self):
+        ids = self.seed_context()
+        self.login_web("create-executor@example.com")
+
+        response = self.client.get("/web?open_create=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            f'<option value="{ids["executor_id"]}" selected>Create Executor (create-executor@example.com)</option>',
+            response.text,
+        )
+        self.assertIn(
+            f'<option value="{ids["repair_type_id"]}" data-department-id="" selected>Ремонт</option>',
+            response.text,
+        )
 
 
 if __name__ == "__main__":
