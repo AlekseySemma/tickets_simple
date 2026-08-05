@@ -99,6 +99,7 @@ def render_web_tickets_page(
     )
     create_default_executor_id: int | None = None
     create_default_ticket_type_id: int | None = None
+    create_default_department_id: int | None = None
     if user.role == role_enum.executor:
         executor_ids = {int(item.id) for item in executors}
         if getattr(user, "can_view_all_tickets", False) and getattr(user, "id", None) in executor_ids:
@@ -109,6 +110,8 @@ def render_web_tickets_page(
                 continue
             if normalized_name in {"ремонт", "repair"}:
                 create_default_ticket_type_id = int(ticket_type.id)
+                if ticket_type.department_id is not None:
+                    create_default_department_id = int(ticket_type.department_id)
                 break
     departments = (
         db.query(department_model.id, department_model.name, department_model.is_active)
@@ -429,6 +432,7 @@ def render_web_tickets_page(
             "departments": departments,
             "create_default_executor_id": create_default_executor_id,
             "create_default_ticket_type_id": create_default_ticket_type_id,
+            "create_default_department_id": create_default_department_id,
             "org_units": org_units,
             "users_by_id": users_by_id,
             "projects_by_id": projects_by_id,

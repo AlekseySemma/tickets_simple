@@ -82,15 +82,25 @@ class TicketCreateRoutesTests(unittest.TestCase):
                 email_verified=True,
                 is_assignable_executor=True,
             )
-            repair_type = main.TicketType(company_id=company.id, name="Ремонт", is_active=True)
+            department = main.Department(company_id=company.id, name="Repair Department", is_active=True)
             project = main.Project(name="Create Project", company_id=company.id)
-            db.add_all([admin, executor, watcher, repair_type, project])
+            db.add_all([admin, executor, watcher, department, project])
+            db.flush()
+            repair_type = main.TicketType(
+                company_id=company.id,
+                name="Ремонт",
+                is_active=True,
+                department_id=department.id,
+            )
+            db.add(repair_type)
+            db.flush()
             db.commit()
             return {
                 "company_id": company.id,
                 "admin_id": admin.id,
                 "executor_id": executor.id,
                 "watcher_id": watcher.id,
+                "department_id": department.id,
                 "repair_type_id": repair_type.id,
                 "project_id": project.id,
             }
@@ -178,7 +188,11 @@ class TicketCreateRoutesTests(unittest.TestCase):
             response.text,
         )
         self.assertIn(
-            f'<option value="{ids["repair_type_id"]}" data-department-id="" selected>Ремонт</option>',
+            f'<option value="{ids["repair_type_id"]}" data-department-id="{ids["department_id"]}" selected>Ремонт</option>',
+            response.text,
+        )
+        self.assertIn(
+            f'<option value="{ids["department_id"]}" selected>Repair Department</option>',
             response.text,
         )
 

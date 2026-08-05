@@ -808,10 +808,10 @@
             </div>
             <div class="col-12 col-md-6">
               <select name="department_id" class="form-select" id="create-department-id">
-                <option value="" selected>Отдел (необязательно)</option>
+                <option value="" {% if not create_default_department_id %}selected{% endif %}>Отдел (необязательно)</option>
                 {% for department in departments %}
                   {% if department.is_active %}
-                    <option value="{{ department.id }}">{{ department.name }}</option>
+                    <option value="{{ department.id }}" {% if create_default_department_id == department.id %}selected{% endif %}>{{ department.name }}</option>
                   {% endif %}
                 {% endfor %}
               </select>
