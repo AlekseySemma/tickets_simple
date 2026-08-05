@@ -57,8 +57,18 @@ class TicketActionRoutesTests(unittest.TestCase):
                 company_id=company.id,
                 email_verified=True,
             )
+            executor = main.User(
+                email="actions-executor@example.com",
+                name="Action Executor",
+                password_hash=main.hash_password("secret123"),
+                role=main.Role.executor,
+                company_id=company.id,
+                email_verified=True,
+                can_view_all_tickets=True,
+                is_assignable_executor=True,
+            )
             project = main.Project(name="Action Project", company_id=company.id)
-            db.add_all([admin, project])
+            db.add_all([admin, executor, project])
             db.flush()
             new_ticket = main.Ticket(
                 title="New ticket",
@@ -99,16 +109,17 @@ class TicketActionRoutesTests(unittest.TestCase):
             db.add_all([new_ticket, done_ticket, archived_ticket, deletable_ticket])
             db.commit()
             return {
+                "executor_id": executor.id,
                 "new_ticket_id": new_ticket.id,
                 "done_ticket_id": done_ticket.id,
                 "archived_ticket_id": archived_ticket.id,
                 "deletable_ticket_id": deletable_ticket.id,
             }
 
-    def login_web(self) -> None:
+    def login_web(self, email: str = "actions@example.com", password: str = "secret123") -> None:
         response = self.client.post(
             "/web/login",
-            data={"email": "actions@example.com", "password": "secret123"},
+            data={"email": email, "password": password},
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
@@ -184,6 +195,39 @@ class TicketActionRoutesTests(unittest.TestCase):
     def test_delete_action_removes_ticket(self):
         ids = self.seed_context()
         self.login_web()
+
+        response = self.client.post(
+            f"/web/tickets/{ids['deletable_ticket_id']}/delete",
+            data={"next": "/web"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/web")
+        with main.SessionLocal() as db:
+            self.assertIsNone(db.get(main.Ticket, ids["deletable_ticket_id"]))
+
+    def test_executor_with_view_all_can_archive_foreign_done_ticket(self):
+        ids = self.seed_context()
+        self.login_web("actions-executor@example.com")
+
+        response = self.client.post(
+            f"/web/tickets/{ids['done_ticket_id']}/archive",
+            data={"next": "/web"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/web")
+        with main.SessionLocal() as db:
+            ticket = db.get(main.Ticket, ids["done_ticket_id"])
+            self.assertEqual(ticket.status, main.TicketStatus.archived)
+
+    def test_executor_with_view_all_can_delete_foreign_active_ticket(self):
+        ids = self.seed_context()
+        self.login_web("actions-executor@example.com")
 
         response = self.client.post(
             f"/web/tickets/{ids['deletable_ticket_id']}/delete",

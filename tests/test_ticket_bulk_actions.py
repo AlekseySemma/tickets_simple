@@ -65,6 +65,7 @@ class TicketBulkActionsTests(unittest.TestCase):
                 role=main.Role.executor,
                 company_id=company.id,
                 email_verified=True,
+                can_view_all_tickets=True,
                 is_assignable_executor=True,
             )
             other_executor = main.User(
@@ -208,7 +209,7 @@ class TicketBulkActionsTests(unittest.TestCase):
             self.assertEqual(done_ticket.status, main.TicketStatus.archived)
             self.assertEqual(new_ticket.status, main.TicketStatus.new)
 
-    def test_executor_bulk_delete_skips_unavailable_ticket_ids(self):
+    def test_executor_bulk_delete_removes_foreign_ticket_when_view_all_enabled(self):
         ids = self.seed_company_with_users()
         self.login_web("executor@example.com")
 
@@ -226,13 +227,37 @@ class TicketBulkActionsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(
             response.headers["location"],
-            "/web?view_mode=table&bulk_ok=1&bulk_action=delete&bulk_done=1&bulk_skipped=1",
+            "/web?view_mode=table&bulk_ok=1&bulk_action=delete&bulk_done=2&bulk_skipped=0",
         )
         with main.SessionLocal() as db:
             self.assertIsNone(db.get(main.Ticket, ids["own_ticket_id"]))
-            self.assertIsNotNone(db.get(main.Ticket, ids["foreign_ticket_id"]))
+            self.assertIsNone(db.get(main.Ticket, ids["foreign_ticket_id"]))
 
-    def test_bulk_take_in_work_assigns_executor_and_skips_unavailable_tickets(self):
+    def test_executor_with_view_all_can_bulk_archive_foreign_done_ticket(self):
+        ids = self.seed_company_with_users()
+        self.login_web("executor@example.com")
+
+        response = self.client.post(
+            "/web/tickets/bulk-action",
+            data={
+                "action": "archive",
+                "ticket_ids": [str(ids["done_ticket_id"])],
+                "next": "/web?view_mode=table",
+            },
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(
+            response.headers["location"],
+            "/web?view_mode=table&bulk_ok=1&bulk_action=archive&bulk_done=1&bulk_skipped=0",
+        )
+        with main.SessionLocal() as db:
+            done_ticket = db.get(main.Ticket, ids["done_ticket_id"])
+            self.assertEqual(done_ticket.status, main.TicketStatus.archived)
+
+    def test_bulk_take_in_work_assigns_executor_to_all_accessible_tickets(self):
         ids = self.seed_company_with_users()
         self.login_web("executor@example.com")
 
@@ -250,15 +275,15 @@ class TicketBulkActionsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(
             response.headers["location"],
-            "/web?view_mode=table&bulk_ok=1&bulk_action=take_in_work&bulk_done=1&bulk_skipped=1",
+            "/web?view_mode=table&bulk_ok=1&bulk_action=take_in_work&bulk_done=2&bulk_skipped=0",
         )
         with main.SessionLocal() as db:
             own_ticket = db.get(main.Ticket, ids["own_ticket_id"])
             foreign_ticket = db.get(main.Ticket, ids["foreign_ticket_id"])
             self.assertEqual(own_ticket.status, main.TicketStatus.in_progress)
             self.assertEqual(own_ticket.executor_id, ids["executor_id"])
-            self.assertEqual(foreign_ticket.status, main.TicketStatus.new)
-            self.assertEqual(foreign_ticket.executor_id, None)
+            self.assertEqual(foreign_ticket.status, main.TicketStatus.in_progress)
+            self.assertEqual(foreign_ticket.executor_id, ids["executor_id"])
 
     def test_bulk_complete_sets_done_for_in_progress_tickets_only(self):
         ids = self.seed_company_with_users()

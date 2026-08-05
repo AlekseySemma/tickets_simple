@@ -36,7 +36,11 @@ def can_archive_ticket(user, ticket) -> bool:
         return False
     if is_manager(user):
         return True
-    return bool(getattr(user, "role", None) == Role.executor and getattr(ticket, "created_by", None) == getattr(user, "id", None))
+    if getattr(user, "role", None) != Role.executor:
+        return False
+    if getattr(user, "can_view_all_tickets", False):
+        return True
+    return bool(getattr(ticket, "created_by", None) == getattr(user, "id", None))
 
 
 def can_view_all_company_tickets(user) -> bool:
@@ -72,7 +76,11 @@ def can_delete_ticket(user, ticket) -> bool:
         return is_manager(user)
     if is_manager(user):
         return True
-    return bool(getattr(user, "role", None) == Role.executor and getattr(ticket, "created_by", None) == getattr(user, "id", None))
+    if getattr(user, "role", None) != Role.executor:
+        return False
+    if getattr(user, "can_view_all_tickets", False):
+        return True
+    return bool(getattr(ticket, "created_by", None) == getattr(user, "id", None))
 
 
 def can_restore_ticket(user, ticket) -> bool:

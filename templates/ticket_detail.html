@@ -1122,7 +1122,7 @@
             </div>
 
             {% set can_edit = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (t.executor_id == user.id or t.created_by == user.id)) %}
-            {% set can_delete = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and t.created_by == user.id) %}
+            {% set can_delete = user.role in ["ADMIN", "CURATOR"] or (user.role == "EXECUTOR" and (user.can_view_all_tickets or t.created_by == user.id)) %}
             {% if can_edit or can_delete or can_archive or can_restore %}
             <div class="ticket-actions">
               {% if can_edit and t.status.value != "ARCHIVED" %}

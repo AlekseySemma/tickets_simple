@@ -64,6 +64,7 @@ class TicketDetailRoutesTests(unittest.TestCase):
                 role=main.Role.executor,
                 company_id=company.id,
                 email_verified=True,
+                can_view_all_tickets=True,
                 is_assignable_executor=True,
             )
             project = main.Project(name="Detail Project", company_id=company.id)
@@ -88,10 +89,10 @@ class TicketDetailRoutesTests(unittest.TestCase):
                 "ticket_id": ticket.id,
             }
 
-    def login_web(self) -> None:
+    def login_web(self, email: str = "detail-admin@example.com", password: str = "secret123") -> None:
         response = self.client.post(
             "/web/login",
-            data={"email": "detail-admin@example.com", "password": "secret123"},
+            data={"email": email, "password": password},
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
@@ -169,6 +170,19 @@ class TicketDetailRoutesTests(unittest.TestCase):
             self.assertEqual(ticket.title, "Updated detail ticket")
             self.assertEqual(ticket.description, "Updated description")
             self.assertEqual(ticket.status, main.TicketStatus.done)
+
+    def test_executor_with_view_all_sees_delete_action_for_foreign_ticket(self):
+        ids = self.seed_context()
+        with main.SessionLocal() as db:
+            ticket = db.get(main.Ticket, ids["ticket_id"])
+            ticket.created_by = ids["admin_id"]
+            db.commit()
+
+        self.login_web("detail-executor@example.com")
+        response = self.client.get(f"/web/tickets/{ids['ticket_id']}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(">Удалить</button>", response.text)
 
 
 if __name__ == "__main__":

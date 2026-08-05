@@ -64,6 +64,7 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
                 role=main.Role.executor,
                 company_id=company.id,
                 email_verified=True,
+                can_view_all_tickets=True,
                 is_assignable_executor=True,
             )
             project = main.Project(name="Overview Project", company_id=company.id)
@@ -74,6 +75,16 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
                 title="Active ticket",
                 description="visible on /web",
                 status=main.TicketStatus.new,
+                company_id=company.id,
+                project_id=project.id,
+                executor_id=executor.id,
+                department_id=department.id,
+                created_by=admin.id,
+            )
+            done_ticket = main.Ticket(
+                title="Done foreign ticket",
+                description="ready for archive by executor",
+                status=main.TicketStatus.done,
                 company_id=company.id,
                 project_id=project.id,
                 executor_id=executor.id,
@@ -92,18 +103,19 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
                 retention_days=30,
                 delete_at=main.local_now(),
             )
-            db.add_all([active_ticket, archived_ticket])
+            db.add_all([active_ticket, done_ticket, archived_ticket])
             db.commit()
             return {
                 "admin_id": admin.id,
                 "active_ticket_id": active_ticket.id,
+                "done_ticket_id": done_ticket.id,
                 "archived_ticket_id": archived_ticket.id,
             }
 
-    def login_web(self) -> None:
+    def login_web(self, email: str = "overview@example.com", password: str = "secret123") -> None:
         response = self.client.post(
             "/web/login",
-            data={"email": "overview@example.com", "password": "secret123"},
+            data={"email": email, "password": password},
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
@@ -127,6 +139,16 @@ class TicketsOverviewRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Archived ticket", response.text)
         self.assertIn(f'/web/tickets/{ids["archived_ticket_id"]}', response.text)
+
+    def test_executor_with_view_all_sees_archive_and_delete_actions_for_foreign_tickets(self):
+        ids = self.seed_context()
+        self.login_web("overview-executor@example.com")
+
+        response = self.client.get("/web?view_mode=table")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'action="/web/tickets/{ids["done_ticket_id"]}/archive"', response.text)
+        self.assertIn(f'action="/web/tickets/{ids["active_ticket_id"]}/delete"', response.text)
 
     def test_web_ticket_list_can_filter_by_type_then_sort_by_deadline(self):
         with main.SessionLocal() as db:
