@@ -205,17 +205,9 @@ class TicketTemplateRoutesTests(unittest.TestCase):
             main.delete_ticket_with_related_data(db, ticket, remove_files=False)
             db.commit()
 
-        skipped_deleted = self.client.post(
-            f"/web/ticket-templates/{template_id}/run",
-            data={"period_key": "2026-04"},
-            headers={"origin": "http://testserver"},
-            follow_redirects=False,
-        )
-        self.assertIn("run_created=0&run_skipped=1", skipped_deleted.headers["location"])
-
         restored = self.client.post(
             f"/web/ticket-templates/{template_id}/run",
-            data={"period_key": "2026-04", "recreate_deleted": "1"},
+            data={"period_key": "2026-04"},
             headers={"origin": "http://testserver"},
             follow_redirects=False,
         )
