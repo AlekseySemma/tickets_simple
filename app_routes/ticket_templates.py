@@ -71,6 +71,13 @@ def register_ticket_template_routes(
             .order_by(user_model.name.asc(), user_model.id.asc())
             .all()
         )
+        run_batch_url = None
+        run_template_raw = (request.query_params.get("run_template_id") or "").strip()
+        run_period = normalize_period_key(request.query_params.get("run_period"))
+        if request.query_params.get("run_ok") == "1" and run_template_raw.isdigit() and run_period:
+            run_template_id = int(run_template_raw)
+            if any(item.id == run_template_id for item in items):
+                run_batch_url = f"/web?template_id={run_template_id}&period_key={quote(run_period)}&page_size=30"
         return templates.TemplateResponse(
             request,
             "ticket_templates.html",
@@ -82,6 +89,8 @@ def register_ticket_template_routes(
                 "departments": departments,
                 "org_units": org_units,
                 "executors": executors,
+                "current_period_key": month_period_key(),
+                "run_batch_url": run_batch_url,
             },
         )
 
@@ -258,7 +267,8 @@ def register_ticket_template_routes(
         return RedirectResponse(
             url=(
                 "/web/ticket-templates"
-                f"?run_ok=1&run_created={created_count}&run_skipped={skipped_count}&run_period={quote(effective_period)}"
+                f"?run_ok=1&run_created={created_count}&run_skipped={skipped_count}"
+                f"&run_period={quote(effective_period)}&run_template_id={item.id}"
             ),
             status_code=http_303_see_other,
         )

@@ -729,6 +729,13 @@
       {{ bulk_notice }}
     </div>
     {% endif %}
+    {% if template_batch_filter %}
+    <div class="alert alert-info py-2">
+      Заявки шаблона за {{ period_key_filter }}: {{ total_count }}.
+      <a class="alert-link ms-2" href="/web/ticket-templates">К шаблонам</a>
+      <a class="alert-link ms-2" href="/web">Показать все заявки</a>
+    </div>
+    {% endif %}
     {% set filter_state = namespace(active_count=0) %}
     {% if q %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
     {% if status_filter %}{% set filter_state.active_count = filter_state.active_count + 1 %}{% endif %}
@@ -770,6 +777,7 @@
       <form method="get" action="{{ list_path }}" class="view-switch">
         <input type="hidden" name="page" value="{{ page }}">
         <input type="hidden" name="page_size" value="{{ page_size }}">
+        {% if template_batch_filter %}<input type="hidden" name="template_id" value="{{ template_id_filter }}"><input type="hidden" name="period_key" value="{{ period_key_filter }}">{% endif %}
         <input type="hidden" name="q" value="{{ q }}">
         <input type="hidden" name="status_filter" value="{{ status_filter }}">
         <input type="hidden" name="project_id" value="{{ project_id_filter }}">
@@ -943,6 +951,7 @@
           <form method="get" action="{{ list_path }}" class="row g-2 align-items-end mt-1 tickets-filter-form">
             <input type="hidden" name="view_mode" value="{{ view_mode }}">
             <input type="hidden" name="page_size" value="{{ page_size }}">
+            {% if template_batch_filter %}<input type="hidden" name="template_id" value="{{ template_id_filter }}"><input type="hidden" name="period_key" value="{{ period_key_filter }}">{% endif %}
             <div class="col-12 col-md-4 filter-field-search">
               <label class="form-label mb-1">Поиск</label>
               <input name="q" class="form-control" placeholder="ID, название или описание..." value="{{ q }}" />
@@ -1400,6 +1409,7 @@
           <form method="get" action="{{ list_path }}" class="m-0">
             <input type="hidden" name="page" value="{{ prev_page }}">
             <input type="hidden" name="page_size" value="{{ page_size }}">
+            {% if template_batch_filter %}<input type="hidden" name="template_id" value="{{ template_id_filter }}"><input type="hidden" name="period_key" value="{{ period_key_filter }}">{% endif %}
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
@@ -1417,6 +1427,7 @@
           <form method="get" action="{{ list_path }}" class="m-0">
             <input type="hidden" name="page" value="{{ next_page }}">
             <input type="hidden" name="page_size" value="{{ page_size }}">
+            {% if template_batch_filter %}<input type="hidden" name="template_id" value="{{ template_id_filter }}"><input type="hidden" name="period_key" value="{{ period_key_filter }}">{% endif %}
             <input type="hidden" name="q" value="{{ q }}">
             <input type="hidden" name="status_filter" value="{{ status_filter }}">
             <input type="hidden" name="project_id" value="{{ project_id_filter }}">
@@ -1438,6 +1449,7 @@
       <div class="d-flex justify-content-end mt-2 mb-2">
         <form method="get" action="{{ list_path }}" class="d-flex align-items-center gap-2">
           <input type="hidden" name="page" value="1">
+          {% if template_batch_filter %}<input type="hidden" name="template_id" value="{{ template_id_filter }}"><input type="hidden" name="period_key" value="{{ period_key_filter }}">{% endif %}
           <input type="hidden" name="q" value="{{ q }}">
           <input type="hidden" name="status_filter" value="{{ status_filter }}">
           <input type="hidden" name="project_id" value="{{ project_id_filter }}">

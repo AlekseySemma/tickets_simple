@@ -15,6 +15,8 @@ def render_web_tickets_page(
     executor_id,
     target_unit_id,
     unit_executor_id,
+    template_id,
+    period_key,
     q,
     only_overdue,
     sort_ticket_type_id,
@@ -175,6 +177,9 @@ def render_web_tickets_page(
     department_id_int = _parse_optional_int(department_id)
     target_unit_id_int = _parse_optional_int(target_unit_id)
     unit_executor_id_int = _parse_optional_int(unit_executor_id)
+    template_id_int = _parse_optional_int(template_id)
+    period_key_value = str(period_key or "").strip()
+    template_batch_filter = bool(template_id_int and period_key_value)
 
     executor_id_int: int | None = None
     executor_none = False
@@ -185,6 +190,11 @@ def render_web_tickets_page(
             executor_id_int = _parse_optional_int(executor_id)
 
     filtered_query = base_query
+    if template_batch_filter:
+        filtered_query = filtered_query.filter(
+            ticket_model.ticket_template_id == template_id_int,
+            ticket_model.period_key == period_key_value,
+        )
     if status_filter:
         try:
             status_enum = ticket_status_enum(status_filter)
@@ -458,6 +468,9 @@ def render_web_tickets_page(
             "department_id_filter": department_id_int if department_id_int is not None else "",
             "target_unit_id_filter": target_unit_id_int if target_unit_id_int is not None else "",
             "unit_executor_id_filter": unit_executor_id_int if unit_executor_id_int is not None else "",
+            "template_batch_filter": template_batch_filter,
+            "template_id_filter": template_id_int if template_batch_filter else "",
+            "period_key_filter": period_key_value if template_batch_filter else "",
             "executor_id_filter": executor_id or "",
             "q": q or "",
             "only_overdue": "1" if overdue_enabled else "",

@@ -1,5 +1,6 @@
 import os
 import unittest
+from html import unescape
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -143,7 +144,7 @@ class TicketTemplateRoutesTests(unittest.TestCase):
                 title_template="Run {period}",
                 description_template="Plan {unit_name}",
                 default_deadline_rule="2026-04-30",
-                default_executor_id=ids["executor_id"],
+                default_executor_id=None,
                 scope_unit_id=ids["root_unit_id"],
                 is_active=True,
             )
@@ -162,12 +163,41 @@ class TicketTemplateRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(
             response.headers["location"],
-            "/web/ticket-templates?run_ok=1&run_created=1&run_skipped=0&run_period=2026-04",
+            f"/web/ticket-templates?run_ok=1&run_created=1&run_skipped=0&run_period=2026-04&run_template_id={template_id}",
         )
         with main.SessionLocal() as db:
             ticket = db.query(main.Ticket).filter(main.Ticket.ticket_template_id == template_id).first()
             self.assertIsNotNone(ticket)
             self.assertEqual(ticket.target_unit_id, ids["leaf_unit_id"])
+            self.assertIsNone(ticket.executor_id)
+            db.add(
+                main.Ticket(
+                    title="Unrelated ticket",
+                    status=main.TicketStatus.new,
+                    company_id=ids["company_id"],
+                    project_id=ticket.project_id,
+                    created_by=ids["admin_id"],
+                )
+            )
+            db.commit()
+
+        batch_url = f"/web?template_id={template_id}&period_key=2026-04&page_size=30"
+        notice = self.client.get(response.headers["location"])
+        self.assertIn(batch_url, unescape(notice.text))
+        batch = self.client.get(batch_url)
+        self.assertEqual(batch.status_code, 200)
+        self.assertIn("Заявки шаблона за 2026-04: 1", batch.text)
+        self.assertIn("Run 2026-04", batch.text)
+        self.assertNotIn("Unrelated ticket", batch.text)
+
+        rerun = self.client.post(
+            f"/web/ticket-templates/{template_id}/run",
+            data={"period_key": "2026-04"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+        self.assertIn("run_created=0&run_skipped=1", rerun.headers["location"])
+        self.assertIn(batch_url, unescape(self.client.get(rerun.headers["location"]).text))
 
     def test_ticket_templates_clear_keys_removes_period_entries(self):
         ids = self.seed_context()

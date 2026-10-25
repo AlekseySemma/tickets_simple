@@ -140,6 +140,7 @@
     {% if request.query_params.get("run_ok") == "1" %}
       <div class="alert alert-success">
         Создание из шаблона завершено: создано {{ request.query_params.get("run_created") or 0 }}, пропущено {{ request.query_params.get("run_skipped") or 0 }}, период {{ request.query_params.get("run_period") or "" }}.
+        {% if run_batch_url %}<a class="alert-link ms-2" href="{{ run_batch_url }}">Открыть заявки периода</a>{% endif %}
       </div>
     {% endif %}
     {% if request.query_params.get("run_error") == "bad_period" %}
@@ -291,6 +292,7 @@
               </div>
               <div class="col-12 col-md-4">
                 <button class="btn btn-sm btn-success" type="submit">Запустить сейчас</button>
+                <a class="btn btn-sm btn-outline-primary" href="/web?template_id={{ t.id }}&period_key={{ current_period_key }}&page_size=30">Открыть заявки месяца</a>
               </div>
             </form>
             <div class="small text-muted mt-2 mb-1">Управление автогенерацией</div>
