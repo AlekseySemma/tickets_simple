@@ -525,6 +525,12 @@
     .tickets-table tbody tr:hover td {
       background-color: #f1f9f6 !important;
     }
+    .tickets-table tbody tr.is-selected td {
+      background-color: #dff3ec !important;
+    }
+    .tickets-table tbody tr.is-selected:hover td {
+      background-color: #d8eee6 !important;
+    }
     .tickets-table tbody tr td:first-child {
       border-left: 4px solid var(--ticket-accent);
     }
@@ -1576,6 +1582,12 @@
 
       const renderBulkState = () => {
         const selectedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
+        rowCheckboxes.forEach((checkbox) => {
+          const row = checkbox.closest("tr");
+          if (row) {
+            row.classList.toggle("is-selected", checkbox.checked);
+          }
+        });
         if (countNode) {
           countNode.textContent = String(selectedCount);
         }
