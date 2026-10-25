@@ -257,6 +257,33 @@ def register_ticket_template_routes(
         period_key = normalize_period_key(raw_period_key)
         if raw_period_key and period_key is None:
             return RedirectResponse(url="/web/ticket-templates?run_error=bad_period", status_code=http_303_see_other)
+        if (form.get("recreate_deleted") or "").strip() == "1":
+            effective_period = period_key or month_period_key()
+            keys = (
+                db.query(ticket_generation_key_model)
+                .filter(
+                    ticket_generation_key_model.company_id == user.company_id,
+                    ticket_generation_key_model.ticket_template_id == item.id,
+                    ticket_generation_key_model.period_key == effective_period,
+                )
+                .all()
+            )
+            for key in keys:
+                if key.ticket_id is not None and db.get(ticket_model, key.ticket_id) is not None:
+                    continue
+                existing_ticket = (
+                    db.query(ticket_model.id)
+                    .filter(
+                        ticket_model.company_id == user.company_id,
+                        ticket_model.ticket_template_id == item.id,
+                        ticket_model.target_unit_id == key.target_unit_id,
+                        ticket_model.period_key == effective_period,
+                    )
+                    .first()
+                )
+                if existing_ticket is None:
+                    db.delete(key)
+            db.flush()
         created_count, skipped_count, effective_period = create_tickets_from_template(
             db=db,
             template=item,

@@ -199,6 +199,34 @@ class TicketTemplateRoutesTests(unittest.TestCase):
         self.assertIn("run_created=0&run_skipped=1", rerun.headers["location"])
         self.assertIn(batch_url, unescape(self.client.get(rerun.headers["location"]).text))
 
+        with main.SessionLocal() as db:
+            ticket = db.query(main.Ticket).filter(main.Ticket.ticket_template_id == template_id).one()
+            old_ticket_id = ticket.id
+            main.delete_ticket_with_related_data(db, ticket, remove_files=False)
+            db.commit()
+
+        skipped_deleted = self.client.post(
+            f"/web/ticket-templates/{template_id}/run",
+            data={"period_key": "2026-04"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+        self.assertIn("run_created=0&run_skipped=1", skipped_deleted.headers["location"])
+
+        restored = self.client.post(
+            f"/web/ticket-templates/{template_id}/run",
+            data={"period_key": "2026-04", "recreate_deleted": "1"},
+            headers={"origin": "http://testserver"},
+            follow_redirects=False,
+        )
+        self.assertIn("run_created=1&run_skipped=0", restored.headers["location"])
+        with main.SessionLocal() as db:
+            ticket = db.query(main.Ticket).filter(main.Ticket.ticket_template_id == template_id).one()
+            key = db.query(main.TicketGenerationKey).filter(main.TicketGenerationKey.ticket_template_id == template_id).one()
+            self.assertNotEqual(ticket.id, old_ticket_id)
+            self.assertEqual(key.ticket_id, ticket.id)
+            self.assertEqual(db.query(main.Ticket).count(), 2)
+
     def test_ticket_templates_clear_keys_removes_period_entries(self):
         ids = self.seed_context()
         with main.SessionLocal() as db:

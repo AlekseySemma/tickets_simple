@@ -286,13 +286,16 @@
 
           <div class="tmpl-actions mt-2">
             <div class="small text-muted mb-1">Ручной запуск</div>
-            <form class="row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run">
+            <form class="row g-2" method="post" action="/web/ticket-templates/{{ t.id }}/run" onsubmit="return !this.elements.recreate_deleted.checked || confirm('Повторно создать удалённые заявки за выбранный период?');">
               <div class="col-12 col-md-4">
                 <input class="form-control" name="period_key" placeholder="Период YYYY-MM (опц.)" />
               </div>
               <div class="col-12 col-md-4">
                 <button class="btn btn-sm btn-success" type="submit">Запустить сейчас</button>
                 <a class="btn btn-sm btn-outline-primary" href="/web?template_id={{ t.id }}&period_key={{ current_period_key }}&page_size=30">Открыть заявки месяца</a>
+              </div>
+              <div class="col-12">
+                <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="recreate_deleted" value="1">Восстановить ранее удалённые заявки этого периода</label>
               </div>
             </form>
             <div class="small text-muted mt-2 mb-1">Управление автогенерацией</div>
